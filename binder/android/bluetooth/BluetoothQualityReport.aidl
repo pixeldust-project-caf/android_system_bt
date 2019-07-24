@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -29,25 +29,4 @@
 
 package android.bluetooth;
 
-import android.bluetooth.BluetoothBAStreamServiceRecord;
-import android.bluetooth.BluetoothBAEncryptionKey;
-import android.bluetooth.BluetoothDevice;
-
-/**
- * APIs for Bluetooth A2DP service
- *
- * @hide
- */
-interface IBluetoothBATransmitter {
-    // Public API
-    boolean setBATState(in int state);
-    int getBATState();
-    int getDIV();
-    long getStreamId();
-    BluetoothBAEncryptionKey getEncryptionKey();
-    BluetoothBAStreamServiceRecord getBAServiceRecord();
-    boolean refreshEncryptionKey();
-    List<BluetoothDevice> getConnectedDevices();
-    List<BluetoothDevice> getDevicesMatchingConnectionStates(in int[] states);
-    int getConnectionState(in BluetoothDevice device);
-}
+parcelable BluetoothQualityReport;
