@@ -1742,7 +1742,7 @@ void btm_ble_process_adv_addr(RawAddress& bda, uint8_t* addr_type) {
   /* map address to security record */
   bool match = btm_identity_addr_to_random_pseudo(&bda, addr_type, false);
 
-  VLOG(1) << __func__ << ": bda=" << bda;
+//  VLOG(1) << __func__ << ": bda=" << bda;
   /* always do RRA resolution on host */
   if (!match && BTM_BLE_IS_RESOLVE_BDA(bda)) {
     tBTM_SEC_DEV_REC* match_rec = btm_ble_resolve_random_addr(bda);
