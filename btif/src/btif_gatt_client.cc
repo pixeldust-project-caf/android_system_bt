@@ -255,7 +255,7 @@ void btm_read_rssi_cb(void* p_void) {
  *  Client API Functions
  ******************************************************************************/
 
-static bt_status_t btif_gattc_register_app(const Uuid& uuid) {
+static bt_status_t btif_gattc_register_app(const Uuid& uuid, bool eatt_support) {
   CHECK_BTGATT_INIT();
 
   return do_in_jni_thread(Bind(
