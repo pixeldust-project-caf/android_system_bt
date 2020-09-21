@@ -32,6 +32,8 @@
 #include "btm_api.h"
 #include "btm_ble_api_types.h"
 #include "osi/include/alarm.h"
+#include "stack/btm/neighbor_inquiry.h"
+#include "types/bt_transport.h"
 
 /*****************************************************************************
  *  EXTERNAL FUNCTION DECLARATIONS
@@ -278,19 +280,6 @@ extern bool BTM_BleDataSignature(const RawAddress& bd_addr, uint8_t* p_text,
 extern bool BTM_BleVerifySignature(const RawAddress& bd_addr, uint8_t* p_orig,
                                    uint16_t len, uint32_t counter,
                                    uint8_t* p_comp);
-
-/*******************************************************************************
- *
- * Function         BTM_ReadConnectionAddr
- *
- * Description      Read the local device random address.
- *
- * Returns          void
- *
- ******************************************************************************/
-extern void BTM_ReadConnectionAddr(const RawAddress& remote_bda,
-                                   RawAddress& local_conn_addr,
-                                   tBLE_ADDR_TYPE* p_addr_type);
 
 /*******************************************************************************
  *

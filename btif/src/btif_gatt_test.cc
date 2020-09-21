@@ -88,7 +88,7 @@ static void btif_test_command_complete_cback(uint16_t conn_id, tGATTC_OPTYPE op,
       break;
 
     case GATTC_OPTYPE_INDICATION:
-      GATTC_SendHandleValueConfirm(conn_id, p_data->handle);
+      GATTC_SendHandleValueConfirm(conn_id, p_data->cid);
       break;
 
     default:
@@ -178,7 +178,7 @@ bt_status_t btif_gattc_test_command_impl(int command,
         std::array<uint8_t, Uuid::kNumBytes128> tmp;
         tmp.fill(0xAE);
         test_cb.gatt_if = GATT_Register(bluetooth::Uuid::From128BitBE(tmp),
-                                        &btif_test_callbacks);
+                                        &btif_test_callbacks, false);
         GATT_StartIf(test_cb.gatt_if);
       } else {
         GATT_Deregister(test_cb.gatt_if);
@@ -194,7 +194,7 @@ bt_status_t btif_gattc_test_command_impl(int command,
 
       if (params->u1 == BT_DEVICE_TYPE_BLE)
         BTM_SecAddBleDevice(*params->bda1, NULL, BT_DEVICE_TYPE_BLE,
-                            params->u2);
+                            static_cast<tBLE_ADDR_TYPE>(params->u2));
 
       if (!GATT_Connect(test_cb.gatt_if, *params->bda1, true, BT_TRANSPORT_LE,
                         false)) {

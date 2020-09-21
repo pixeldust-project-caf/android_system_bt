@@ -29,9 +29,11 @@
 #include "avdtc_api.h"
 #include "bt_target.h"
 #include "bt_types.h"
+#include "bta/include/bta_api.h"
 #include "btm_api.h"
 #include "btu.h"
 #include "l2c_api.h"
+#include "stack/btm/btm_sec.h"
 #include "stack/include/a2dp_codec_api.h"
 
 /* Control block for AVDTP */
@@ -90,26 +92,8 @@ void avdt_scb_transport_channel_timer_timeout(void* data) {
  ******************************************************************************/
 void AVDT_Register(AvdtpRcb* p_reg, tAVDT_CTRL_CBACK* p_cback) {
   /* register PSM with L2CAP */
-  L2CA_Register(AVDT_PSM, (tL2CAP_APPL_INFO*)&avdt_l2c_appl,
-                true /* enable_snoop */, nullptr, L2CAP_DEFAULT_MTU);
-
-  /* set security level */
-  BTM_SetSecurityLevel(true, "", BTM_SEC_SERVICE_AVDTP, p_reg->sec_mask,
-                       AVDT_PSM, BTM_SEC_PROTO_AVDT, AVDT_CHAN_SIG);
-  BTM_SetSecurityLevel(false, "", BTM_SEC_SERVICE_AVDTP, p_reg->sec_mask,
-                       AVDT_PSM, BTM_SEC_PROTO_AVDT, AVDT_CHAN_SIG);
-
-  /* do not use security on the media channel */
-  BTM_SetSecurityLevel(true, "", BTM_SEC_SERVICE_AVDTP_NOSEC, BTM_SEC_NONE,
-                       AVDT_PSM, BTM_SEC_PROTO_AVDT, AVDT_CHAN_MEDIA);
-  BTM_SetSecurityLevel(false, "", BTM_SEC_SERVICE_AVDTP_NOSEC, BTM_SEC_NONE,
-                       AVDT_PSM, BTM_SEC_PROTO_AVDT, AVDT_CHAN_MEDIA);
-
-  /* do not use security on the reporting channel */
-  BTM_SetSecurityLevel(true, "", BTM_SEC_SERVICE_AVDTP_NOSEC, BTM_SEC_NONE,
-                       AVDT_PSM, BTM_SEC_PROTO_AVDT, AVDT_CHAN_REPORT);
-  BTM_SetSecurityLevel(false, "", BTM_SEC_SERVICE_AVDTP_NOSEC, BTM_SEC_NONE,
-                       AVDT_PSM, BTM_SEC_PROTO_AVDT, AVDT_CHAN_REPORT);
+  L2CA_Register2(AVDT_PSM, avdt_l2c_appl, true /* enable_snoop */, nullptr,
+                 L2CAP_DEFAULT_MTU, BTA_SEC_AUTHENTICATE);
 
   /* initialize AVDTP data structures */
   avdt_scb_init();
@@ -994,13 +978,13 @@ uint16_t AVDT_WriteReq(uint8_t handle, BT_HDR* p_pkt, uint32_t time_stamp,
  *
  ******************************************************************************/
 uint16_t AVDT_ConnectReq(const RawAddress& bd_addr, uint8_t channel_index,
-                         uint8_t sec_mask, tAVDT_CTRL_CBACK* p_cback) {
+                         tAVDT_CTRL_CBACK* p_cback) {
   AvdtpCcb* p_ccb = NULL;
   uint16_t result = AVDT_SUCCESS;
   tAVDT_CCB_EVT evt;
 
-  AVDT_TRACE_WARNING("%s: address=%s channel_index=%d sec_mask=0x%x", __func__,
-                     bd_addr.ToString().c_str(), channel_index, sec_mask);
+  AVDT_TRACE_WARNING("%s: address=%s channel_index=%d", __func__,
+                     bd_addr.ToString().c_str(), channel_index);
 
   /* find channel control block for this bd addr; if none, allocate one */
   p_ccb = avdt_ccb_by_bd(bd_addr);
@@ -1020,7 +1004,6 @@ uint16_t AVDT_ConnectReq(const RawAddress& bd_addr, uint8_t channel_index,
   if (result == AVDT_SUCCESS) {
     /* send event to ccb */
     evt.connect.p_cback = p_cback;
-    evt.connect.sec_mask = sec_mask;
     avdt_ccb_event(p_ccb, AVDT_CCB_API_CONNECT_REQ_EVT, &evt);
   }
 
@@ -1227,7 +1210,6 @@ void stack_debug_avdtp_api_dump(int fd) {
   dprintf(fd, "\nAVDTP Stack State:\n");
   dprintf(fd, "  AVDTP signalling L2CAP channel MTU: %d\n",
           avdtp_cb.rcb.ctrl_mtu);
-  dprintf(fd, "  Security mask: 0x%x\n", avdtp_cb.rcb.sec_mask);
 
   for (size_t i = 0; i < AVDT_NUM_LINKS; i++) {
     const AvdtpCcb& ccb = avdtp_cb.ccb[i];

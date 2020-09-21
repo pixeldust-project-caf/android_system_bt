@@ -41,6 +41,7 @@ namespace classic {
 namespace internal {
 
 class LinkManager;
+class DumpsysHelper;
 
 class Link : public l2cap::internal::ILink, public hci::acl_manager::ConnectionManagementCallbacks {
  public:
@@ -49,7 +50,7 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::ConnectionM
        DynamicChannelServiceManagerImpl* dynamic_service_manager, FixedChannelServiceManagerImpl* fixed_service_manager,
        LinkManager* link_manager);
 
-  hci::AddressWithType GetDevice() override {
+  hci::AddressWithType GetDevice() const override {
     return {acl_connection_->GetAddress(), hci::AddressType::PUBLIC_DEVICE_ADDRESS};
   }
 
@@ -141,13 +142,11 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::ConnectionM
   virtual bool GetRemoteSupportsFcs() const;
   virtual void OnRemoteExtendedFeatureReceived(bool ertm_supported, bool fcs_supported);
 
-  virtual std::string ToString() {
+  virtual std::string ToString() const {
     return GetDevice().ToString();
   }
 
   void SendLeCredit(Cid local_cid, uint16_t credit) override {}
-
-  void AddChannelPendingingAuthentication(PendingAuthenticateDynamicChannelConnection pending_channel);
 
   // ConnectionManagementCallbacks
   void OnConnectionPacketTypeChanged(uint16_t packet_type) override;
@@ -177,6 +176,7 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::ConnectionM
   void OnDisconnection(hci::ErrorCode reason) override;
 
  private:
+  friend class DumpsysHelper;
   void connect_to_pending_dynamic_channels();
   void send_pending_configuration_requests();
 
@@ -197,7 +197,6 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::ConnectionM
   bool remote_supports_ertm_ = false;
   bool remote_supports_fcs_ = false;
   hci::EncryptionEnabled encryption_enabled_ = hci::EncryptionEnabled::OFF;
-  std::list<Link::PendingAuthenticateDynamicChannelConnection> pending_channel_list_;
   std::list<Psm> pending_dynamic_psm_list_;
   std::list<Link::PendingDynamicChannelConnection> pending_dynamic_channel_callback_list_;
   std::list<uint16_t> pending_outgoing_configuration_request_list_;

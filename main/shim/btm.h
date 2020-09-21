@@ -25,6 +25,7 @@
 
 #include "hci/hci_packets.h"
 
+#include "stack/btm/neighbor_inquiry.h"
 #include "stack/include/btm_api_types.h"
 #include "types/raw_address.h"
 
@@ -60,11 +61,6 @@ static constexpr int kInterlacedScanType = 1;
 static constexpr int kStandardInquiryResult = 0;
 static constexpr int kInquiryResultWithRssi = 1;
 static constexpr int kExtendedInquiryResult = 2;
-
-/* Inquiry filter types */
-static constexpr int kClearInquiryFilter = 0;
-static constexpr int kFilterOnDeviceClass = 1;
-static constexpr int kFilterOnAddress = 2;
 
 static constexpr uint8_t kPhyConnectionNone = 0x00;
 static constexpr uint8_t kPhyConnectionLe1M = 0x01;
@@ -122,12 +118,6 @@ class Btm {
   void OnExtendedInquiryResult(bluetooth::hci::ExtendedInquiryResultView view);
   void OnInquiryComplete(bluetooth::hci::ErrorCode status);
 
-  // Inquiry API
-  bool SetInquiryFilter(uint8_t mode, uint8_t type, tBTM_INQ_FILT_COND data);
-  void SetFilterInquiryOnAddress();
-  void SetFilterInquiryOnDevice();
-  void ClearInquiryFilter();
-
   void SetStandardInquiryResultMode();
   void SetInquiryWithRssiResultMode();
   void SetExtendedInquiryResultMode();
@@ -176,7 +166,7 @@ class Btm {
   void SetLeConnectibleOff();
   ConnectabilityState GetLeConnectabilityState() const;
 
-  bool IsLeAclConnected(const RawAddress& raw_address) const;
+  bool UseLeLink(const RawAddress& raw_address) const;
 
   // Remote device name API
   BtmStatus ReadClassicRemoteDeviceName(const RawAddress& raw_address,

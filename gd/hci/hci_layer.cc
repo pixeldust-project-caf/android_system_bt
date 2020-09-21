@@ -17,6 +17,7 @@
 #include "hci/hci_layer.h"
 
 #include "common/bind.h"
+#include "common/init_flags.h"
 #include "os/alarm.h"
 #include "os/queue.h"
 #include "packet/packet_builder.h"
@@ -159,7 +160,7 @@ struct HciLayer::impl {
     command_queue_.front().command->Serialize(bi);
     hal_->sendHciCommand(*bytes);
 
-    auto cmd_view = CommandPacketView::Create(bytes);
+    auto cmd_view = CommandPacketView::Create(PacketView<kLittleEndian>(bytes));
     ASSERT(cmd_view.IsValid());
     OpCode op_code = cmd_view.GetOpCode();
     waiting_command_ = op_code;
@@ -240,6 +241,10 @@ struct HciLayer::hal_callbacks : public hal::HciHalCallbacks {
   }
 
   void scoDataReceived(hal::HciPacket data_bytes) override {
+    // Not implemented yet
+  }
+
+  void isoDataReceived(hal::HciPacket data_bytes) override {
     // Not implemented yet
   }
 
@@ -362,9 +367,11 @@ void HciLayer::Start() {
   impl_->acl_queue_.GetDownEnd()->RegisterDequeue(handler, BindOn(impl_, &impl::on_outbound_acl_ready));
   RegisterEventHandler(EventCode::COMMAND_COMPLETE, handler->BindOn(impl_, &impl::on_command_complete));
   RegisterEventHandler(EventCode::COMMAND_STATUS, handler->BindOn(impl_, &impl::on_command_status));
-  RegisterEventHandler(EventCode::LE_META_EVENT, handler->BindOn(impl_, &impl::on_le_meta_event));
-  RegisterEventHandler(EventCode::DISCONNECTION_COMPLETE, handler->BindOn(this, &HciLayer::on_disconnection_complete));
-  // TODO find the right place
+  if (bluetooth::common::InitFlags::GdCoreEnabled()) {
+    RegisterEventHandler(EventCode::LE_META_EVENT, handler->BindOn(impl_, &impl::on_le_meta_event));
+    RegisterEventHandler(
+        EventCode::DISCONNECTION_COMPLETE, handler->BindOn(this, &HciLayer::on_disconnection_complete));
+  }
   auto drop_packet = handler->BindOn(impl_, &impl::drop);
   RegisterEventHandler(EventCode::PAGE_SCAN_REPETITION_MODE_CHANGE, drop_packet);
   RegisterEventHandler(EventCode::MAX_SLOTS_CHANGE, drop_packet);

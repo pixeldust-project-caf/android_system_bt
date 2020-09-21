@@ -20,7 +20,6 @@
 #include <unordered_map>
 
 #include "stack/include/l2c_api.h"
-#include "stack/l2cap/l2c_int.h"
 
 namespace bluetooth {
 namespace shim {
@@ -39,7 +38,7 @@ namespace shim {
  *                  BTM_SetSecurityLevel().
  *
  ******************************************************************************/
-uint16_t L2CA_Register(uint16_t psm, tL2CAP_APPL_INFO* p_cb_info,
+uint16_t L2CA_Register(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info,
                        bool enable_snoop, tL2CAP_ERTM_INFO* p_ertm_info,
                        uint16_t required_mtu);
 
@@ -149,7 +148,7 @@ uint16_t L2CA_ErtmConnectReq(uint16_t psm, const RawAddress& p_bd_addr,
  *                  and BTM_SetSecurityLevel().
  *
  ******************************************************************************/
-uint16_t L2CA_RegisterLECoc(uint16_t psm, tL2CAP_APPL_INFO* p_cb_info);
+uint16_t L2CA_RegisterLECoc(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info);
 
 /*******************************************************************************
  *
@@ -203,14 +202,6 @@ bool L2CA_ConnectLECocRsp(const RawAddress& p_bd_addr, uint8_t id,
  *
  ******************************************************************************/
 bool L2CA_GetPeerLECocConfig(uint16_t lcid, tL2CAP_LE_CFG_INFO* peer_cfg);
-
-// This function sets the callback routines for the L2CAP connection referred to
-// by |local_cid|. The callback routines can only be modified for outgoing
-// connections established by |L2CA_ConnectReq| or accepted incoming
-// connections. |callbacks| must not be NULL. This function returns true if the
-// callbacks could be updated, false if not (e.g. |local_cid| was not found).
-bool L2CA_SetConnectionCallbacks(uint16_t local_cid,
-                                 const tL2CAP_APPL_INFO* callbacks);
 
 /*******************************************************************************
  *
@@ -296,23 +287,6 @@ bool L2CA_GetRemoteCid(uint16_t lcid, uint16_t* rcid);
 
 /*******************************************************************************
  *
- * Function         L2CA_SetIdleTimeout
- *
- * Description      Higher layers call this function to set the idle timeout for
- *                  a connection, or for all future connections. The "idle
- *                  timeout" is the amount of time that a connection can remain
- *                  up with no L2CAP channels on it. A timeout of zero means
- *                  that the connection will be torn down immediately when the
- *                  last channel is removed. A timeout of 0xFFFF means no
- *                  timeout. Values are in seconds.
- *
- * Returns          true if command succeeded, false if failed
- *
- ******************************************************************************/
-bool L2CA_SetIdleTimeout(uint16_t cid, uint16_t timeout, bool is_global);
-
-/*******************************************************************************
- *
  * Function         L2CA_SetIdleTimeoutByBdAddr
  *
  * Description      Higher layers call this function to set the idle timeout for
@@ -344,25 +318,6 @@ bool L2CA_SetIdleTimeoutByBdAddr(const RawAddress& bd_addr, uint16_t timeout,
  *
  ******************************************************************************/
 uint8_t L2CA_SetTraceLevel(uint8_t trace_level);
-
-/*******************************************************************************
- *
- * Function     L2CA_SetDesireRole
- *
- * Description  This function sets the desire role for L2CAP.
- *              If the new role is L2CAP_ROLE_ALLOW_SWITCH, allow switch on
- *              HciCreateConnection.
- *              If the new role is L2CAP_ROLE_DISALLOW_SWITCH, do not allow
- *              switch on HciCreateConnection.
- *
- *              If the new role is a valid role (HCI_ROLE_MASTER or
- *              HCI_ROLE_SLAVE), the desire role is set to the new value.
- *              Otherwise, it is not changed.
- *
- * Returns      the new (current) role
- *
- ******************************************************************************/
-uint8_t L2CA_SetDesireRole(uint8_t new_role);
 
 /*******************************************************************************
  *

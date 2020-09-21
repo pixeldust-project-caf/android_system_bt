@@ -168,6 +168,8 @@ class GdDeviceBase(ABC):
                                                      '%s_%s_backing_logs.txt' % (self.type_identifier, self.label))
         if "--btsnoop=" not in " ".join(cmd):
             cmd.append("--btsnoop=%s" % os.path.join(self.log_path_base, '%s_btsnoop_hci.log' % self.label))
+        if "--btconfig=" not in " ".join(cmd):
+            cmd.append("--btconfig=%s" % os.path.join(self.log_path_base, '%s_bt_config.conf' % self.label))
         self.cmd = cmd
         self.environment = os.environ.copy()
         if "cert" in self.label:
@@ -191,6 +193,7 @@ class GdDeviceBase(ABC):
             signal_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             signal_socket.bind(("localhost", self.signal_port))
             signal_socket.listen(1)
+            signal_socket.settimeout(300)  # 5 minute timeout for blocking socket operations
 
             # Start backing process
             logging.debug("Running %s" % " ".join(self.cmd))
@@ -207,6 +210,7 @@ class GdDeviceBase(ABC):
                 msg="backing_process stopped immediately after running " + " ".join(self.cmd))
 
             # Wait for process to be ready
+            logging.debug("Waiting for backing_process accept.")
             signal_socket.accept()
 
         self.backing_process_logger = AsyncSubprocessLogger(
@@ -408,6 +412,8 @@ class GdAndroidDevice(GdDeviceBase):
         self.push_or_die(os.path.join(get_gd_root(), "target", "libbluetooth_gd.so"), "system/lib64")
         self.push_or_die(os.path.join(get_gd_root(), "target", "libgrpc++_unsecure.so"), "system/lib64")
         self.adb.shell("rm /data/misc/bluetooth/logs/btsnoop_hci.log")
+        self.adb.shell("rm /data/misc/bluedroid/bt_config.conf")
+        self.adb.shell("rm /data/misc/bluedroid/bt_config.bak")
         self.ensure_no_output(self.adb.shell("svc bluetooth disable"))
 
         # Start logcat logging
@@ -453,6 +459,10 @@ class GdAndroidDevice(GdDeviceBase):
         self.cleanup_port_forwarding()
         self.adb.pull("/data/misc/bluetooth/logs/btsnoop_hci.log %s" % os.path.join(self.log_path_base,
                                                                                     "%s_btsnoop_hci.log" % self.label))
+        self.adb.pull("/data/misc/bluedroid/bt_config.conf %s" % os.path.join(self.log_path_base,
+                                                                              "%s_bt_config.conf" % self.label))
+        self.adb.pull(
+            "/data/misc/bluedroid/bt_config.bak %s" % os.path.join(self.log_path_base, "%s_bt_config.bak" % self.label))
 
     def cleanup_port_forwarding(self):
         self.adb.remove_tcp_forward(self.grpc_port)

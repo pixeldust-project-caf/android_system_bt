@@ -24,6 +24,7 @@
 #include "l2cap/classic/security_enforcement_interface.h"
 #include "l2cap/le/l2cap_le_module.h"
 #include "l2cap/le/security_enforcement_interface.h"
+#include "neighbor/name_db.h"
 #include "os/handler.h"
 #include "security/channel/security_manager_channel.h"
 #include "security/initial_informations.h"
@@ -57,7 +58,8 @@ class SecurityManagerImpl : public channel::ISecurityManagerChannelListener, pub
       channel::SecurityManagerChannel* security_manager_channel,
       hci::HciLayer* hci_layer,
       hci::AclManager* acl_manager,
-      storage::StorageModule* storage_module);
+      storage::StorageModule* storage_module,
+      neighbor::NameDbModule* name_db_module);
 
   ~SecurityManagerImpl() {
     /* L2CAP layer doesn't guarantee to send the registered OnCloseCallback during shutdown. Cleanup the remaining
@@ -154,6 +156,12 @@ class SecurityManagerImpl : public channel::ISecurityManagerChannelListener, pub
   void OnConnectionClosed(hci::Address address) override;
 
   /**
+   * When link encryption status change, we need to update the device record (temporary).
+   * @param encrypted
+   */
+  void OnEncryptionChange(hci::Address remote, bool encrypted) override;
+
+  /**
    * Pairing handler has finished or cancelled
    *
    * @param address address for pairing handler
@@ -167,6 +175,8 @@ class SecurityManagerImpl : public channel::ISecurityManagerChannelListener, pub
   void OnPasskeyEntry(const bluetooth::hci::AddressWithType& address, uint32_t passkey) override;
 
   // Facade Configuration API functions
+  using FacadeDisconnectCallback = common::Callback<void(bluetooth::hci::AddressWithType)>;
+  void SetDisconnectCallback(FacadeDisconnectCallback callback);
   void SetIoCapability(hci::IoCapability io_capability);
   void SetAuthenticationRequirements(hci::AuthenticationRequirements authentication_requirements);
   void SetOobDataPresent(hci::OobDataPresent data_present);
@@ -197,7 +207,12 @@ class SecurityManagerImpl : public channel::ISecurityManagerChannelListener, pub
   template <class T>
   void HandleEvent(T packet);
 
-  void DispatchPairingHandler(std::shared_ptr<record::SecurityRecord> record, bool locally_initiated);
+  void DispatchPairingHandler(
+      std::shared_ptr<record::SecurityRecord> record,
+      bool locally_initiated,
+      hci::IoCapability io_capability,
+      hci::OobDataPresent oob_present,
+      hci::AuthenticationRequirements auth_requirements);
   void OnL2capRegistrationCompleteLe(l2cap::le::FixedChannelManager::RegistrationResult result,
                                      std::unique_ptr<l2cap::le::FixedChannelService> le_smp_service);
   void OnSmpCommandLe(hci::AddressWithType device);
@@ -211,8 +226,9 @@ class SecurityManagerImpl : public channel::ISecurityManagerChannelListener, pub
   void InternalEnforceSecurityPolicy(
       hci::AddressWithType remote,
       l2cap::classic::SecurityPolicy policy,
-      l2cap::classic::SecurityEnforcementInterface::ResultCallback result_callback,
-      bool try_meet_requirements);
+      l2cap::classic::SecurityEnforcementInterface::ResultCallback result_callback);
+  void UpdateLinkSecurityCondition(hci::AddressWithType remote);
+  bool IsSecurityRequirementSatisfied(hci::AddressWithType remote, l2cap::classic::SecurityPolicy policy);
   void ConnectionIsReadyStartPairing(LeFixedChannelEntry* stored_channel);
   void WipeLePairingHandler();
 
@@ -223,7 +239,9 @@ class SecurityManagerImpl : public channel::ISecurityManagerChannelListener, pub
   channel::SecurityManagerChannel* security_manager_channel_;
   hci::AclManager* acl_manager_;
   storage::StorageModule* storage_module_ __attribute__((unused));
+  record::SecurityRecordStorage security_record_storage_;
   record::SecurityRecordDatabase security_database_;
+  neighbor::NameDbModule* name_db_module_;
   std::unordered_map<hci::Address, std::shared_ptr<pairing::PairingHandler>> pairing_handler_map_;
   hci::IoCapability local_io_capability_ = kDefaultIoCapability;
   hci::AuthenticationRequirements local_authentication_requirements_ = kDefaultAuthenticationRequirements;
@@ -235,11 +253,13 @@ class SecurityManagerImpl : public channel::ISecurityManagerChannelListener, pub
   std::optional<hci::AddressWithType> remote_oob_data_address_;
   std::optional<crypto_toolbox::Octet16> remote_oob_data_le_sc_c_;
   std::optional<crypto_toolbox::Octet16> remote_oob_data_le_sc_r_;
+  std::optional<FacadeDisconnectCallback> facade_disconnect_callback_;
 
-  std::unordered_map<
-      hci::AddressWithType,
-      std::pair<l2cap::classic::SecurityPolicy, l2cap::classic::SecurityEnforcementInterface::ResultCallback>>
-      enforce_security_policy_callback_map_;
+  struct PendingSecurityEnforcementEntry {
+    l2cap::classic::SecurityPolicy policy_;
+    l2cap::classic::SecurityEnforcementInterface::ResultCallback callback_;
+  };
+  std::unordered_map<hci::AddressWithType, PendingSecurityEnforcementEntry> enforce_security_policy_callback_map_;
 
   struct {
     hci::AddressWithType address_;

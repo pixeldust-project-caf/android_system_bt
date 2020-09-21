@@ -17,7 +17,9 @@
 
 #include <optional>
 #include <string>
+#include <unordered_set>
 
+#include "crypto_toolbox/crypto_toolbox.h"
 #include "hci/hci_packets.h"
 #include "storage/config_cache.h"
 #include "storage/config_cache_helper.h"
@@ -28,7 +30,7 @@ namespace storage {
 
 class LeDevice {
  public:
-  LeDevice(ConfigCache* config, std::string section);
+  LeDevice(ConfigCache* config, ConfigCache* memory_only_config, std::string section);
 
   // for move
   LeDevice(LeDevice&& other) noexcept = default;
@@ -40,13 +42,13 @@ class LeDevice {
 
   // operators
   bool operator==(const LeDevice& other) const {
-    return config_ == other.config_ && section_ == other.section_;
+    return config_ == other.config_ && memory_only_config_ == other.memory_only_config_ && section_ == other.section_;
   }
   bool operator!=(const LeDevice& other) const {
     return !(*this == other);
   }
   bool operator<(const LeDevice& other) const {
-    return config_ < other.config_ && section_ < other.section_;
+    return config_ < other.config_ && memory_only_config_ < other.memory_only_config_ && section_ < other.section_;
   }
   bool operator>(const LeDevice& rhs) const {
     return (rhs < *this);
@@ -62,10 +64,17 @@ class LeDevice {
   Device Parent();
 
   // For logging purpose only, you can't get a LeDevice object from parsing a std::string
-  std::string ToLogString();
+  std::string ToLogString() const;
+
+  // Return true if device has a link key in one of |kLinkKeyProperties|
+  bool IsPaired() const;
+
+  // Property names that correspond to a link key used in Bluetooth LE device
+  static const std::unordered_set<std::string_view> kLinkKeyProperties;
 
  private:
   ConfigCache* config_;
+  ConfigCache* memory_only_config_;
   std::string section_;
   friend std::hash<LeDevice>;
 
@@ -73,7 +82,12 @@ class LeDevice {
   // Get LE address type of the key address
   GENERATE_PROPERTY_GETTER_SETTER_REMOVER(AddressType, hci::AddressType, "AddrType");
   GENERATE_PROPERTY_GETTER_SETTER_REMOVER(IdentityAddress, hci::Address, "LeIdentityAddr");
-  GENERATE_PROPERTY_GETTER_SETTER_REMOVER(LegacyPseudoAddress, hci::AddressType, "LeLegacyPseudoAddr");
+  GENERATE_PROPERTY_GETTER_SETTER_REMOVER(LegacyPseudoAddress, hci::Address, "LeLegacyPseudoAddr");
+  GENERATE_PROPERTY_GETTER_SETTER_REMOVER(Ltk, std::string, "Ltk");
+  GENERATE_PROPERTY_GETTER_SETTER_REMOVER(Ediv, uint16_t, "Ediv");
+  GENERATE_PROPERTY_GETTER_SETTER_REMOVER(Irk, std::string, "Irk");
+  GENERATE_PROPERTY_GETTER_SETTER_REMOVER(Rand, std::string, "Rand");
+  GENERATE_PROPERTY_GETTER_SETTER_REMOVER(SignatureKey, std::string, "SignatureKey");
 };
 
 }  // namespace storage
@@ -83,9 +97,10 @@ namespace std {
 template <>
 struct hash<bluetooth::storage::LeDevice> {
   std::size_t operator()(const bluetooth::storage::LeDevice& val) const noexcept {
-    std::size_t pointer_hash = std::hash<bluetooth::storage::ConfigCache*>{}(val.config_);
+    std::size_t pointer_hash_1 = std::hash<bluetooth::storage::ConfigCache*>{}(val.config_);
+    std::size_t pointer_hash_2 = std::hash<bluetooth::storage::ConfigCache*>{}(val.config_);
     std::size_t addr_hash = std::hash<std::string>{}(val.section_);
-    return addr_hash ^ (pointer_hash << 1);
+    return addr_hash ^ (pointer_hash_1 << 1) ^ (pointer_hash_2 << 2);
   }
 };
 }  // namespace std

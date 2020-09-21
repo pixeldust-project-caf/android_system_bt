@@ -35,17 +35,27 @@ namespace pairing {
 
 class ClassicPairingHandler : public PairingHandler {
  public:
-  ClassicPairingHandler(channel::SecurityManagerChannel* security_manager_channel,
-                        std::shared_ptr<record::SecurityRecord> record, os::Handler* security_handler,
-                        common::OnceCallback<void(hci::Address, PairingResultOrFailure)> complete_callback,
-                        UI* user_interface, os::Handler* user_interface_handler, std::string device_name)
-      : PairingHandler(security_manager_channel, std::move(record)), security_handler_(security_handler),
-        remote_io_capability_(hci::IoCapability::DISPLAY_YES_NO), remote_oob_present_(hci::OobDataPresent::NOT_PRESENT),
+  ClassicPairingHandler(
+      channel::SecurityManagerChannel* security_manager_channel,
+      std::shared_ptr<record::SecurityRecord> record,
+      os::Handler* security_handler,
+      common::OnceCallback<void(hci::Address, PairingResultOrFailure)> complete_callback,
+      UI* user_interface,
+      os::Handler* user_interface_handler,
+      std::string device_name,
+      neighbor::NameDbModule* name_db_module)
+      : PairingHandler(security_manager_channel, std::move(record), name_db_module),
+        security_handler_(security_handler),
+        remote_io_capability_(hci::IoCapability::DISPLAY_YES_NO),
+        remote_oob_present_(hci::OobDataPresent::NOT_PRESENT),
         remote_authentication_requirements_(hci::AuthenticationRequirements::DEDICATED_BONDING_MITM_PROTECTION),
-        local_io_capability_(hci::IoCapability::DISPLAY_YES_NO), local_oob_present_(hci::OobDataPresent::NOT_PRESENT),
+        local_io_capability_(hci::IoCapability::DISPLAY_YES_NO),
+        local_oob_present_(hci::OobDataPresent::NOT_PRESENT),
         local_authentication_requirements_(hci::AuthenticationRequirements::DEDICATED_BONDING_MITM_PROTECTION),
-        complete_callback_(std::move(complete_callback)), user_interface_(user_interface),
-        user_interface_handler_(user_interface_handler), device_name_(std::move(device_name)) {}
+        complete_callback_(std::move(complete_callback)),
+        user_interface_(user_interface),
+        user_interface_handler_(user_interface_handler),
+        device_name_(std::move(device_name)) {}
 
   ~ClassicPairingHandler() override = default;
 
@@ -98,9 +108,13 @@ class ClassicPairingHandler : public PairingHandler {
   std::string device_name_;
   bool is_cancelled_ = false;
 
+  bool has_gotten_io_cap_response_ = false;
+  std::optional<hci::UserConfirmationRequestView> user_confirmation_request_ = std::nullopt;
+
   hci::ErrorCode last_status_ = hci::ErrorCode::UNKNOWN_HCI_COMMAND;
   bool locally_initiated_ = false;
   uint32_t passkey_ = 0;
+  bool already_link_key_replied_ = false;
 };
 
 }  // namespace pairing

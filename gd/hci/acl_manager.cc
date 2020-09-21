@@ -141,6 +141,10 @@ void AclManager::CreateLeConnection(AddressWithType address_with_type) {
   CallOn(pimpl_->le_impl_, &le_impl::create_le_connection, address_with_type, true);
 }
 
+void AclManager::SetLeSuggestedDefaultDataParameters(uint16_t octets, uint16_t time) {
+  CallOn(pimpl_->le_impl_, &le_impl::set_le_suggested_default_data_parameters, octets, time);
+}
+
 void AclManager::SetPrivacyPolicyForInitiatorAddress(
     LeAddressManager::AddressPolicy address_policy,
     AddressWithType fixed_address,
@@ -186,8 +190,19 @@ void AclManager::AddDeviceToConnectList(AddressWithType address_with_type) {
   CallOn(pimpl_->le_impl_, &le_impl::add_device_to_connect_list, address_with_type);
 }
 
+void AclManager::AddDeviceToResolvingList(
+    AddressWithType address_with_type,
+    const std::array<uint8_t, 16>& peer_irk,
+    const std::array<uint8_t, 16>& local_irk) {
+  CallOn(pimpl_->le_impl_, &le_impl::add_device_to_resolving_list, address_with_type, peer_irk, local_irk);
+}
+
 void AclManager::RemoveDeviceFromConnectList(AddressWithType address_with_type) {
   CallOn(pimpl_->le_impl_, &le_impl::remove_device_from_connect_list, address_with_type);
+}
+
+void AclManager::RemoveDeviceFromResolvingList(AddressWithType address_with_type) {
+  CallOn(pimpl_->le_impl_, &le_impl::remove_device_from_resolving_list, address_with_type);
 }
 
 void AclManager::MasterLinkKey(KeyFlag key_flag) {

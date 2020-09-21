@@ -36,6 +36,7 @@
 
 #include "sdp_api.h"
 #include "sdpint.h"
+#include "stack/btm/btm_sec.h"
 
 /******************************************************************************/
 /*                     G L O B A L      S D P       D A T A                   */
@@ -81,22 +82,6 @@ void sdp_init(void) {
   sdp_cb.max_attr_list_size = SDP_MTU_SIZE - 16;
   sdp_cb.max_recs_per_search = SDP_MAX_DISC_SERVER_RECS;
 
-#if (SDP_SERVER_ENABLED == TRUE)
-  /* Register with Security Manager for the specific security level */
-  if (!BTM_SetSecurityLevel(false, SDP_SERVICE_NAME, BTM_SEC_SERVICE_SDP_SERVER,
-                            BTM_SEC_NONE, SDP_PSM, 0, 0)) {
-    SDP_TRACE_ERROR("Security Registration Server failed");
-    return;
-  }
-#endif
-
-  /* Register with Security Manager for the specific security level */
-  if (!BTM_SetSecurityLevel(true, SDP_SERVICE_NAME, BTM_SEC_SERVICE_SDP_SERVER,
-                            BTM_SEC_NONE, SDP_PSM, 0, 0)) {
-    SDP_TRACE_ERROR("Security Registration for Client failed");
-    return;
-  }
-
 #if defined(SDP_INITIAL_TRACE_LEVEL)
   sdp_cb.trace_level = SDP_INITIAL_TRACE_LEVEL;
 #else
@@ -105,19 +90,17 @@ void sdp_init(void) {
 
   sdp_cb.reg_info.pL2CA_ConnectInd_Cb = sdp_connect_ind;
   sdp_cb.reg_info.pL2CA_ConnectCfm_Cb = sdp_connect_cfm;
-  sdp_cb.reg_info.pL2CA_ConnectPnd_Cb = NULL;
   sdp_cb.reg_info.pL2CA_ConfigInd_Cb = sdp_config_ind;
   sdp_cb.reg_info.pL2CA_ConfigCfm_Cb = sdp_config_cfm;
   sdp_cb.reg_info.pL2CA_DisconnectInd_Cb = sdp_disconnect_ind;
   sdp_cb.reg_info.pL2CA_DisconnectCfm_Cb = sdp_disconnect_cfm;
-  sdp_cb.reg_info.pL2CA_QoSViolationInd_Cb = NULL;
   sdp_cb.reg_info.pL2CA_DataInd_Cb = sdp_data_ind;
   sdp_cb.reg_info.pL2CA_CongestionStatus_Cb = NULL;
   sdp_cb.reg_info.pL2CA_TxComplete_Cb = NULL;
 
   /* Now, register with L2CAP */
-  if (!L2CA_Register(SDP_PSM, &sdp_cb.reg_info, true /* enable_snoop */,
-                     nullptr, sdp_cb.l2cap_my_cfg.mtu)) {
+  if (!L2CA_Register2(SDP_PSM, sdp_cb.reg_info, true /* enable_snoop */,
+                      nullptr, sdp_cb.l2cap_my_cfg.mtu, BTM_SEC_NONE)) {
     SDP_TRACE_ERROR("SDP Registration failed");
   }
 }
@@ -142,7 +125,6 @@ void sdp_free(void) {
  ******************************************************************************/
 static void sdp_connect_ind(const RawAddress& bd_addr, uint16_t l2cap_cid,
                             UNUSED_ATTR uint16_t psm, uint8_t l2cap_id) {
-#if (SDP_SERVER_ENABLED == TRUE)
   tCONN_CB* p_ccb;
 
   /* Allocate a new CCB. Return if none available. */
@@ -180,10 +162,6 @@ static void sdp_connect_ind(const RawAddress& bd_addr, uint16_t l2cap_cid,
 
   SDP_TRACE_EVENT("SDP - Rcvd L2CAP conn ind, sent config req, CID 0x%x",
                   p_ccb->connection_id);
-#else /* No server */
-  /* Reject the connection */
-  L2CA_ConnectRsp(bd_addr, l2cap_id, l2cap_cid, L2CAP_CONN_NO_PSM, 0);
-#endif
 }
 
 /*******************************************************************************
@@ -513,7 +491,7 @@ tCONN_CB* sdp_conn_originate(const RawAddress& p_bd_addr) {
    */
   p_ccb->con_state = SDP_STATE_CONN_SETUP;
 
-  cid = L2CA_ConnectReq(SDP_PSM, p_bd_addr);
+  cid = L2CA_ConnectReq2(SDP_PSM, p_bd_addr, BTM_SEC_NONE);
 
   /* Check if L2CAP started the connection process */
   if (cid == 0) {

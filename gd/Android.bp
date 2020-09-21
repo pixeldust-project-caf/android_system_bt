@@ -263,6 +263,7 @@ cc_test {
         host: {
             srcs: [
                 ":BluetoothHalTestSources_hci_rootcanal",
+                ":BluetoothOsTestSources_host",
             ],
         },
         android: {
@@ -285,6 +286,7 @@ cc_test {
         ":BluetoothCommonTestSources",
         ":BluetoothCryptoToolboxTestSources",
         ":BluetoothDumpsysTestSources",
+        ":BluetoothHalTestSources",
         ":BluetoothHciTestSources",
         ":BluetoothL2capTestSources",
         ":BluetoothNeighborTestSources",
@@ -453,12 +455,16 @@ genrule {
     ],
     cmd: "$(location flatc) -I system/bt/gd -b --schema -o $(genDir) $(in) ",
     srcs: [
+        "common/init_flags.fbs",
         "dumpsys_data.fbs",
+        "l2cap/classic/l2cap_classic_module.fbs",
         "shim/dumpsys.fbs",
     ],
     out: [
-        "dumpsys_data.bfbs",
+        "init_flags.bfbs",
         "dumpsys.bfbs",
+        "dumpsys_data.bfbs",
+        "l2cap_classic_module.bfbs",
     ],
 }
 
@@ -469,12 +475,16 @@ genrule {
     ],
     cmd: "$(location flatc) -I system/bt/gd -o $(genDir) --cpp $(in) ",
     srcs: [
+        "common/init_flags.fbs",
         "dumpsys_data.fbs",
+        "l2cap/classic/l2cap_classic_module.fbs",
         "shim/dumpsys.fbs",
     ],
     out: [
         "dumpsys_data_generated.h",
         "dumpsys_generated.h",
+        "init_flags_generated.h",
+        "l2cap_classic_module_generated.h",
     ],
 }
 

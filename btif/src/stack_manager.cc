@@ -28,15 +28,54 @@
 #include "btif_common.h"
 #include "common/message_loop_thread.h"
 #include "device/include/controller.h"
+#include "hci/include/btsnoop.h"
 #include "main/shim/shim.h"
 #include "osi/include/log.h"
 #include "osi/include/osi.h"
 #include "osi/include/semaphore.h"
+#include "stack/include/acl_api.h"
+#include "stack/include/btu.h"
 
 // Temp includes
 #include "bt_utils.h"
+#include "bta/sys/bta_sys.h"
 #include "btif_config.h"
 #include "btif_profile_queue.h"
+#include "internal_include/bt_target.h"
+#include "internal_include/bte.h"
+#include "stack/btm/btm_int.h"
+#include "stack/include/gatt_api.h"
+#include "stack/include/l2c_api.h"
+#include "stack/include/port_api.h"
+#include "stack/sdp/sdpint.h"
+#if (BNEP_INCLUDED == TRUE)
+#include "stack/include/bnep_api.h"
+#endif
+#include "stack/include/gap_api.h"
+#if (PAN_INCLUDED == TRUE)
+#include "stack/include/pan_api.h"
+#endif
+#include "stack/include/a2dp_api.h"
+#include "stack/include/avrc_api.h"
+#if (HID_HOST_INCLUDED == TRUE)
+#include "stack/include/hidh_api.h"
+#endif
+#include "stack/include/smp_api.h"
+#include "bta_ar_api.h"
+#include "bta/sys/bta_sys_int.h"
+#include "bta_dm_int.h"
+#include "btif/include/btif_pan.h"
+#include "btif/include/btif_sock.h"
+#include "device/include/interop.h"
+#include "internal_include/stack_config.h"
+#include "main/shim/controller.h"
+
+void main_thread_shut_down();
+void main_thread_start_up();
+void BTA_dm_on_hw_on();
+void BTA_dm_on_hw_off();
+extern void btm_init(void);
+extern void btm_free(void);
 
 using bluetooth::common::MessageLoopThread;
 
@@ -113,11 +152,15 @@ static void event_init_stack(void* context) {
 
     module_init(get_module(OSI_MODULE));
     module_init(get_module(BT_UTILS_MODULE));
-    if (bluetooth::shim::is_gd_shim_enabled()) {
+    if (bluetooth::shim::is_any_gd_enabled()) {
       module_start_up(get_module(GD_IDLE_MODULE));
     }
     module_init(get_module(BTIF_CONFIG_MODULE));
     btif_init_bluetooth();
+
+    module_init(get_module(INTEROP_MODULE));
+    bte_main_init();
+    module_init(get_module(STACK_CONFIG_MODULE));
 
     // stack init is synchronous, so no waiting necessary here
     stack_is_initialized = true;
@@ -150,8 +193,59 @@ static void event_start_up_stack(UNUSED_ATTR void* context) {
   future_t* local_hack_future = future_new();
   hack_future = local_hack_future;
 
-  // Include this for now to put btif config into a shutdown-able state
-  bte_main_enable();
+  if (bluetooth::shim::is_any_gd_enabled()) {
+    LOG_INFO("%s Gd shim module enabled", __func__);
+    module_shut_down(get_module(GD_IDLE_MODULE));
+    module_start_up(get_module(GD_SHIM_MODULE));
+    module_start_up(get_module(BTIF_CONFIG_MODULE));
+  } else {
+    module_start_up(get_module(BTIF_CONFIG_MODULE));
+    module_start_up(get_module(BTSNOOP_MODULE));
+    module_start_up(get_module(HCI_MODULE));
+  }
+
+  btm_init();
+  l2c_init();
+  sdp_init();
+  gatt_init();
+  SMP_Init();
+  btm_ble_init();
+
+  RFCOMM_Init();
+#if (BNEP_INCLUDED == TRUE)
+  BNEP_Init();
+#if (PAN_INCLUDED == TRUE)
+  PAN_Init();
+#endif /* PAN */
+#endif /* BNEP Included */
+  A2DP_Init();
+  AVRC_Init();
+  GAP_Init();
+#if (HID_HOST_INCLUDED == TRUE)
+  HID_HostInit();
+#endif
+
+  bta_sys_init();
+  bta_ar_init();
+  module_init(get_module(BTE_LOGMSG_MODULE));
+
+  main_thread_start_up();
+
+  btif_init_ok();
+  BTA_dm_init();
+  bta_dm_enable(bte_dm_evt);
+
+  bta_set_forward_hw_failures(true);
+  btm_acl_device_down();
+  BTM_db_reset();
+  if (bluetooth::shim::is_gd_controller_enabled()) {
+    CHECK(module_start_up(get_module(GD_CONTROLLER_MODULE)));
+  } else {
+    CHECK(module_start_up(get_module(CONTROLLER_MODULE)));
+  }
+  BTM_reset_complete();
+
+  BTA_dm_on_hw_on();
 
   if (future_await(local_hack_future) != FUTURE_SUCCESS) {
     LOG_ERROR("%s failed to start up the stack", __func__);
@@ -177,10 +271,44 @@ static void event_shut_down_stack(UNUSED_ATTR void* context) {
   hack_future = local_hack_future;
   stack_is_running = false;
 
-  btif_disable_bluetooth();
+  do_in_main_thread(FROM_HERE, base::Bind(&btm_ble_multi_adv_cleanup));
+
+  btif_dm_on_disable();
+  btif_sock_cleanup();
+  btif_pan_cleanup();
+
+  do_in_main_thread(FROM_HERE, base::Bind(bta_dm_disable));
+
+  future_await(local_hack_future);
+  local_hack_future = future_new();
+  hack_future = local_hack_future;
+
+  bta_sys_disable();
+  bta_set_forward_hw_failures(false);
+  BTA_dm_on_hw_off();
+
   module_shut_down(get_module(BTIF_CONFIG_MODULE));
 
   future_await(local_hack_future);
+
+  if (bluetooth::shim::is_any_gd_enabled()) {
+    LOG_INFO("%s Gd shim module disabled", __func__);
+    module_shut_down(get_module(GD_SHIM_MODULE));
+    module_start_up(get_module(GD_IDLE_MODULE));
+  } else {
+    module_shut_down(get_module(HCI_MODULE));
+    module_shut_down(get_module(BTSNOOP_MODULE));
+  }
+
+  main_thread_shut_down();
+
+  module_clean_up(get_module(BTE_LOGMSG_MODULE));
+
+  gatt_free();
+  l2c_free();
+  sdp_free();
+  btm_free();
+
   module_shut_down(get_module(CONTROLLER_MODULE));  // Doesn't do any work, just
                                                     // puts it in a restartable
                                                     // state
@@ -212,6 +340,10 @@ static void event_clean_up_stack(void* context) {
   stack_is_initialized = false;
 
   btif_cleanup_bluetooth();
+
+  module_clean_up(get_module(STACK_CONFIG_MODULE));
+  module_clean_up(get_module(INTEROP_MODULE));
+
   module_clean_up(get_module(BTIF_CONFIG_MODULE));
   module_clean_up(get_module(BT_UTILS_MODULE));
   module_clean_up(get_module(OSI_MODULE));
@@ -228,11 +360,11 @@ static void event_signal_stack_up(UNUSED_ATTR void* context) {
   // Notify BTIF connect queue that we've brought up the stack. It's
   // now time to dispatch all the pending profile connect requests.
   btif_queue_connect_next();
-  HAL_CBACK(bt_hal_cbacks, adapter_state_changed_cb, BT_STATE_ON);
+  invoke_adapter_state_changed_cb(BT_STATE_ON);
 }
 
 static void event_signal_stack_down(UNUSED_ATTR void* context) {
-  HAL_CBACK(bt_hal_cbacks, adapter_state_changed_cb, BT_STATE_OFF);
+  invoke_adapter_state_changed_cb(BT_STATE_OFF);
   future_ready(stack_manager_get_hack_future(), FUTURE_SUCCESS);
 }
 
