@@ -30,13 +30,13 @@ class LeAclConnectionTracker : public LeConnectionManagementCallbacks {
     ASSERT(queued_callbacks_.empty());
   }
   void RegisterCallbacks(LeConnectionManagementCallbacks* callbacks, os::Handler* handler) {
+    client_handler_ = handler;
+    client_callbacks_ = callbacks;
     while (!queued_callbacks_.empty()) {
       auto iter = queued_callbacks_.begin();
       handler->Post(std::move(*iter));
       queued_callbacks_.erase(iter);
     }
-    client_handler_ = handler;
-    client_callbacks_ = callbacks;
   }
 
 #define SAVE_OR_CALL(f, ...)                                                                                        \
@@ -50,6 +50,10 @@ class LeAclConnectionTracker : public LeConnectionManagementCallbacks {
 
   void OnConnectionUpdate(uint16_t conn_interval, uint16_t conn_latency, uint16_t supervision_timeout) override {
     SAVE_OR_CALL(OnConnectionUpdate, conn_interval, conn_latency, supervision_timeout)
+  }
+
+  void OnDataLengthChange(uint16_t tx_octets, uint16_t tx_time, uint16_t rx_octets, uint16_t rx_time) override {
+    SAVE_OR_CALL(OnDataLengthChange, tx_octets, tx_time, rx_octets, rx_time)
   }
 
   void OnDisconnection(ErrorCode reason) override {

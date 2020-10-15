@@ -145,6 +145,12 @@ class PairingHandlerLe {
                                             }));
   }
 
+  void SendHciLeLongTermKeyReply(const InitialInformations& i, uint16_t conn_handle, const Octet16& ltk) {
+    i.le_security_interface->EnqueueCommand(
+        hci::LeLongTermKeyRequestReplyBuilder::Create(conn_handle, ltk),
+        i.l2cap_handler->BindOnce([](hci::CommandCompleteView) {}));
+  }
+
   std::variant<PairingFailure, EncryptionChangeView, EncryptionKeyRefreshCompleteView> WaitEncryptionChanged() {
     PairingEvent e = WaitForEvent();
     if (e.type != PairingEvent::HCI_EVENT) return PairingFailure("Was expecting HCI event but received something else");
@@ -168,6 +174,31 @@ class PairingHandlerLe {
     }
 
     return PairingFailure("Was expecting Encryption Change or Key Refresh Complete but received something else");
+  }
+
+  std::variant<PairingFailure, hci::LeLongTermKeyRequestView> WaitLeLongTermKeyRequest() {
+    PairingEvent e = WaitForEvent();
+    if (e.type != PairingEvent::HCI_EVENT) return PairingFailure("Was expecting HCI event but received something else");
+
+    if (!e.hci_event->IsValid()) return PairingFailure("Received invalid HCI event");
+
+    if (e.hci_event->GetEventCode() != hci::EventCode::LE_META_EVENT) return PairingFailure("Was expecting LE event");
+
+    hci::LeMetaEventView le_event = hci::LeMetaEventView::Create(*e.hci_event);
+    if (!le_event.IsValid()) {
+      return PairingFailure("Invalid LE Event received");
+    }
+
+    if (le_event.GetSubeventCode() != hci::SubeventCode::LONG_TERM_KEY_REQUEST) {
+      return PairingFailure("Was expecting Long Term Key Request");
+    }
+
+    hci::LeLongTermKeyRequestView ltk_req_packet = hci::LeLongTermKeyRequestView::Create(le_event);
+    if (!ltk_req_packet.IsValid()) {
+      return PairingFailure("Invalid LE Long Term Key Request received");
+    }
+
+    return ltk_req_packet;
   }
 
   inline bool IAmMaster(const InitialInformations& i) {
@@ -259,6 +290,15 @@ class PairingHandlerLe {
     pairing_thread_blocker_.notify_one();
   }
 
+  /* HCI LE event received from remote device */
+  void OnHciLeEvent(hci::LeMetaEventView hci_event) {
+    {
+      std::unique_lock<std::mutex> lock(queue_guard);
+      queue.push(PairingEvent(std::move(hci_event)));
+    }
+    pairing_thread_blocker_.notify_one();
+  }
+
   /* Blocks the pairing process until some external interaction, or timeout happens */
   PairingEvent WaitForEvent() {
     std::unique_lock<std::mutex> lock(queue_guard);
@@ -296,6 +336,32 @@ class PairingHandlerLe {
 
   std::optional<PairingEvent> WaitUiPasskey() {
     PairingEvent e = WaitForEvent();
+
+    // It's possible to receive PAIRING_CONFIRM from remote device while waiting for the passkey.
+    // Store it until it's needed.
+    if (e.type == PairingEvent::L2CAP) {
+      auto l2cap_packet = e.l2cap_packet.value();
+      if (!l2cap_packet.IsValid()) {
+        LOG_WARN("Malformed L2CAP packet received!");
+        return std::nullopt;
+      }
+
+      const auto& received_code = l2cap_packet.GetCode();
+      if (received_code != Code::PAIRING_CONFIRM) {
+        LOG_WARN("Was waiting for passkey, received bad packet instead!");
+        return std::nullopt;
+      }
+
+      auto pkt = PairingConfirmView::Create(l2cap_packet);
+      if (!pkt.IsValid()) {
+        LOG_WARN("Malformed PAIRING_CONFIRM packet");
+        return std::nullopt;
+      }
+
+      cached_pariring_confirm_view = std::make_unique<PairingConfirmView>(pkt);
+      e = WaitForEvent();
+    }
+
     if (e.type == PairingEvent::UI & e.ui_action == PairingEvent::PASSKEY) {
       return e;
     } else {
@@ -415,7 +481,12 @@ class PairingHandlerLe {
     return WaitPacket<Code::PAIRING_RESPONSE>();
   }
 
-  auto WaitPairingConfirm() {
+  std::variant<bluetooth::security::PairingConfirmView, bluetooth::security::PairingFailure> WaitPairingConfirm() {
+    if (cached_pariring_confirm_view) {
+      PairingConfirmView pkt = *cached_pariring_confirm_view;
+      cached_pariring_confirm_view.release();
+      return pkt;
+    }
     return WaitPacket<Code::PAIRING_CONFIRM>();
   }
 
@@ -467,6 +538,9 @@ class PairingHandlerLe {
   std::queue<PairingEvent> queue;
 
   std::thread thread_;
+
+  // holds pairing_confirm, if received out of order
+  std::unique_ptr<PairingConfirmView> cached_pariring_confirm_view;
 };
 }  // namespace security
 }  // namespace bluetooth

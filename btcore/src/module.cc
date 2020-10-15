@@ -18,6 +18,8 @@
 
 #define LOG_TAG "bt_core_module"
 
+#include "btcore/include/module.h"
+
 #include <base/logging.h>
 #include <dlfcn.h>
 #include <string.h>
@@ -25,7 +27,6 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "btcore/include/module.h"
 #include "common/message_loop_thread.h"
 #include "osi/include/allocator.h"
 #include "osi/include/log.h"
@@ -50,9 +51,7 @@ static void set_module_state(const module_t* module, module_state_t state);
 
 void module_management_start(void) {}
 
-void module_management_stop(void) {
-  metadata.clear();
-}
+void module_management_stop(void) { metadata.clear(); }
 
 const module_t* get_module(const char* name) {
   module_t* module = (module_t*)dlsym(RTLD_DEFAULT, name);
@@ -153,49 +152,4 @@ static module_state_t get_module_state(const module_t* module) {
 static void set_module_state(const module_t* module, module_state_t state) {
   std::lock_guard<std::mutex> lock(metadata_mutex);
   metadata[module] = state;
-}
-
-// TODO(zachoverflow): remove when everything modulized
-// Temporary callback-wrapper-related code
-class CallbackWrapper {
- public:
-  explicit CallbackWrapper(const module_t* module,
-                           MessageLoopThread* callback_thread,
-                           thread_fn callback)
-      : module(module),
-        lifecycle_thread("bt_module_lifecycle_thread"),
-        callback_thread(callback_thread),
-        callback(callback),
-        success(false) {}
-  const module_t* module;
-  MessageLoopThread lifecycle_thread;
-  // we don't own this thread
-  MessageLoopThread* callback_thread;
-  thread_fn callback;
-  bool success;
-};
-
-static void post_result_to_callback(std::shared_ptr<CallbackWrapper> wrapper) {
-  CHECK(wrapper);
-  wrapper->lifecycle_thread.ShutDown();
-  wrapper->callback(wrapper->success ? FUTURE_SUCCESS : FUTURE_FAIL);
-}
-
-static void run_wrapped_start_up(std::shared_ptr<CallbackWrapper> wrapper) {
-  CHECK(wrapper);
-  wrapper->success = module_start_up(wrapper->module);
-  // Post the result back to the callback
-  wrapper->callback_thread->DoInThread(
-      FROM_HERE, base::BindOnce(post_result_to_callback, wrapper));
-}
-
-void module_start_up_callbacked_wrapper(const module_t* module,
-                                        MessageLoopThread* callback_thread,
-                                        thread_fn callback) {
-  std::shared_ptr<CallbackWrapper> wrapper =
-      std::make_shared<CallbackWrapper>(module, callback_thread, callback);
-  wrapper->lifecycle_thread.StartUp();
-  // Run the actual module start up
-  wrapper->lifecycle_thread.DoInThread(
-      FROM_HERE, base::BindOnce(run_wrapped_start_up, wrapper));
 }

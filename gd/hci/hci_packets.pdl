@@ -195,6 +195,7 @@ enum OpCode : 16 {
   READ_LOCAL_OOB_DATA = 0x0C57,
   READ_INQUIRY_RESPONSE_TRANSMIT_POWER_LEVEL = 0x0C58,
   WRITE_INQUIRY_TRANSMIT_POWER_LEVEL = 0x0C59,
+  ENHANCED_FLUSH = 0x0C5F,
   SEND_KEYPRESS_NOTIFICATION = 0x0C60,
 
   READ_LE_HOST_SUPPORT = 0x0C6C,
@@ -481,6 +482,7 @@ enum OpCodeIndex : 16 {
   USER_PASSKEY_REQUEST_NEGATIVE_REPLY = 193,
   REMOTE_OOB_DATA_REQUEST_REPLY = 194,
   WRITE_SIMPLE_PAIRING_DEBUG_MODE = 195,
+  ENHANCED_FLUSH = 196,
   REMOTE_OOB_DATA_REQUEST_NEGATIVE_REPLY = 197,
   SEND_KEYPRESS_NOTIFICATION = 202,
   IO_CAPABILITY_REQUEST_NEGATIVE_REPLY = 203,
@@ -2525,11 +2527,18 @@ enum LeScanningFilterPolicy : 8 {
   CONNECT_LIST_AND_INITIATORS_IDENTITY = 0x03,
 }
 
+enum OwnAddressType : 8 {
+  PUBLIC_DEVICE_ADDRESS = 0x00,
+  RANDOM_DEVICE_ADDRESS = 0x01,
+  RESOLVABLE_OR_PUBLIC_ADDRESS = 0x02,
+  RESOLVABLE_OR_RANDOM_ADDRESS = 0x03,
+}
+
 packet LeSetScanParameters : LeScanningCommand (op_code = LE_SET_SCAN_PARAMETERS) {
   le_scan_type : LeScanType,
   le_scan_interval : 16, // 0x0004-0x4000 Default 0x10 (10ms)
   le_scan_window : 16, // Default 0x10 (10ms)
-  own_address_type : AddressType,
+  own_address_type : OwnAddressType,
   scanning_filter_policy : LeScanningFilterPolicy,
 }
 
@@ -2549,13 +2558,6 @@ packet LeSetScanEnableComplete : CommandComplete (command_op_code = LE_SET_SCAN_
 enum InitiatorFilterPolicy : 8 {
   USE_PEER_ADDRESS = 0x00,
   USE_CONNECT_LIST = 0x01,
-}
-
-enum OwnAddressType : 8 {
-  PUBLIC_DEVICE_ADDRESS = 0x00,
-  RANDOM_DEVICE_ADDRESS = 0x01,
-  RESOLVABLE_OR_PUBLIC_ADDRESS = 0x02,
-  RESOLVABLE_OR_RANDOM_ADDRESS = 0x03,
 }
 
 packet LeCreateConnection : LeConnectionManagementCommand (op_code = LE_CREATE_CONNECTION) {
@@ -3151,7 +3153,7 @@ struct PhyScanParameters {
 }
 
 packet LeSetExtendedScanParameters : LeScanningCommand (op_code = LE_SET_EXTENDED_SCAN_PARAMETERS) {
-  own_address_type : AddressType,
+  own_address_type : OwnAddressType,
   scanning_filter_policy : LeScanningFilterPolicy,
   scanning_phys : 8,
   parameters : PhyScanParameters[],
@@ -3222,11 +3224,14 @@ packet LeRemoveDeviceFromPeriodicAdvertisingList : LeAdvertisingCommand (op_code
 }
 
 packet LeClearPeriodicAdvertisingList : LeAdvertisingCommand (op_code = LE_CLEAR_PERIODIC_ADVERTISING_LIST) {
-  _payload_,  // placeholder (unimplemented)
 }
 
-packet LeReadPeriodicAdvertisingListSize : LeAdvertisingCommand (op_code = LE_READ_PERIODIC_ADVERTISING_LIST_SIZE) {
-  _payload_,  // placeholder (unimplemented)
+packet LeReadPeriodicAdvertiserListSize : CommandPacket (op_code = LE_READ_PERIODIC_ADVERTISING_LIST_SIZE) {
+}
+
+packet LeReadPeriodicAdvertiserListSizeComplete : CommandComplete (command_op_code = LE_READ_PERIODIC_ADVERTISING_LIST_SIZE) {
+  status : ErrorCode,
+  periodic_advertiser_list_size : 8,
 }
 
 packet LeReadTransmitPower : LeAdvertisingCommand (op_code = LE_READ_TRANSMIT_POWER) {
@@ -3375,8 +3380,14 @@ struct CisParametersConfig {
   _reserved_ : 4,
   max_sdu_s_to_m : 12,
   _reserved_ : 4,
-  phy_m_to_s : SecondaryPhyType,
-  phy_s_to_m : SecondaryPhyType,
+  phy_m_to_s_1_m : 1,
+  phy_m_to_s_2_m : 1,
+  phy_m_to_s_coded : 1,
+  _reserved_ : 5,
+  phy_s_to_m_1_m : 1,
+  phy_s_to_m_2_m : 1,
+  phy_s_to_m_coded : 1,
+  _reserved_ : 5,
   rtn_m_to_s : 4,
   _reserved_ : 4,
   rtn_s_to_m : 4,
@@ -3813,7 +3824,7 @@ packet LeExtendedScanParams : LeScanningCommand (op_code = LE_EXTENDED_SCAN_PARA
   le_scan_type : LeScanType,
   le_scan_interval : 32, // 0x0004-0x4000 Default 0x10 (10ms)
   le_scan_window : 32, // Default 0x10 (10ms)
-  own_address_type : AddressType,
+  own_address_type : OwnAddressType,
   scanning_filter_policy : LeScanningFilterPolicy,
 }
 
@@ -4183,6 +4194,19 @@ packet LinkSupervisionTimeoutChanged : EventPacket (event_code = LINK_SUPERVISIO
   link_supervision_timeout : 16, // 0x001-0xFFFF (0.625ms-40.9s)
 }
 
+enum FlushablePacketType : 8 {
+  AUTOMATICALLY_FLUSHABLE_ONLY = 0,
+}
+
+packet EnhancedFlush : CommandPacket (op_code = ENHANCED_FLUSH){
+  connection_handle : 12,
+  _reserved_ : 4,
+  packet_type : FlushablePacketType,
+}
+
+packet EnhancedFlushStatus : CommandStatus (command_op_code = ENHANCED_FLUSH){
+}
+
 packet EnhancedFlushComplete : EventPacket (event_code = ENHANCED_FLUSH_COMPLETE){
   connection_handle : 12,
   _reserved_ : 4,
@@ -4266,10 +4290,9 @@ packet LeReadRemoteFeaturesComplete : LeMetaEvent (subevent_code = READ_REMOTE_F
 }
 
 packet LeLongTermKeyRequest : LeMetaEvent (subevent_code = LONG_TERM_KEY_REQUEST) {
-  status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
-  random_number : 64,
+  random_number : 8[8],
   encrypted_diversifier : 16,
 }
 
@@ -4363,8 +4386,9 @@ struct LeExtendedAdvertisingReport {
   scannable : 1,
   directed : 1,
   scan_response : 1,
+  legacy : 1,
   data_status : DataStatus,
-  _reserved_ : 10,
+  _reserved_ : 9,
   address_type : DirectAdvertisingAddressType,
   address : Address,
   primary_phy : PrimaryPhyType,
@@ -4689,4 +4713,51 @@ packet BqrBtSchedulingTraceEvent : BqrLogDumpEvent (quality_report_id = BT_SCHED
 
 packet BqrControllerDbgInfoEvent : BqrLogDumpEvent (quality_report_id = CONTROLLER_DBG_INFO) {
  _payload_, // vendor specific parameter
+}
+
+// Isochronous Adaptation Layer
+
+enum IsoPacketBoundaryFlag : 2 {
+  FIRST_FRAGMENT = 0,
+  CONTINUATION_FRAGMENT = 1,
+  COMPLETE_SDU = 2,
+  LAST_FRAGMENT = 3,
+}
+
+enum TimeStampFlag : 1 {
+  NOT_PRESENT = 0,
+  PRESENT = 1,
+}
+
+packet IsoPacket {
+  connection_handle : 12,
+  pb_flag : IsoPacketBoundaryFlag,
+  ts_flag : TimeStampFlag,
+  _reserved_ : 1,
+  _size_(_payload_) : 14,
+  _reserved_ : 2,
+  _payload_,
+}
+
+enum IsoPacketStatusFlag : 2 {
+  VALID = 0,
+  POSSIBLY_INVALID = 1,
+  LOST_DATA = 2,
+}
+
+packet IsoPacketWithTimestamp : IsoPacket (ts_flag = PRESENT) {
+  time_stamp : 32,
+  packet_sequence_number : 16,
+  _size_(_payload_) : 12, // iso_sdu_length
+  _reserved_ : 2,
+  packet_status_flag : IsoPacketStatusFlag,
+  _payload_,
+}
+
+packet IsoPacketWithoutTimestamp : IsoPacket (ts_flag = NOT_PRESENT) {
+  packet_sequence_number : 16,
+  _size_(_payload_) : 12, // iso_sdu_length
+  _reserved_ : 2,
+  packet_status_flag : IsoPacketStatusFlag,
+  _payload_,
 }

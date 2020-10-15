@@ -20,11 +20,11 @@
 #include "gd/l2cap/le/l2cap_le_module.h"
 #include "gd/os/log.h"
 #include "gd/os/queue.h"
-#include "gd/packet/raw_builder.h"
 #include "main/shim/btm.h"
 #include "main/shim/entry.h"
 #include "main/shim/helpers.h"
 #include "main/shim/l2cap.h"
+#include "osi/include/allocator.h"
 
 static bluetooth::shim::legacy::L2cap shim_l2cap;
 
@@ -32,21 +32,19 @@ static bluetooth::shim::legacy::L2cap shim_l2cap;
  * Classic Service Registration APIs
  */
 uint16_t bluetooth::shim::L2CA_Register(uint16_t client_psm,
-                                        tL2CAP_APPL_INFO* callbacks,
+                                        const tL2CAP_APPL_INFO& callbacks,
                                         bool enable_snoop,
                                         tL2CAP_ERTM_INFO* p_ertm_info,
                                         uint16_t required_mtu) {
-  CHECK(callbacks != nullptr);
-
   if (L2C_INVALID_PSM(client_psm)) {
     LOG_ERROR("%s Invalid classic psm:%hd", __func__, client_psm);
     return 0;
   }
 
-  if ((callbacks->pL2CA_ConfigCfm_Cb == nullptr) ||
-      (callbacks->pL2CA_ConfigInd_Cb == nullptr) ||
-      (callbacks->pL2CA_DataInd_Cb == nullptr) ||
-      (callbacks->pL2CA_DisconnectInd_Cb == nullptr)) {
+  if ((callbacks.pL2CA_ConfigCfm_Cb == nullptr) ||
+      (callbacks.pL2CA_ConfigInd_Cb == nullptr) ||
+      (callbacks.pL2CA_DataInd_Cb == nullptr) ||
+      (callbacks.pL2CA_DisconnectInd_Cb == nullptr)) {
     LOG_ERROR("%s Invalid classic callbacks psm:%hd", __func__, client_psm);
     return 0;
   }
@@ -54,9 +52,10 @@ uint16_t bluetooth::shim::L2CA_Register(uint16_t client_psm,
   /**
    * Check if this is a registration for an outgoing-only connection.
    */
-  bool is_outgoing_connection_only = callbacks->pL2CA_ConnectInd_Cb == nullptr;
-  uint16_t psm = shim_l2cap.ConvertClientToRealPsm(client_psm,
-                                                   is_outgoing_connection_only);
+  const bool is_outgoing_connection_only =
+      callbacks.pL2CA_ConnectInd_Cb == nullptr;
+  const uint16_t psm = shim_l2cap.ConvertClientToRealPsm(
+      client_psm, is_outgoing_connection_only);
 
   if (shim_l2cap.Classic().IsPsmRegistered(psm)) {
     LOG_ERROR("%s Already registered classic client_psm:%hd psm:%hd", __func__,
@@ -144,9 +143,9 @@ bool bluetooth::shim::L2CA_DisconnectRsp(uint16_t cid) {
 /**
  * Le Connection Oriented Channel APIs
  */
-uint16_t bluetooth::shim::L2CA_RegisterLECoc(uint16_t psm,
-                                             tL2CAP_APPL_INFO* callbacks) {
-  LOG_INFO("UNIMPLEMENTED %s psm:%hd callbacks:%p", __func__, psm, callbacks);
+uint16_t bluetooth::shim::L2CA_RegisterLECoc(
+    uint16_t psm, const tL2CAP_APPL_INFO& callbacks) {
+  LOG_INFO("UNIMPLEMENTED %s psm:%hd", __func__, psm);
   return 0;
 }
 
@@ -179,26 +178,9 @@ bool bluetooth::shim::L2CA_GetPeerLECocConfig(uint16_t lcid,
   return false;
 }
 
-/**
- * Channel Data Writes
- */
-bool bluetooth::shim::L2CA_SetConnectionCallbacks(
-    uint16_t cid, const tL2CAP_APPL_INFO* callbacks) {
-  LOG_INFO("Unsupported API %s", __func__);
-  return false;
-}
-
 uint8_t bluetooth::shim::L2CA_DataWrite(uint16_t cid, BT_HDR* p_data) {
   bool write_success = shim_l2cap.Write(cid, p_data);
   return write_success ? L2CAP_DW_SUCCESS : L2CAP_DW_FAILED;
-}
-
-/**
- * L2cap Layer APIs
- */
-uint8_t bluetooth::shim::L2CA_SetDesireRole(uint8_t new_role) {
-  LOG_INFO("UNIMPLEMENTED %s", __func__);
-  return 0;
 }
 
 /**
@@ -283,7 +265,7 @@ struct LeFixedChannelHelper {
 
     (freg_.pL2CA_FixedConn_Cb)(cid_, address, true, 0, BT_TRANSPORT_LE);
     bluetooth::shim::Btm::StoreAddressType(
-        address, static_cast<uint8_t>(device.GetAddressType()));
+        address, static_cast<tBLE_ADDR_TYPE>(device.GetAddressType()));
   }
 
   void on_incoming_data(bluetooth::hci::AddressWithType remote) {
@@ -386,15 +368,6 @@ bool bluetooth::shim::L2CA_ConnectFixedChnl(uint16_t cid,
   return bluetooth::shim::L2CA_ConnectFixedChnl(cid, rem_bda);
 }
 
-static std::unique_ptr<bluetooth::packet::RawBuilder> MakeUniquePacket(
-    const uint8_t* data, size_t len) {
-  bluetooth::packet::RawBuilder builder;
-  std::vector<uint8_t> bytes(data, data + len);
-  auto payload = std::make_unique<bluetooth::packet::RawBuilder>();
-  payload->AddOctets(bytes);
-  return payload;
-}
-
 uint16_t bluetooth::shim::L2CA_SendFixedChnlData(uint16_t cid,
                                                  const RawAddress& rem_bda,
                                                  BT_HDR* p_buf) {
@@ -432,12 +405,6 @@ bool bluetooth::shim::L2CA_RemoveFixedChnl(uint16_t cid,
  */
 bool bluetooth::shim::L2CA_GetRemoteCid(uint16_t lcid, uint16_t* rcid) {
   return shim_l2cap.GetRemoteCid(lcid, rcid);
-}
-
-bool bluetooth::shim::L2CA_SetIdleTimeout(uint16_t cid, uint16_t timeout,
-                                          bool is_global) {
-  LOG_INFO("UNIMPLEMENTED %s", __func__);
-  return false;
 }
 
 bool bluetooth::shim::L2CA_SetTxPriority(uint16_t cid,
