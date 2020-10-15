@@ -54,6 +54,49 @@ static void l2c_csm_w4_l2ca_disconnect_rsp(tL2C_CCB* p_ccb, uint16_t event,
 
 static const char* l2c_csm_get_event_name(uint16_t event);
 
+// Send a connect response with result OK and adjust the state machine
+static void l2c_csm_send_connect_rsp(tL2C_CCB* p_ccb) {
+  l2c_csm_execute(p_ccb, L2CEVT_L2CA_CONNECT_RSP, NULL);
+}
+
+// Send a config request and adjust the state machine
+static void l2c_csm_send_config_req(tL2C_CCB* p_ccb) {
+  tL2CAP_CFG_INFO config{};
+  config.mtu_present = true;
+  config.mtu = p_ccb->p_rcb->my_mtu;
+  if (p_ccb->p_rcb->ertm_info.preferred_mode != L2CAP_FCR_BASIC_MODE) {
+    config.fcr_present = true;
+    config.fcr = kDefaultErtmOptions;
+  }
+  p_ccb->our_cfg = config;
+  l2c_csm_execute(p_ccb, L2CEVT_L2CA_CONFIG_REQ, &config);
+}
+
+// Send a config response with result OK and adjust the state machine
+static void l2c_csm_send_config_rsp_ok(tL2C_CCB* p_ccb) {
+  tL2CAP_CFG_INFO config{};
+  config.result = L2CAP_CFG_OK;
+  l2c_csm_execute(p_ccb, L2CEVT_L2CA_CONFIG_RSP, &config);
+}
+
+static void l2c_csm_send_disconnect_rsp(tL2C_CCB* p_ccb) {
+  l2c_csm_execute(p_ccb, L2CEVT_L2CA_DISCONNECT_RSP, NULL);
+}
+
+static void l2c_csm_indicate_connection_open(tL2C_CCB* p_ccb) {
+  if (p_ccb->connection_initiator == L2CAP_INITIATOR_LOCAL) {
+    (*p_ccb->p_rcb->api.pL2CA_ConnectCfm_Cb)(p_ccb->local_cid, L2CAP_CONN_OK);
+  } else {
+    (*p_ccb->p_rcb->api.pL2CA_ConnectInd_Cb)(
+        p_ccb->p_lcb->remote_bd_addr, p_ccb->local_cid, p_ccb->p_rcb->psm,
+        p_ccb->remote_id);
+  }
+  if (p_ccb->chnl_state == CST_OPEN && !p_ccb->p_lcb->is_transport_ble()) {
+    (*p_ccb->p_rcb->api.pL2CA_ConfigCfm_Cb)(
+        p_ccb->local_cid, p_ccb->connection_initiator, &p_ccb->peer_cfg);
+  }
+}
+
 /*******************************************************************************
  *
  * Function         l2c_csm_execute
@@ -128,7 +171,6 @@ static void l2c_csm_closed(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
   tL2C_CONN_INFO* p_ci = (tL2C_CONN_INFO*)p_data;
   uint16_t local_cid = p_ccb->local_cid;
   tL2CA_DISCONNECT_IND_CB* disconnect_ind;
-  tL2CA_CONNECT_CFM_CB* connect_cfm;
 
   if (p_ccb->p_rcb == NULL) {
     L2CAP_TRACE_ERROR("L2CAP - LCID: 0x%04x  st: CLOSED  evt: %s p_rcb == NULL",
@@ -137,7 +179,6 @@ static void l2c_csm_closed(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
   }
 
   disconnect_ind = p_ccb->p_rcb->api.pL2CA_DisconnectInd_Cb;
-  connect_cfm = p_ccb->p_rcb->api.pL2CA_ConnectCfm_Cb;
 
   L2CAP_TRACE_EVENT("L2CAP - LCID: 0x%04x  st: CLOSED  evt: %s",
                     p_ccb->local_cid, l2c_csm_get_event_name(event));
@@ -168,15 +209,13 @@ static void l2c_csm_closed(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       if (p_ci->status == HCI_ERR_CONNECTION_EXISTS) {
         btm_acl_notif_conn_collision(p_ccb->p_lcb->remote_bd_addr);
       } else {
-        L2CAP_TRACE_API(
-            "L2CAP - Calling ConnectCfm_Cb(), CID: 0x%04x  Status: %d",
-            p_ccb->local_cid, p_ci->status);
         l2cu_release_ccb(p_ccb);
-        (*connect_cfm)(local_cid, p_ci->status);
+        (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid, L2CAP_CONN_OTHER_ERROR);
       }
       break;
 
-    case L2CEVT_L2CA_CONNECT_REQ: /* API connect request  */
+    case L2CEVT_L2CA_CREDIT_BASED_CONNECT_REQ: /* API connect request  */
+    case L2CEVT_L2CA_CONNECT_REQ:
       if (p_ccb->p_lcb->transport == BT_TRANSPORT_LE) {
         p_ccb->chnl_state = CST_ORIG_W4_SEC_COMP;
         l2ble_sec_access_req(p_ccb->p_lcb->remote_bd_addr, p_ccb->p_rcb->psm,
@@ -209,8 +248,8 @@ static void l2c_csm_closed(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
         /* Need to have at least one compatible channel to continue */
         if (!l2c_fcr_chk_chan_modes(p_ccb)) {
           l2cu_release_ccb(p_ccb);
-          (*p_ccb->p_rcb->api.pL2CA_ConnectCfm_Cb)(local_cid,
-                                                   L2CAP_CONN_NO_LINK);
+          (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid,
+                                              L2CAP_CONN_OTHER_ERROR);
         } else {
           l2cu_send_peer_connect_req(p_ccb);
           alarm_set_on_mloop(p_ccb->l2c_ccb_timer,
@@ -221,14 +260,12 @@ static void l2c_csm_closed(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       break;
 
     case L2CEVT_SEC_COMP_NEG: /* something is really bad with security */
-      L2CAP_TRACE_API(
-          "L2CAP - Calling ConnectCfm_Cb(), CID: 0x%04x  Status: %d",
-          p_ccb->local_cid, L2CAP_CONN_TIMEOUT);
       l2cu_release_ccb(p_ccb);
-      (*connect_cfm)(local_cid, L2CAP_CONN_SECURITY_BLOCK);
+      (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid, L2CAP_CONN_OTHER_ERROR);
       break;
 
-    case L2CEVT_L2CAP_CONNECT_REQ: /* Peer connect request */
+    case L2CEVT_L2CAP_CREDIT_BASED_CONNECT_REQ: /* Peer connect request */
+    case L2CEVT_L2CAP_CONNECT_REQ:
       /* stop link timer to avoid race condition between A2MP, Security, and
        * L2CAP */
       alarm_cancel(p_ccb->p_lcb->l2c_lcb_timer);
@@ -240,13 +277,21 @@ static void l2c_csm_closed(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
             &l2c_link_sec_comp2, p_ccb);
 
         switch (result) {
+          case L2CAP_LE_RESULT_INSUFFICIENT_AUTHORIZATION:
+          case L2CAP_LE_RESULT_UNACCEPTABLE_PARAMETERS:
+          case L2CAP_LE_RESULT_INVALID_PARAMETERS:
           case L2CAP_LE_RESULT_INSUFFICIENT_AUTHENTICATION:
           case L2CAP_LE_RESULT_INSUFFICIENT_ENCRYP_KEY_SIZE:
           case L2CAP_LE_RESULT_INSUFFICIENT_ENCRYP:
             l2cu_reject_ble_connection(p_ccb, p_ccb->remote_id, result);
             l2cu_release_ccb(p_ccb);
             break;
-            // TODO: Handle the other return codes
+          case L2CAP_LE_RESULT_CONN_OK:
+          case L2CAP_LE_RESULT_NO_PSM:
+          case L2CAP_LE_RESULT_NO_RESOURCES:
+          case L2CAP_LE_RESULT_INVALID_SOURCE_CID:
+          case L2CAP_LE_RESULT_SOURCE_CID_ALREADY_ALLOCATED:
+            break;
         }
       } else {
         /* Cancel sniff mode if needed */
@@ -271,11 +316,8 @@ static void l2c_csm_closed(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       break;
 
     case L2CEVT_TIMEOUT:
-      L2CAP_TRACE_API(
-          "L2CAP - Calling ConnectCfm_Cb(), CID: 0x%04x  Status: %d",
-          p_ccb->local_cid, L2CAP_CONN_TIMEOUT);
       l2cu_release_ccb(p_ccb);
-      (*connect_cfm)(local_cid, L2CAP_CONN_TIMEOUT);
+      (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid, L2CAP_CONN_OTHER_ERROR);
       break;
 
     case L2CEVT_L2CAP_DATA:      /* Peer data packet rcvd    */
@@ -303,7 +345,6 @@ static void l2c_csm_orig_w4_sec_comp(tL2C_CCB* p_ccb, uint16_t event,
                                      void* p_data) {
   tL2CA_DISCONNECT_IND_CB* disconnect_ind =
       p_ccb->p_rcb->api.pL2CA_DisconnectInd_Cb;
-  tL2CA_CONNECT_CFM_CB* connect_cfm = p_ccb->p_rcb->api.pL2CA_ConnectCfm_Cb;
   uint16_t local_cid = p_ccb->local_cid;
 
   L2CAP_TRACE_EVENT(
@@ -346,7 +387,8 @@ static void l2c_csm_orig_w4_sec_comp(tL2C_CCB* p_ccb, uint16_t event,
           /* Need to have at least one compatible channel to continue */
           if (!l2c_fcr_chk_chan_modes(p_ccb)) {
             l2cu_release_ccb(p_ccb);
-            (*connect_cfm)(local_cid, L2CAP_CONN_NO_LINK);
+            (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid,
+                                                L2CAP_CONN_OTHER_ERROR);
           } else {
             alarm_set_on_mloop(p_ccb->l2c_ccb_timer,
                                L2CAP_CHNL_CONNECT_TIMEOUT_MS,
@@ -358,10 +400,6 @@ static void l2c_csm_orig_w4_sec_comp(tL2C_CCB* p_ccb, uint16_t event,
       break;
 
     case L2CEVT_SEC_COMP_NEG:
-      L2CAP_TRACE_API(
-          "L2CAP - Calling ConnectCfm_Cb(), CID: 0x%04x  Status: %d",
-          p_ccb->local_cid, HCI_ERR_AUTH_FAILURE);
-
       /* If last channel immediately disconnect the ACL for better security.
          Also prevents a race condition between BTM and L2CAP */
       if ((p_ccb == p_ccb->p_lcb->ccb_queue.p_first_ccb) &&
@@ -370,7 +408,7 @@ static void l2c_csm_orig_w4_sec_comp(tL2C_CCB* p_ccb, uint16_t event,
       }
 
       l2cu_release_ccb(p_ccb);
-      (*connect_cfm)(local_cid, HCI_ERR_AUTH_FAILURE);
+      (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid, L2CAP_CONN_OTHER_ERROR);
       break;
 
     case L2CEVT_L2CA_DATA_WRITE: /* Upper layer data to send */
@@ -419,12 +457,26 @@ static void l2c_csm_term_w4_sec_comp(tL2C_CCB* p_ccb, uint16_t event,
         /* Don't need to get info from peer or already retrieved so continue */
         alarm_set_on_mloop(p_ccb->l2c_ccb_timer, L2CAP_CHNL_CONNECT_TIMEOUT_MS,
                            l2c_ccb_timer_timeout, p_ccb);
-        L2CAP_TRACE_API("L2CAP - Calling Connect_Ind_Cb(), CID: 0x%04x",
-                        p_ccb->local_cid);
 
-        (*p_ccb->p_rcb->api.pL2CA_ConnectInd_Cb)(
-            p_ccb->p_lcb->remote_bd_addr, p_ccb->local_cid, p_ccb->p_rcb->psm,
-            p_ccb->remote_id);
+        l2c_csm_send_connect_rsp(p_ccb);
+        if (p_ccb->p_lcb->transport != BT_TRANSPORT_LE) {
+          l2c_csm_send_config_req(p_ccb);
+        } else {
+          if (p_ccb->ecoc) {
+            L2CAP_TRACE_API(
+                "L2CAP - Calling CreditBasedConnect_Ind_Cb(), num of cids: %d",
+                p_ccb->p_lcb->pending_ecoc_connection_cids.size());
+
+            (*p_ccb->p_rcb->api.pL2CA_CreditBasedConnectInd_Cb)(
+                p_ccb->p_lcb->remote_bd_addr,
+                p_ccb->p_lcb->pending_ecoc_connection_cids, p_ccb->p_rcb->psm,
+                p_ccb->peer_cfg.mtu, p_ccb->remote_id);
+          } else {
+            L2CAP_TRACE_API("L2CAP - Calling Connect_Ind_Cb(), CID: 0x%04x",
+                            p_ccb->local_cid);
+            l2c_csm_indicate_connection_open(p_ccb);
+          }
+        }
       } else {
         /*
         ** L2CAP Connect Response will be sent out by 3 sec timer expiration
@@ -505,8 +557,10 @@ static void l2c_csm_w4_l2cap_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
   tL2C_CONN_INFO* p_ci = (tL2C_CONN_INFO*)p_data;
   tL2CA_DISCONNECT_IND_CB* disconnect_ind =
       p_ccb->p_rcb->api.pL2CA_DisconnectInd_Cb;
-  tL2CA_CONNECT_CFM_CB* connect_cfm = p_ccb->p_rcb->api.pL2CA_ConnectCfm_Cb;
+  tL2CA_CREDIT_BASED_CONNECT_CFM_CB* credit_based_connect_cfm =
+      p_ccb->p_rcb->api.pL2CA_CreditBasedConnectCfm_Cb;
   uint16_t local_cid = p_ccb->local_cid;
+  tL2C_LCB* p_lcb = p_ccb->p_lcb;
 
   L2CAP_TRACE_EVENT("L2CAP - LCID: 0x%04x  st: W4_L2CAP_CON_RSP  evt: %s",
                     p_ccb->local_cid, l2c_csm_get_event_name(event));
@@ -535,6 +589,7 @@ static void l2c_csm_w4_l2cap_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
         /* Connection is completed */
         alarm_cancel(p_ccb->l2c_ccb_timer);
         p_ccb->chnl_state = CST_OPEN;
+        l2c_csm_indicate_connection_open(p_ccb);
       } else {
         p_ccb->chnl_state = CST_CONFIG;
         alarm_set_on_mloop(p_ccb->l2c_ccb_timer, L2CAP_CHNL_CFG_TIMEOUT_MS,
@@ -543,7 +598,7 @@ static void l2c_csm_w4_l2cap_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
       L2CAP_TRACE_API("L2CAP - Calling Connect_Cfm_Cb(), CID: 0x%04x, Success",
                       p_ccb->local_cid);
 
-      (*p_ccb->p_rcb->api.pL2CA_ConnectCfm_Cb)(local_cid, L2CAP_CONN_OK);
+      l2c_csm_send_config_req(p_ccb);
       break;
 
     case L2CEVT_L2CAP_CONNECT_RSP_PND: /* Got peer connect pending */
@@ -553,19 +608,54 @@ static void l2c_csm_w4_l2cap_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
                          l2c_ccb_timer_timeout, p_ccb);
       break;
 
+    case L2CEVT_L2CAP_CREDIT_BASED_CONNECT_RSP:
+      alarm_cancel(p_ccb->l2c_ccb_timer);
+      p_ccb->chnl_state = CST_OPEN;
+      L2CAP_TRACE_API(
+          "L2CAP - Calling credit_based_connect_cfm(),"
+          "cid %d, result 0x%04x",
+          p_ccb->local_cid, L2CAP_CONN_OK);
+
+      (*credit_based_connect_cfm)(p_lcb->remote_bd_addr, p_ccb->local_cid,
+                                  p_ci->peer_mtu, L2CAP_CONN_OK);
+      break;
+
+    case L2CEVT_L2CAP_CREDIT_BASED_CONNECT_RSP_NEG:
+      L2CAP_TRACE_API(
+          "L2CAP - Calling pL2CA_Error_Cb(),"
+          "cid %d, result 0x%04x",
+          local_cid, p_ci->l2cap_result);
+      (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid, p_ci->l2cap_result);
+
+      l2cu_release_ccb(p_ccb);
+      break;
+
     case L2CEVT_L2CAP_CONNECT_RSP_NEG: /* Peer rejected connection */
       LOG(WARNING) << __func__ << ": L2CAP connection rejected, lcid="
                    << loghex(p_ccb->local_cid)
                    << ", reason=" << loghex(p_ci->l2cap_result);
       l2cu_release_ccb(p_ccb);
-      (*connect_cfm)(local_cid, p_ci->l2cap_result);
+      (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid, L2CAP_CONN_OTHER_ERROR);
       break;
 
     case L2CEVT_TIMEOUT:
-      LOG(WARNING) << __func__ << ": L2CAP connection timeout, lcid="
-                   << loghex(p_ccb->local_cid);
-      l2cu_release_ccb(p_ccb);
-      (*connect_cfm)(local_cid, L2CAP_CONN_TIMEOUT);
+      LOG(WARNING) << __func__ << ": L2CAP connection timeout";
+
+      if (p_ccb->ecoc) {
+        for (uint16_t cid : p_lcb->pending_ecoc_connection_cids) {
+          tL2C_CCB* temp_p_ccb = l2cu_find_ccb_by_cid(p_lcb, cid);
+          LOG(WARNING) << __func__ << ": lcid= " << loghex(cid);
+          (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(p_ccb->local_cid,
+                                              L2CAP_CONN_TIMEOUT);
+          l2cu_release_ccb(temp_p_ccb);
+        }
+        p_lcb->pending_ecoc_connection_cids.clear();
+
+      } else {
+        LOG(WARNING) << __func__ << ": lcid= " << loghex(p_ccb->local_cid);
+        l2cu_release_ccb(p_ccb);
+        (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid, L2CAP_CONN_OTHER_ERROR);
+      }
       break;
 
     case L2CEVT_L2CA_DISCONNECT_REQ: /* Upper wants to disconnect */
@@ -577,14 +667,7 @@ static void l2c_csm_w4_l2cap_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
                            L2CAP_CHNL_DISCONNECT_TIMEOUT_MS,
                            l2c_ccb_timer_timeout, p_ccb);
       } else {
-        tL2CA_DISCONNECT_CFM_CB* disconnect_cfm =
-            p_ccb->p_rcb->api.pL2CA_DisconnectCfm_Cb;
         l2cu_release_ccb(p_ccb);
-        if (disconnect_cfm) {
-          L2CAP_TRACE_API("%s: L2CAP - Calling DisconnectCfm_Cb(), CID: 0x%04x",
-                          __func__, local_cid);
-          (*disconnect_cfm)(local_cid, L2CAP_CONN_NO_LINK);
-        }
       }
       break;
 
@@ -597,7 +680,7 @@ static void l2c_csm_w4_l2cap_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
       /* Need to have at least one compatible channel to continue */
       if (!l2c_fcr_chk_chan_modes(p_ccb)) {
         l2cu_release_ccb(p_ccb);
-        (*connect_cfm)(local_cid, L2CAP_CONN_NO_LINK);
+        (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(local_cid, L2CAP_CONN_OTHER_ERROR);
       } else {
         /* We have feature info, so now send peer connect request */
         alarm_set_on_mloop(p_ccb->l2c_ccb_timer, L2CAP_CHNL_CONNECT_TIMEOUT_MS,
@@ -637,6 +720,28 @@ static void l2c_csm_w4_l2ca_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
       (*disconnect_ind)(local_cid, false);
       break;
 
+    case L2CEVT_L2CA_CREDIT_BASED_CONNECT_RSP:
+      p_ci = (tL2C_CONN_INFO*)p_data;
+      if (p_ccb->p_lcb && p_ccb->p_lcb->transport != BT_TRANSPORT_LE) {
+        L2CAP_TRACE_WARNING("LE link doesn't exist");
+        return;
+      }
+      l2cu_send_peer_credit_based_conn_res(p_ccb, p_ci->lcids,
+                                           p_ci->l2cap_result);
+      alarm_cancel(p_ccb->l2c_ccb_timer);
+
+      for (uint16_t cid : p_ccb->p_lcb->pending_ecoc_connection_cids) {
+        tL2C_CCB* temp_p_ccb = l2cu_find_ccb_by_cid(p_ccb->p_lcb, cid);
+        auto it = std::find(p_ci->lcids.begin(), p_ci->lcids.end(), cid);
+        if (it != p_ci->lcids.end()) {
+          temp_p_ccb->chnl_state = CST_OPEN;
+        } else {
+          l2cu_release_ccb(temp_p_ccb);
+        }
+      }
+      p_ccb->p_lcb->pending_ecoc_connection_cids.clear();
+
+      break;
     case L2CEVT_L2CA_CONNECT_RSP:
       p_ci = (tL2C_CONN_INFO*)p_data;
       if (p_ccb->p_lcb->transport == BT_TRANSPORT_LE) {
@@ -667,6 +772,19 @@ static void l2c_csm_w4_l2ca_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
       }
       break;
 
+    case L2CEVT_L2CA_CREDIT_BASED_CONNECT_RSP_NEG:
+      p_ci = (tL2C_CONN_INFO*)p_data;
+      if (p_ccb->p_lcb && p_ccb->p_lcb->transport == BT_TRANSPORT_LE) {
+        l2cu_send_peer_credit_based_conn_res(p_ccb, p_ci->lcids,
+                                             p_ci->l2cap_result);
+      }
+      alarm_cancel(p_ccb->l2c_ccb_timer);
+      for (uint16_t cid : p_ccb->p_lcb->pending_ecoc_connection_cids) {
+        tL2C_CCB* temp_p_ccb = l2cu_find_ccb_by_cid(p_ccb->p_lcb, cid);
+        l2cu_release_ccb(temp_p_ccb);
+      }
+      p_ccb->p_lcb->pending_ecoc_connection_cids.clear();
+      break;
     case L2CEVT_L2CA_CONNECT_RSP_NEG:
       p_ci = (tL2C_CONN_INFO*)p_data;
       if (p_ccb->p_lcb->transport == BT_TRANSPORT_LE)
@@ -705,9 +823,8 @@ static void l2c_csm_w4_l2ca_connect_rsp(tL2C_CCB* p_ccb, uint16_t event,
       L2CAP_TRACE_API("L2CAP - Calling Connect_Ind_Cb(), CID: 0x%04x",
                       p_ccb->local_cid);
 
-      (*p_ccb->p_rcb->api.pL2CA_ConnectInd_Cb)(
-          p_ccb->p_lcb->remote_bd_addr, p_ccb->local_cid, p_ccb->p_rcb->psm,
-          p_ccb->remote_id);
+      l2c_csm_send_connect_rsp(p_ccb);
+      l2c_csm_send_config_req(p_ccb);
       break;
   }
 }
@@ -728,6 +845,9 @@ static void l2c_csm_config(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       p_ccb->p_rcb->api.pL2CA_DisconnectInd_Cb;
   uint16_t local_cid = p_ccb->local_cid;
   uint8_t cfg_result;
+  tL2C_LCB* p_lcb = p_ccb->p_lcb;
+  tL2C_CCB* temp_p_ccb;
+  tL2CAP_LE_CFG_INFO* p_le_cfg = (tL2CAP_LE_CFG_INFO*)p_data;
 
   L2CAP_TRACE_EVENT("L2CAP - LCID: 0x%04x  st: CONFIG  evt: %s",
                     p_ccb->local_cid, l2c_csm_get_event_name(event));
@@ -741,14 +861,33 @@ static void l2c_csm_config(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       (*disconnect_ind)(local_cid, false);
       break;
 
-    case L2CEVT_L2CAP_CONFIG_REQ: /* Peer config request   */
+    case L2CEVT_L2CAP_CREDIT_BASED_RECONFIG_REQ:
+      /* For ecoc reconfig is handled below in l2c_ble. In case of success
+       * let us notify upper layer about the reconfig
+       */
+      L2CAP_TRACE_API("L2CAP - Calling LeReconfigCompleted_Cb(), CID: 0x%04x",
+                      p_ccb->local_cid);
 
+      (*p_ccb->p_rcb->api.pL2CA_CreditBasedReconfigCompleted_Cb)(
+          p_lcb->remote_bd_addr, p_ccb->local_cid, false, p_le_cfg);
+      break;
+    case L2CEVT_L2CAP_CONFIG_REQ: /* Peer config request   */
       cfg_result = l2cu_process_peer_cfg_req(p_ccb, p_cfg);
       if (cfg_result == L2CAP_PEER_CFG_OK) {
         L2CAP_TRACE_EVENT(
             "L2CAP - Calling Config_Req_Cb(), CID: 0x%04x, C-bit %d",
             p_ccb->local_cid, (p_cfg->flags & L2CAP_CFG_FLAGS_MASK_CONT));
-        (*p_ccb->p_rcb->api.pL2CA_ConfigInd_Cb)(p_ccb->local_cid, p_cfg);
+        l2c_csm_send_config_rsp_ok(p_ccb);
+        if (p_ccb->config_done & OB_CFG_DONE) {
+          if (p_ccb->remote_config_rsp_result == L2CAP_CFG_OK) {
+            l2c_csm_indicate_connection_open(p_ccb);
+          } else {
+            if (p_ccb->connection_initiator == L2CAP_INITIATOR_LOCAL) {
+              (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(p_ccb->local_cid,
+                                                  L2CAP_CFG_FAILED_NO_REASON);
+            }
+          }
+        }
       } else if (cfg_result == L2CAP_PEER_CFG_DISCONNECT) {
         /* Disconnect if channels are incompatible */
         L2CAP_TRACE_EVENT("L2CAP - incompatible configurations disconnect");
@@ -761,61 +900,75 @@ static void l2c_csm_config(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       }
       break;
 
+    case L2CEVT_L2CAP_CREDIT_BASED_RECONFIG_RSP:
+      p_ccb->config_done |= OB_CFG_DONE;
+      p_ccb->config_done |= RECONFIG_FLAG;
+      p_ccb->chnl_state = CST_OPEN;
+      alarm_cancel(p_ccb->l2c_ccb_timer);
+
+      L2CAP_TRACE_API("L2CAP - Calling Config_Rsp_Cb(), CID: 0x%04x",
+                      p_ccb->local_cid);
+
+      p_ccb->p_rcb->api.pL2CA_CreditBasedReconfigCompleted_Cb(
+          p_lcb->remote_bd_addr, p_ccb->local_cid, true, p_le_cfg);
+
+      break;
     case L2CEVT_L2CAP_CONFIG_RSP: /* Peer config response  */
       l2cu_process_peer_cfg_rsp(p_ccb, p_cfg);
 
-      if (p_cfg->result != L2CAP_CFG_PENDING) {
-        /* TBD: When config options grow beyong minimum MTU (48 bytes)
-         *      logic needs to be added to handle responses with
-         *      continuation bit set in flags field.
-         *       1. Send additional config request out until C-bit is cleared in
-         * response
+      /* TBD: When config options grow beyong minimum MTU (48 bytes)
+       *      logic needs to be added to handle responses with
+       *      continuation bit set in flags field.
+       *       1. Send additional config request out until C-bit is cleared in
+       * response
+       */
+      p_ccb->config_done |= OB_CFG_DONE;
+
+      if (p_ccb->config_done & IB_CFG_DONE) {
+        /* Verify two sides are in compatible modes before continuing */
+        if (p_ccb->our_cfg.fcr.mode != p_ccb->peer_cfg.fcr.mode) {
+          l2cu_send_peer_disc_req(p_ccb);
+          L2CAP_TRACE_WARNING(
+              "L2CAP - Calling Disconnect_Ind_Cb(Incompatible CFG), CID: "
+              "0x%04x  No Conf Needed",
+              p_ccb->local_cid);
+          l2cu_release_ccb(p_ccb);
+          (*disconnect_ind)(local_cid, false);
+          break;
+        }
+
+        p_ccb->config_done |= RECONFIG_FLAG;
+        p_ccb->chnl_state = CST_OPEN;
+        l2c_link_adjust_chnl_allocation();
+        alarm_cancel(p_ccb->l2c_ccb_timer);
+
+        /* If using eRTM and waiting for an ACK, restart the ACK timer */
+        if (p_ccb->fcrb.wait_ack) l2c_fcr_start_timer(p_ccb);
+
+        /*
+         ** check p_ccb->our_cfg.fcr.mon_tout and
+         *p_ccb->our_cfg.fcr.rtrans_tout
+         ** we may set them to zero when sending config request during
+         *renegotiation
          */
-        p_ccb->config_done |= OB_CFG_DONE;
+        if ((p_ccb->our_cfg.fcr.mode == L2CAP_FCR_ERTM_MODE) &&
+            ((p_ccb->our_cfg.fcr.mon_tout == 0) ||
+             (p_ccb->our_cfg.fcr.rtrans_tout))) {
+          l2c_fcr_adj_monitor_retran_timeout(p_ccb);
+        }
 
-        if (p_ccb->config_done & IB_CFG_DONE) {
-          /* Verify two sides are in compatible modes before continuing */
-          if (p_ccb->our_cfg.fcr.mode != p_ccb->peer_cfg.fcr.mode) {
-            l2cu_send_peer_disc_req(p_ccb);
-            L2CAP_TRACE_WARNING(
-                "L2CAP - Calling Disconnect_Ind_Cb(Incompatible CFG), CID: "
-                "0x%04x  No Conf Needed",
-                p_ccb->local_cid);
-            l2cu_release_ccb(p_ccb);
-            (*disconnect_ind)(local_cid, false);
-            break;
-          }
-
-          p_ccb->config_done |= RECONFIG_FLAG;
-          p_ccb->chnl_state = CST_OPEN;
-          l2c_link_adjust_chnl_allocation();
-          alarm_cancel(p_ccb->l2c_ccb_timer);
-
-          /* If using eRTM and waiting for an ACK, restart the ACK timer */
-          if (p_ccb->fcrb.wait_ack) l2c_fcr_start_timer(p_ccb);
-
-          /*
-          ** check p_ccb->our_cfg.fcr.mon_tout and
-          *p_ccb->our_cfg.fcr.rtrans_tout
-          ** we may set them to zero when sending config request during
-          *renegotiation
-          */
-          if ((p_ccb->our_cfg.fcr.mode == L2CAP_FCR_ERTM_MODE) &&
-              ((p_ccb->our_cfg.fcr.mon_tout == 0) ||
-               (p_ccb->our_cfg.fcr.rtrans_tout))) {
-            l2c_fcr_adj_monitor_retran_timeout(p_ccb);
-          }
-
-          /* See if we can forward anything on the hold queue */
-          if (!fixed_queue_is_empty(p_ccb->xmit_hold_q)) {
-            l2c_link_check_send_pkts(p_ccb->p_lcb, 0, NULL);
-          }
+        /* See if we can forward anything on the hold queue */
+        if (!fixed_queue_is_empty(p_ccb->xmit_hold_q)) {
+          l2c_link_check_send_pkts(p_ccb->p_lcb, 0, NULL);
         }
       }
 
       L2CAP_TRACE_API("L2CAP - Calling Config_Rsp_Cb(), CID: 0x%04x",
                       p_ccb->local_cid);
-      (*p_ccb->p_rcb->api.pL2CA_ConfigCfm_Cb)(p_ccb->local_cid, p_cfg);
+      p_ccb->remote_config_rsp_result = p_cfg->result;
+      if (p_ccb->config_done & IB_CFG_DONE) {
+        l2c_csm_indicate_connection_open(p_ccb);
+      }
       break;
 
     case L2CEVT_L2CAP_CONFIG_RSP_NEG: /* Peer config error rsp */
@@ -827,7 +980,10 @@ static void l2c_csm_config(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
         L2CAP_TRACE_API(
             "L2CAP - Calling Config_Rsp_Cb(), CID: 0x%04x, Failure: %d",
             p_ccb->local_cid, p_cfg->result);
-        (*p_ccb->p_rcb->api.pL2CA_ConfigCfm_Cb)(p_ccb->local_cid, p_cfg);
+        if (p_ccb->connection_initiator == L2CAP_INITIATOR_LOCAL) {
+          (*p_ccb->p_rcb->api.pL2CA_Error_Cb)(p_ccb->local_cid,
+                                              L2CAP_CFG_FAILED_NO_REASON);
+        }
       }
       break;
 
@@ -839,8 +995,14 @@ static void l2c_csm_config(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
           "L2CAP - Calling Disconnect_Ind_Cb(), CID: 0x%04x  Conf Needed",
           p_ccb->local_cid);
       (*p_ccb->p_rcb->api.pL2CA_DisconnectInd_Cb)(p_ccb->local_cid, true);
+      l2c_csm_send_disconnect_rsp(p_ccb);
       break;
 
+    case L2CEVT_L2CA_CREDIT_BASED_RECONFIG_REQ:
+      l2cu_send_credit_based_reconfig_req(p_ccb, (tL2CAP_LE_CFG_INFO*)p_data);
+      alarm_set_on_mloop(p_ccb->l2c_ccb_timer, L2CAP_CHNL_CFG_TIMEOUT_MS,
+                         l2c_ccb_timer_timeout, p_ccb);
+      break;
     case L2CEVT_L2CA_CONFIG_REQ: /* Upper layer config req   */
       l2cu_process_our_cfg_req(p_ccb, p_cfg);
       l2cu_send_peer_config_req(p_ccb, p_cfg);
@@ -850,14 +1012,6 @@ static void l2c_csm_config(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
 
     case L2CEVT_L2CA_CONFIG_RSP: /* Upper layer config rsp   */
       l2cu_process_our_cfg_rsp(p_ccb, p_cfg);
-
-      /* Not finished if continuation flag is set */
-      if ((p_cfg->flags & L2CAP_CFG_FLAGS_MASK_CONT) ||
-          (p_cfg->result == L2CAP_CFG_PENDING)) {
-        /* Send intermediate response; remain in cfg state */
-        l2cu_send_peer_config_rsp(p_ccb, p_cfg);
-        break;
-      }
 
       /* Local config done; clear cached configuration in case reconfig takes
        * place later */
@@ -898,12 +1052,6 @@ static void l2c_csm_config(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       }
       break;
 
-    case L2CEVT_L2CA_CONFIG_RSP_NEG: /* Upper layer config reject */
-      l2cu_send_peer_config_rsp(p_ccb, p_cfg);
-      alarm_set_on_mloop(p_ccb->l2c_ccb_timer, L2CAP_CHNL_CFG_TIMEOUT_MS,
-                         l2c_ccb_timer_timeout, p_ccb);
-      break;
-
     case L2CEVT_L2CA_DISCONNECT_REQ: /* Upper wants to disconnect */
       l2cu_send_peer_disc_req(p_ccb);
       p_ccb->chnl_state = CST_W4_L2CAP_DISCONNECT_RSP;
@@ -939,6 +1087,21 @@ static void l2c_csm_config(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       break;
 
     case L2CEVT_TIMEOUT:
+      if (p_ccb->ecoc) {
+        for (temp_p_ccb = p_lcb->ccb_queue.p_first_ccb; temp_p_ccb;
+             temp_p_ccb = temp_p_ccb->p_next_ccb) {
+          if ((temp_p_ccb->in_use) && (temp_p_ccb->reconfig_started)) {
+            (*temp_p_ccb->p_rcb->api.pL2CA_DisconnectInd_Cb)(
+                temp_p_ccb->local_cid, false);
+            l2cu_release_ccb(temp_p_ccb);
+          }
+        }
+
+        btsnd_hcic_disconnect(p_ccb->p_lcb->Handle(),
+                              HCI_ERR_CONN_CAUSE_LOCAL_HOST);
+        return;
+      }
+
       l2cu_send_peer_disc_req(p_ccb);
       L2CAP_TRACE_API(
           "L2CAP - Calling Disconnect_Ind_Cb(), CID: 0x%04x  No Conf Needed",
@@ -966,6 +1129,7 @@ static void l2c_csm_open(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
   uint8_t tempcfgdone;
   uint8_t cfg_result;
   uint16_t credit = 0;
+  tL2CAP_LE_CFG_INFO* p_le_cfg = (tL2CAP_LE_CFG_INFO*)p_data;
 
   L2CAP_TRACE_EVENT("L2CAP - LCID: 0x%04x  st: OPEN  evt: %s", p_ccb->local_cid,
                     l2c_csm_get_event_name(event));
@@ -978,6 +1142,17 @@ static void l2c_csm_open(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       l2cu_release_ccb(p_ccb);
       if (p_ccb->p_rcb)
         (*p_ccb->p_rcb->api.pL2CA_DisconnectInd_Cb)(local_cid, false);
+      break;
+
+    case L2CEVT_L2CAP_CREDIT_BASED_RECONFIG_REQ:
+      /* For ecoc reconfig is handled below in l2c_ble. In case of success
+       * let us notify upper layer about the reconfig
+       */
+      L2CAP_TRACE_API("L2CAP - Calling LeReconfigCompleted_Cb(), CID: 0x%04x",
+                      p_ccb->local_cid);
+
+      (*p_ccb->p_rcb->api.pL2CA_CreditBasedReconfigCompleted_Cb)(
+          p_ccb->p_lcb->remote_bd_addr, p_ccb->local_cid, false, p_le_cfg);
       break;
 
     case L2CEVT_L2CAP_CONFIG_REQ: /* Peer config request   */
@@ -994,6 +1169,7 @@ static void l2c_csm_open(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       cfg_result = l2cu_process_peer_cfg_req(p_ccb, p_cfg);
       if (cfg_result == L2CAP_PEER_CFG_OK) {
         (*p_ccb->p_rcb->api.pL2CA_ConfigInd_Cb)(p_ccb->local_cid, p_cfg);
+        l2c_csm_send_config_rsp_ok(p_ccb);
       }
 
       /* Error in config parameters: reset state and config flag */
@@ -1031,6 +1207,7 @@ static void l2c_csm_open(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
           "L2CAP - Calling Disconnect_Ind_Cb(), CID: 0x%04x  Conf Needed",
           p_ccb->local_cid);
       (*p_ccb->p_rcb->api.pL2CA_DisconnectInd_Cb)(p_ccb->local_cid, true);
+      l2c_csm_send_disconnect_rsp(p_ccb);
       break;
 
     case L2CEVT_L2CAP_DATA: /* Peer data packet rcvd    */
@@ -1066,13 +1243,20 @@ static void l2c_csm_open(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
       l2c_link_check_send_pkts(p_ccb->p_lcb, 0, NULL);
       break;
 
-    case L2CEVT_L2CA_CONFIG_REQ: /* Upper layer config req   */
+    case L2CEVT_L2CA_CREDIT_BASED_RECONFIG_REQ:
       p_ccb->chnl_state = CST_CONFIG;
-      p_ccb->config_done &= ~CFG_DONE_MASK;
-      l2cu_process_our_cfg_req(p_ccb, (tL2CAP_CFG_INFO*)p_data);
-      l2cu_send_peer_config_req(p_ccb, (tL2CAP_CFG_INFO*)p_data);
+      p_ccb->config_done &= ~OB_CFG_DONE;
+
+      l2cu_send_credit_based_reconfig_req(p_ccb, (tL2CAP_LE_CFG_INFO*)p_data);
+
       alarm_set_on_mloop(p_ccb->l2c_ccb_timer, L2CAP_CHNL_CFG_TIMEOUT_MS,
                          l2c_ccb_timer_timeout, p_ccb);
+      break;
+
+    case L2CEVT_L2CA_CONFIG_REQ: /* Upper layer config req   */
+      L2CAP_TRACE_ERROR(
+          "Dropping L2CAP re-config request because there is no usage and "
+          "should not be invoked");
       break;
 
     case L2CEVT_TIMEOUT:
@@ -1120,42 +1304,23 @@ static void l2c_csm_open(tL2C_CCB* p_ccb, uint16_t event, void* p_data) {
  ******************************************************************************/
 static void l2c_csm_w4_l2cap_disconnect_rsp(tL2C_CCB* p_ccb, uint16_t event,
                                             void* p_data) {
-  tL2CA_DISCONNECT_CFM_CB* disconnect_cfm =
-      p_ccb->p_rcb->api.pL2CA_DisconnectCfm_Cb;
-  uint16_t local_cid = p_ccb->local_cid;
-
   L2CAP_TRACE_EVENT("L2CAP - LCID: 0x%04x  st: W4_L2CAP_DISC_RSP  evt: %s",
                     p_ccb->local_cid, l2c_csm_get_event_name(event));
 
   switch (event) {
     case L2CEVT_L2CAP_DISCONNECT_RSP: /* Peer disconnect response */
       l2cu_release_ccb(p_ccb);
-      if (disconnect_cfm) {
-        L2CAP_TRACE_API("L2CAP - Calling DisconnectCfm_Cb(), CID: 0x%04x",
-                        local_cid);
-        (*disconnect_cfm)(local_cid, L2CAP_DISC_OK);
-      }
       break;
 
     case L2CEVT_L2CAP_DISCONNECT_REQ: /* Peer disconnect request  */
       l2cu_send_peer_disc_rsp(p_ccb->p_lcb, p_ccb->remote_id, p_ccb->local_cid,
                               p_ccb->remote_cid);
       l2cu_release_ccb(p_ccb);
-      if (disconnect_cfm) {
-        L2CAP_TRACE_API("L2CAP - Calling DisconnectCfm_Cb(), CID: 0x%04x",
-                        local_cid);
-        (*disconnect_cfm)(local_cid, L2CAP_DISC_OK);
-      }
       break;
 
     case L2CEVT_LP_DISCONNECT_IND: /* Link was disconnected */
     case L2CEVT_TIMEOUT:           /* Timeout */
       l2cu_release_ccb(p_ccb);
-      if (disconnect_cfm) {
-        L2CAP_TRACE_API("L2CAP - Calling DisconnectCfm_Cb(), CID: 0x%04x",
-                        local_cid);
-        (*disconnect_cfm)(local_cid, L2CAP_DISC_TIMEOUT);
-      }
       break;
 
     case L2CEVT_L2CAP_DATA:      /* Peer data packet rcvd    */
@@ -1275,8 +1440,6 @@ static const char* l2c_csm_get_event_name(uint16_t event) {
       return ("UPPER_LAYER_CONFIG_REQ");
     case L2CEVT_L2CA_CONFIG_RSP: /* Upper layer config response          */
       return ("UPPER_LAYER_CONFIG_RSP");
-    case L2CEVT_L2CA_CONFIG_RSP_NEG: /* Upper layer config response (failed) */
-      return ("UPPER_LAYER_CONFIG_RSP_NEG");
     case L2CEVT_L2CA_DISCONNECT_REQ: /* Upper layer disconnect request       */
       return ("UPPER_LAYER_DISCONNECT_REQ");
     case L2CEVT_L2CA_DISCONNECT_RSP: /* Upper layer disconnect response      */
@@ -1294,11 +1457,31 @@ static const char* l2c_csm_get_event_name(uint16_t event) {
     case L2CEVT_ACK_TIMEOUT:
       return ("L2CEVT_ACK_TIMEOUT");
     case L2CEVT_L2CA_SEND_FLOW_CONTROL_CREDIT: /* Upper layer send credit packet
-                                                  */
+                                                */
       return ("SEND_FLOW_CONTROL_CREDIT");
+    case L2CEVT_L2CA_CREDIT_BASED_CONNECT_REQ: /* Upper layer credit based
+                                                  connect request */
+      return ("SEND_CREDIT_BASED_CONNECT_REQ");
+    case L2CEVT_L2CA_CREDIT_BASED_RECONFIG_REQ: /* Upper layer credit based
+                                                   reconfig request */
+      return ("SEND_CREDIT_BASED_RECONFIG_REQ");
     case L2CEVT_L2CAP_RECV_FLOW_CONTROL_CREDIT: /* Peer send credit packet */
       return ("RECV_FLOW_CONTROL_CREDIT");
-
+    case L2CEVT_L2CAP_CREDIT_BASED_CONNECT_REQ: /* Peer send credit based
+                                                   connect request */
+      return ("RECV_CREDIT_BASED_CONNECT_REQ");
+    case L2CEVT_L2CAP_CREDIT_BASED_CONNECT_RSP: /* Peer send credit based
+                                                   connect response */
+      return ("RECV_CREDIT_BASED_CONNECT_RSP");
+    case L2CEVT_L2CAP_CREDIT_BASED_CONNECT_RSP_NEG: /* Peer send reject credit
+                                                       based connect response */
+      return ("RECV_CREDIT_BASED_CONNECT_RSP_NEG");
+    case L2CEVT_L2CAP_CREDIT_BASED_RECONFIG_REQ: /* Peer send credit based
+                                                    reconfig request */
+      return ("RECV_CREDIT_BASED_RECONFIG_REQ");
+    case L2CEVT_L2CAP_CREDIT_BASED_RECONFIG_RSP: /* Peer send credit based
+                                                    reconfig response */
+      return ("RECV_CREDIT_BASED_RECONFIG_RSP");
     default:
       return ("???? UNKNOWN EVENT");
   }

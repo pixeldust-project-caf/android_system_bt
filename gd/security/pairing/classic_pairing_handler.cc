@@ -26,26 +26,38 @@ namespace pairing {
 
 void ClassicPairingHandler::NotifyUiDisplayYesNo(uint32_t numeric_value) {
   ASSERT(user_interface_handler_ != nullptr);
-  user_interface_handler_->CallOn(
-      user_interface_, &UI::DisplayConfirmValue, *GetRecord()->GetPseudoAddress(), device_name_, numeric_value);
+  ConfirmationData data(*GetRecord()->GetPseudoAddress(), device_name_, numeric_value);
+  data.PutExtraData("remote_io_caps", hci::IoCapabilityText(remote_io_capability_));
+  data.PutExtraData("remote_auth_reqs", hci::AuthenticationRequirementsText(remote_authentication_requirements_));
+  data.PutExtraData("remote_oob_data_present", hci::OobDataPresentText(remote_oob_present_));
+  user_interface_handler_->CallOn(user_interface_, &UI::DisplayConfirmValue, data);
 }
 
 void ClassicPairingHandler::NotifyUiDisplayYesNo() {
   ASSERT(user_interface_handler_ != nullptr);
-  user_interface_handler_->CallOn(
-      user_interface_, &UI::DisplayYesNoDialog, *GetRecord()->GetPseudoAddress(), device_name_);
+  ConfirmationData data(*GetRecord()->GetPseudoAddress(), device_name_);
+  data.PutExtraData("remote_io_caps", hci::IoCapabilityText(remote_io_capability_));
+  data.PutExtraData("remote_auth_reqs", hci::AuthenticationRequirementsText(remote_authentication_requirements_));
+  data.PutExtraData("remote_oob_data_present", hci::OobDataPresentText(remote_oob_present_));
+  user_interface_handler_->CallOn(user_interface_, &UI::DisplayYesNoDialog, data);
 }
 
 void ClassicPairingHandler::NotifyUiDisplayPasskey(uint32_t passkey) {
   ASSERT(user_interface_handler_ != nullptr);
-  user_interface_handler_->CallOn(
-      user_interface_, &UI::DisplayPasskey, *GetRecord()->GetPseudoAddress(), device_name_, passkey);
+  ConfirmationData data(*GetRecord()->GetPseudoAddress(), device_name_, passkey);
+  data.PutExtraData("remote_io_caps", hci::IoCapabilityText(remote_io_capability_));
+  data.PutExtraData("remote_auth_reqs", hci::AuthenticationRequirementsText(remote_authentication_requirements_));
+  data.PutExtraData("remote_oob_data_present", hci::OobDataPresentText(remote_oob_present_));
+  user_interface_handler_->CallOn(user_interface_, &UI::DisplayPasskey, data);
 }
 
 void ClassicPairingHandler::NotifyUiDisplayPasskeyInput() {
   ASSERT(user_interface_handler_ != nullptr);
-  user_interface_handler_->CallOn(
-      user_interface_, &UI::DisplayEnterPasskeyDialog, *GetRecord()->GetPseudoAddress(), device_name_);
+  ConfirmationData data(*GetRecord()->GetPseudoAddress(), device_name_);
+  data.PutExtraData("remote_io_caps", hci::IoCapabilityText(remote_io_capability_));
+  data.PutExtraData("remote_auth_reqs", hci::AuthenticationRequirementsText(remote_authentication_requirements_));
+  data.PutExtraData("remote_oob_data_present", hci::OobDataPresentText(remote_oob_present_));
+  user_interface_handler_->CallOn(user_interface_, &UI::DisplayEnterPasskeyDialog, data);
 }
 
 void ClassicPairingHandler::NotifyUiDisplayCancel() {
@@ -54,7 +66,8 @@ void ClassicPairingHandler::NotifyUiDisplayCancel() {
 }
 
 void ClassicPairingHandler::OnPairingPromptAccepted(const bluetooth::hci::AddressWithType& address, bool confirmed) {
-  LOG_WARN("TODO Not Implemented!");
+  // NOTE: This is not used by Classic, only by LE
+  LOG_ALWAYS_FATAL("This is not supported by Classic Pairing Handler, only LE");
 }
 
 void ClassicPairingHandler::OnConfirmYesNo(const bluetooth::hci::AddressWithType& address, bool confirmed) {
@@ -74,7 +87,7 @@ void ClassicPairingHandler::OnPasskeyEntry(const bluetooth::hci::AddressWithType
 void ClassicPairingHandler::Initiate(bool locally_initiated, hci::IoCapability io_capability,
                                      hci::OobDataPresent oob_present,
                                      hci::AuthenticationRequirements auth_requirements) {
-  LOG_DEBUG("Initiate");
+  LOG_INFO("Initiate");
   locally_initiated_ = locally_initiated;
   local_io_capability_ = io_capability;
   local_oob_present_ = oob_present;
@@ -83,6 +96,22 @@ void ClassicPairingHandler::Initiate(bool locally_initiated, hci::IoCapability i
   // TODO(optedoblivion): Read OOB data
   // if host and controller support secure connections used HCIREADLOCALOOBEXTENDEDDATA vs HCIREADLOCALOOBDATA
   GetChannel()->Connect(GetRecord()->GetPseudoAddress()->GetAddress());
+}
+
+void ClassicPairingHandler::OnNameRequestComplete(hci::Address address, bool success) {
+  if (GetNameDbModule()->IsNameCached(address)) {
+    auto remote_name = GetNameDbModule()->ReadCachedRemoteName(address);
+    std::string tmp_name;
+    for (uint8_t i : remote_name) {
+      tmp_name += i;
+    }
+    device_name_ = tmp_name;
+  }
+  has_gotten_name_response_ = true;
+  if (user_confirmation_request_) {
+    this->OnReceive(*user_confirmation_request_);
+    user_confirmation_request_ = std::nullopt;
+  }
 }
 
 void ClassicPairingHandler::Cancel() {
@@ -152,6 +181,10 @@ void ClassicPairingHandler::OnReceive(hci::IoCapabilityRequestView packet) {
   auto reply_packet = hci::IoCapabilityRequestReplyBuilder::Create(
       GetRecord()->GetPseudoAddress()->GetAddress(), io_capability, oob_present, authentication_requirements);
   this->GetChannel()->SendCommand(std::move(reply_packet));
+  GetNameDbModule()->ReadRemoteNameRequest(
+      GetRecord()->GetPseudoAddress()->GetAddress(),
+      common::BindOnce(&ClassicPairingHandler::OnNameRequestComplete, common::Unretained(this)),
+      security_handler_);
 }
 
 void ClassicPairingHandler::OnReceive(hci::IoCapabilityResponseView packet) {
@@ -159,7 +192,6 @@ void ClassicPairingHandler::OnReceive(hci::IoCapabilityResponseView packet) {
   LOG_INFO("Received: %s", hci::EventCodeText(packet.GetEventCode()).c_str());
   ASSERT_LOG(GetRecord()->GetPseudoAddress()->GetAddress() == packet.GetBdAddr(), "Address mismatch");
 
-  // Using local variable until device database pointer is ready
   remote_io_capability_ = packet.GetIoCapability();
   remote_authentication_requirements_ = packet.GetAuthenticationRequirements();
   remote_oob_present_ = packet.GetOobDataPresent();
@@ -290,7 +322,7 @@ void ClassicPairingHandler::OnReceive(hci::KeypressNotificationView packet) {
 
 void ClassicPairingHandler::OnReceive(hci::UserConfirmationRequestView packet) {
   // Ensure we have io cap response otherwise checks will be wrong if it comes late
-  if (!has_gotten_io_cap_response_) {
+  if (!has_gotten_io_cap_response_ || !has_gotten_name_response_) {
     user_confirmation_request_ = std::make_optional<hci::UserConfirmationRequestView>(packet);
     return;
   }

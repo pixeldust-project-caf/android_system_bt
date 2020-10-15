@@ -434,8 +434,7 @@ void bta_dm_disable() {
      * shutdown by
      * BTA_DISABLE_DELAY milliseconds
      */
-    APPL_TRACE_WARNING("%s BTA_DISABLE_DELAY set to %d ms", __func__,
-                       BTA_DISABLE_DELAY);
+    LOG_WARN("BTA_DISABLE_DELAY set to %d ms", BTA_DISABLE_DELAY);
     alarm_set_on_mloop(bta_dm_cb.disable_timer, BTA_DISABLE_DELAY,
                        bta_dm_disable_conn_down_timer_cback, NULL);
 #else
@@ -571,7 +570,7 @@ void bta_dm_remove_device(const RawAddress& bd_addr) {
       if (peer_device.peer_bdaddr == bd_addr) {
         peer_device.conn_state = BTA_DM_UNPAIRING;
 
-        /* Make sure device is not in white list before we disconnect */
+        /* Make sure device is not in acceptlist before we disconnect */
         GATT_CancelConnect(0, bd_addr, false);
 
         btm_remove_acl(bd_addr, peer_device.transport);
@@ -611,7 +610,7 @@ void bta_dm_remove_device(const RawAddress& bd_addr) {
       if (peer_device.peer_bdaddr == other_address) {
         peer_device.conn_state = BTA_DM_UNPAIRING;
 
-        /* Make sure device is not in white list before we disconnect */
+        /* Make sure device is not in acceptlist before we disconnect */
         GATT_CancelConnect(0, bd_addr, false);
 
         btm_remove_acl(other_address, peer_device.transport);
@@ -682,7 +681,7 @@ void bta_dm_close_acl(const RawAddress& bd_addr, bool remove_dev,
       APPL_TRACE_ERROR("unknown device, remove ACL failed");
     }
 
-    /* Make sure device is not in white list before we disconnect */
+    /* Make sure device is not in acceptlist before we disconnect */
     GATT_CancelConnect(0, bd_addr, false);
 
     /* Disconnect the ACL link */
@@ -1211,9 +1210,7 @@ void bta_dm_sdp_result(tBTA_DM_MSG* p_data) {
     }
   } else {
     /* conn failed. No need for timer */
-    if (p_data->sdp_event.sdp_result == SDP_CONN_FAILED ||
-        p_data->sdp_event.sdp_result == SDP_CONN_REJECTED ||
-        p_data->sdp_event.sdp_result == SDP_SECURITY_ERR)
+    if (p_data->sdp_event.sdp_result == SDP_CONN_FAILED)
       bta_dm_search_cb.wait_disc = false;
 
     /* not able to connect go to next device */
@@ -2257,8 +2254,7 @@ static tBTA_DM_PEER_DEVICE* allocate_device_for(const RawAddress& bd_addr,
 static void bta_dm_acl_up(const RawAddress& bd_addr, tBT_TRANSPORT transport) {
   auto device = allocate_device_for(bd_addr, transport);
   if (device == nullptr) {
-    APPL_TRACE_ERROR("%s max active connection reached, no resources",
-                     __func__);
+    LOG_WARN("Unable to allocate device resources for new connection");
     return;
   }
   device->conn_state = BTA_DM_CONNECTED;
@@ -2277,6 +2273,7 @@ static void bta_dm_acl_up(const RawAddress& bd_addr, tBT_TRANSPORT transport) {
     conn.link_up.bd_addr = bd_addr;
 
     bta_dm_cb.p_sec_cback(BTA_DM_LINK_UP_EVT, &conn);
+    LOG_DEBUG("Executed security callback for new connection available");
   }
   bta_dm_adjust_roles(true);
 }
@@ -2384,8 +2381,8 @@ static void bta_dm_check_av() {
   uint8_t i;
   tBTA_DM_PEER_DEVICE* p_dev;
 
-  APPL_TRACE_WARNING("bta_dm_check_av:%d", bta_dm_cb.cur_av_count);
   if (bta_dm_cb.cur_av_count) {
+    LOG_INFO("av_count:%d", bta_dm_cb.cur_av_count);
     for (i = 0; i < bta_dm_cb.device_list.count; i++) {
       p_dev = &bta_dm_cb.device_list.peer_device[i];
       APPL_TRACE_WARNING("[%d]: state:%d, info:x%x", i, p_dev->conn_state,
@@ -2723,7 +2720,7 @@ static void bta_dm_set_eir(char* local_name) {
 
   memset(p, 0x00, HCI_EXT_INQ_RESPONSE_LEN);
 
-  APPL_TRACE_DEBUG("BTA is generating EIR");
+  LOG_INFO("Generating extended inquiry response packet EIR");
 
   if (local_name)
     local_name_len = strlen(local_name);
@@ -2808,7 +2805,7 @@ static void bta_dm_set_eir(char* local_name) {
       for (custom_uuid_idx = 0;
            custom_uuid_idx < BTA_EIR_SERVER_NUM_CUSTOM_UUID;
            custom_uuid_idx++) {
-        const Uuid& curr = bta_dm_cb.custom_uuid[custom_uuid_idx];
+        const Uuid& curr = bta_dm_cb.bta_custom_uuid[custom_uuid_idx].custom_uuid;
         if (curr.GetShortestRepresentationSize() == Uuid::kNumBytes16) {
           if (num_uuid < max_num_uuid) {
             UINT16_TO_STREAM(p, curr.As16Bit());
@@ -2841,7 +2838,7 @@ static void bta_dm_set_eir(char* local_name) {
 
     for (custom_uuid_idx = 0; custom_uuid_idx < BTA_EIR_SERVER_NUM_CUSTOM_UUID;
          custom_uuid_idx++) {
-      const Uuid& curr = bta_dm_cb.custom_uuid[custom_uuid_idx];
+      const Uuid& curr = bta_dm_cb.bta_custom_uuid[custom_uuid_idx].custom_uuid;
       if (curr.GetShortestRepresentationSize() == Uuid::kNumBytes32) {
         if (num_uuid < max_num_uuid) {
           UINT32_TO_STREAM(p, curr.As32Bit());
@@ -2870,7 +2867,7 @@ static void bta_dm_set_eir(char* local_name) {
 
     for (custom_uuid_idx = 0; custom_uuid_idx < BTA_EIR_SERVER_NUM_CUSTOM_UUID;
          custom_uuid_idx++) {
-      const Uuid& curr = bta_dm_cb.custom_uuid[custom_uuid_idx];
+      const Uuid& curr = bta_dm_cb.bta_custom_uuid[custom_uuid_idx].custom_uuid;
       if (curr.GetShortestRepresentationSize() == Uuid::kNumBytes128) {
         if (num_uuid < max_num_uuid) {
           ARRAY16_TO_STREAM(p, curr.To128BitBE().data());
@@ -2936,6 +2933,82 @@ static void bta_dm_set_eir(char* local_name) {
 #if (BTA_EIR_CANNED_UUID_LIST != TRUE)
 /*******************************************************************************
  *
+ * Function         bta_dm_get_cust_uuid_index
+ *
+ * Description      Get index of custom uuid from list
+ *                  Note, handle equals to 0 means to find a vacant
+ *                  from list.
+ *
+ * Returns          Index of array
+ *                  bta_dm_cb.bta_custom_uuid[BTA_EIR_SERVER_NUM_CUSTOM_UUID]
+ *
+ ******************************************************************************/
+static uint8_t bta_dm_get_cust_uuid_index(uint32_t handle) {
+#if (BTA_EIR_SERVER_NUM_CUSTOM_UUID > 0)
+  uint8_t c_uu_idx = 0;
+
+  while(c_uu_idx < BTA_EIR_SERVER_NUM_CUSTOM_UUID &&
+      bta_dm_cb.bta_custom_uuid[c_uu_idx].handle != handle) {
+    c_uu_idx++;
+  }
+
+  return c_uu_idx;
+#else
+  return 0;
+#endif
+}
+
+/*******************************************************************************
+ *
+ * Function         bta_dm_update_cust_uuid
+ *
+ * Description      Update custom uuid with given value
+ *
+ * Returns          None
+ *
+ ******************************************************************************/
+static void bta_dm_update_cust_uuid(uint8_t c_uu_idx, const Uuid& uuid, uint32_t handle) {
+#if (BTA_EIR_SERVER_NUM_CUSTOM_UUID > 0)
+  if (c_uu_idx < BTA_EIR_SERVER_NUM_CUSTOM_UUID) {
+    tBTA_CUSTOM_UUID& curr = bta_dm_cb.bta_custom_uuid[c_uu_idx];
+    curr.custom_uuid.UpdateUuid(uuid);
+    curr.handle = handle;
+  } else {
+    APPL_TRACE_ERROR("%s invalid uuid index %d", __func__, c_uu_idx);
+  }
+#endif
+}
+
+/*******************************************************************************
+ *
+ * Function         bta_dm_eir_update_cust_uuid
+ *
+ * Description      This function adds or removes custom service UUID in EIR database.
+ *
+ * Returns          None
+ *
+ ******************************************************************************/
+void bta_dm_eir_update_cust_uuid(const tBTA_CUSTOM_UUID& curr, bool adding) {
+  APPL_TRACE_DEBUG("%s", __func__);
+#if (BTA_EIR_SERVER_NUM_CUSTOM_UUID > 0)
+  uint8_t c_uu_idx = 0;
+  if (adding) {
+    c_uu_idx = bta_dm_get_cust_uuid_index(0); /* find a vacant from uuid list */
+    bta_dm_update_cust_uuid(c_uu_idx, curr.custom_uuid, curr.handle);
+  } else {
+    c_uu_idx = bta_dm_get_cust_uuid_index(curr.handle); /* find the uuid from uuid list */
+    bta_dm_update_cust_uuid(c_uu_idx, curr.custom_uuid, 0);
+  }
+
+  /* Update EIR when UUIDs are changed */
+  if (c_uu_idx <= BTA_EIR_SERVER_NUM_CUSTOM_UUID) {
+    bta_dm_set_eir(NULL);
+  }
+#endif
+}
+
+/*******************************************************************************
+ *
  * Function         bta_dm_eir_update_uuid
  *
  * Description      This function adds or removes service UUID in EIR database.
@@ -2948,19 +3021,16 @@ void bta_dm_eir_update_uuid(uint16_t uuid16, bool adding) {
   if (!BTM_HasEirService(p_bta_dm_eir_cfg->uuid_mask, uuid16)) return;
 
   if (adding) {
-    APPL_TRACE_EVENT("Adding UUID=0x%04X into EIR", uuid16);
+    LOG_INFO("EIR Adding UUID=0x%04X into extended inquiry response", uuid16);
 
     BTM_AddEirService(bta_dm_cb.eir_uuid, uuid16);
   } else {
-    APPL_TRACE_EVENT("Removing UUID=0x%04X from EIR", uuid16);
+    LOG_INFO("EIR Removing UUID=0x%04X from extended inquiry response", uuid16);
 
     BTM_RemoveEirService(bta_dm_cb.eir_uuid, uuid16);
   }
 
   bta_dm_set_eir(NULL);
-
-  APPL_TRACE_EVENT("bta_dm_eir_update_uuid UUID bit mask=0x%08X %08X",
-                   bta_dm_cb.eir_uuid[1], bta_dm_cb.eir_uuid[0]);
 }
 #endif
 
@@ -3135,8 +3205,8 @@ static void bta_dm_observe_cmpl_cb(void* p_result) {
 
 static void ble_io_req(const RawAddress& bd_addr, tBTM_IO_CAP* p_io_cap,
                        tBTM_OOB_DATA* p_oob_data, tBTM_LE_AUTH_REQ* p_auth_req,
-                       uint8_t* p_max_key_size, tBTA_LE_KEY_TYPE* p_init_key,
-                       tBTA_LE_KEY_TYPE* p_resp_key) {
+                       uint8_t* p_max_key_size, tBTM_LE_KEY_TYPE* p_init_key,
+                       tBTM_LE_KEY_TYPE* p_resp_key) {
   bte_appl_cfg.ble_io_cap = btif_storage_get_local_io_caps_ble();
 
   /* Retrieve the properties from file system if possible */
@@ -3362,7 +3432,7 @@ static void bta_dm_ble_id_key_cback(uint8_t key_type,
  *
  ******************************************************************************/
 void bta_dm_add_blekey(const RawAddress& bd_addr, tBTA_LE_KEY_VALUE blekey,
-                       tBTA_LE_KEY_TYPE key_type) {
+                       tBTM_LE_KEY_TYPE key_type) {
   if (!BTM_SecAddBleKey(bd_addr, (tBTM_LE_KEY_VALUE*)&blekey, key_type)) {
     LOG(ERROR) << "BTA_DM: Error adding BLE Key for device " << bd_addr;
   }
@@ -3470,7 +3540,7 @@ void bta_dm_ble_observe(bool start, uint8_t duration,
 void bta_dm_ble_set_data_length(const RawAddress& bd_addr,
                                 uint16_t tx_data_length) {
   if (BTM_SetBleDataLength(bd_addr, tx_data_length) != BTM_SUCCESS) {
-    APPL_TRACE_ERROR("%s failed", __func__);
+    LOG_INFO("Unable to set ble data length:%hu", tx_data_length);
   }
 }
 

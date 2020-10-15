@@ -154,7 +154,7 @@ void BTM_db_reset(void) {
   }
 }
 
-bool set_sec_state_idle(void* data, void* context) {
+static bool set_sec_state_idle(void* data, void* context) {
   tBTM_SEC_DEV_REC* p_dev_rec = static_cast<tBTM_SEC_DEV_REC*>(data);
   p_dev_rec->sec_state = BTM_SEC_STATE_IDLE;
   return true;
@@ -199,7 +199,7 @@ void BTM_reset_complete() {
   }
 
   if (controller->supports_ble()) {
-    btm_ble_white_list_init(controller->get_ble_white_list_size());
+    btm_ble_acceptlist_init(controller->get_ble_acceptlist_size());
     l2c_link_processs_ble_num_bufs(controller->get_acl_buffer_count_ble());
   }
 
@@ -229,7 +229,7 @@ bool BTM_IsDeviceUp(void) { return controller_get_interface()->get_is_ready(); }
  * Returns          void
  *
  ******************************************************************************/
-void btm_read_local_name_timeout(UNUSED_ATTR void* data) {
+static void btm_read_local_name_timeout(UNUSED_ATTR void* data) {
   tBTM_CMPL_CB* p_cb = btm_cb.devcb.p_rln_cmpl_cb;
   btm_cb.devcb.p_rln_cmpl_cb = NULL;
   if (p_cb) (*p_cb)((void*)NULL);

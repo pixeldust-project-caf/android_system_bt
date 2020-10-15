@@ -451,6 +451,12 @@ struct classic_impl : public DisconnectorForLe, public security::ISecurityManage
   void on_read_remote_version_information_complete(EventPacketView packet) {
     auto view = ReadRemoteVersionInformationCompleteView::Create(packet);
     ASSERT_LOG(view.IsValid(), "Read remote version information packet invalid");
+    if (view.GetStatus() != ErrorCode::SUCCESS) {
+      auto status = view.GetStatus();
+      std::string error_code = ErrorCodeText(status);
+      LOG_ERROR("Received on_read_remote_version_information_complete with error code %s", error_code.c_str());
+      return;
+    }
     LOG_INFO("UNIMPLEMENTED called");
   }
 
@@ -493,7 +499,7 @@ struct classic_impl : public DisconnectorForLe, public security::ISecurityManage
 
   void OnDeviceBonded(bluetooth::hci::AddressWithType device) override {}
   void OnDeviceUnbonded(bluetooth::hci::AddressWithType device) override {}
-  void OnDeviceBondFailed(bluetooth::hci::AddressWithType device) override {}
+  void OnDeviceBondFailed(bluetooth::hci::AddressWithType device, security::PairingFailure status) override {}
 
   void OnEncryptionStateChanged(EncryptionChangeView encryption_change_view) override {
     if (!encryption_change_view.IsValid()) {

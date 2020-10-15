@@ -392,12 +392,13 @@ static void process_l2cap_cmd(tL2C_LCB* p_lcb, uint8_t* p, uint16_t pkt_len) {
         p_ccb->remote_id = id;
         p_ccb->p_rcb = p_rcb;
         p_ccb->remote_cid = rcid;
+        p_ccb->connection_initiator = L2CAP_INITIATOR_REMOTE;
 
         if (p_rcb->psm == BT_PSM_RFCOMM) {
           btsnoop_get_interface()->add_rfc_l2c_channel(
               p_lcb->Handle(), p_ccb->local_cid, p_ccb->remote_cid);
         } else if (p_rcb->log_packets) {
-          btsnoop_get_interface()->whitelist_l2c_channel(
+          btsnoop_get_interface()->allowlist_l2c_channel(
               p_lcb->Handle(), p_ccb->local_cid, p_ccb->remote_cid);
         }
 
@@ -437,7 +438,7 @@ static void process_l2cap_cmd(tL2C_LCB* p_lcb, uint8_t* p, uint16_t pkt_len) {
           btsnoop_get_interface()->add_rfc_l2c_channel(
               p_lcb->Handle(), p_ccb->local_cid, p_ccb->remote_cid);
         } else if (p_rcb->log_packets) {
-          btsnoop_get_interface()->whitelist_l2c_channel(
+          btsnoop_get_interface()->allowlist_l2c_channel(
               p_lcb->Handle(), p_ccb->local_cid, p_ccb->remote_cid);
         }
 
@@ -677,8 +678,7 @@ static void process_l2cap_cmd(tL2C_LCB* p_lcb, uint8_t* p, uint16_t pkt_len) {
                                 p_ccb->local_id, id);
             break;
           }
-          if ((cfg_info.result == L2CAP_CFG_OK) ||
-              (cfg_info.result == L2CAP_CFG_PENDING))
+          if (cfg_info.result == L2CAP_CFG_OK)
             l2c_csm_execute(p_ccb, L2CEVT_L2CAP_CONFIG_RSP, &cfg_info);
           else
             l2c_csm_execute(p_ccb, L2CEVT_L2CAP_CONFIG_RSP_NEG, &cfg_info);
@@ -770,12 +770,14 @@ static void process_l2cap_cmd(tL2C_LCB* p_lcb, uint8_t* p, uint16_t pkt_len) {
 
           l2cu_process_fixed_chnl_resp(p_lcb);
         }
-        tL2C_CONN_INFO ci;
-        ci.status = HCI_SUCCESS;
-        ci.bd_addr = p_lcb->remote_bd_addr;
-        for (tL2C_CCB* p_ccb = p_lcb->ccb_queue.p_first_ccb; p_ccb;
-             p_ccb = p_ccb->p_next_ccb) {
-          l2c_csm_execute(p_ccb, L2CEVT_L2CAP_INFO_RSP, &ci);
+        {
+          tL2C_CONN_INFO ci;
+          ci.status = HCI_SUCCESS;
+          ci.bd_addr = p_lcb->remote_bd_addr;
+          for (tL2C_CCB* p_ccb = p_lcb->ccb_queue.p_first_ccb; p_ccb;
+               p_ccb = p_ccb->p_next_ccb) {
+            l2c_csm_execute(p_ccb, L2CEVT_L2CAP_INFO_RSP, &ci);
+          }
         }
         break;
 
@@ -847,8 +849,6 @@ void l2c_init(void) {
   int16_t xx;
 
   memset(&l2cb, 0, sizeof(tL2C_CB));
-  /* the psm is increased by 2 before being used */
-  l2cb.dyn_psm = 0xFFF;
 
   /* the LE PSM is increased by 1 before being used */
   l2cb.le_dyn_psm = LE_DYNAMIC_PSM_START - 1;

@@ -21,8 +21,6 @@
 
 // This header contains functions for HCI-LinkManagement to invoke
 
-extern void l2c_link_process_num_completed_pkts(uint8_t* p, uint8_t evt_len);
-
 extern void l2c_link_hci_conn_comp(uint8_t status, uint16_t handle,
                                    const RawAddress& p_bda);
 
@@ -31,12 +29,12 @@ extern bool l2c_link_hci_disc_comp(uint16_t handle, uint8_t reason);
 extern void l2c_link_role_changed(const RawAddress* bd_addr, uint8_t new_role,
                                   uint8_t hci_status);
 
-extern void l2cble_conn_comp(uint16_t handle, uint8_t role,
+extern bool l2cble_conn_comp(uint16_t handle, uint8_t role,
                              const RawAddress& bda, tBLE_ADDR_TYPE type,
                              uint16_t conn_interval, uint16_t conn_latency,
                              uint16_t conn_timeout);
 
-extern void l2cble_conn_comp_from_address_with_type(
+extern bool l2cble_conn_comp_from_address_with_type(
     uint16_t handle, uint8_t role, const tBLE_BD_ADDR& address_with_type,
     uint16_t conn_interval, uint16_t conn_latency, uint16_t conn_timeout);
 

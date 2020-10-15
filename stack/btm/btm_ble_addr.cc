@@ -37,10 +37,12 @@
 #include "stack/crypto_toolbox/crypto_toolbox.h"
 #include "stack/include/acl_api.h"
 
+void btm_ble_set_random_address(const RawAddress& random_bda);
+
 /* This function generates Resolvable Private Address (RPA) from Identity
  * Resolving Key |irk| and |random|*/
-RawAddress generate_rpa_from_irk_and_rand(const Octet16& irk,
-                                          BT_OCTET8 random) {
+static RawAddress generate_rpa_from_irk_and_rand(const Octet16& irk,
+                                                 BT_OCTET8 random) {
   random[2] &= (~BLE_RESOLVE_ADDR_MASK);
   random[2] |= BLE_RESOLVE_ADDR_MSB;
 
@@ -57,6 +59,13 @@ RawAddress generate_rpa_from_irk_and_rand(const Octet16& irk,
   address.address[4] = p[1];
   address.address[3] = p[2];
   return address;
+}
+
+static void btm_ble_refresh_raddr_timer_timeout(UNUSED_ATTR void* data) {
+  if (btm_cb.ble_ctr_cb.addr_mgnt_cb.own_addr_type == BLE_ADDR_RANDOM) {
+    /* refresh the random addr */
+    btm_gen_resolvable_private_addr(base::Bind(&btm_gen_resolve_paddr_low));
+  }
 }
 
 /** This function is called when random address for local controller was
@@ -214,8 +223,8 @@ tBTM_SEC_DEV_REC* btm_ble_resolve_random_addr(const RawAddress& random_bda) {
  *  address mapping between pseudo address and real connection address
  ******************************************************************************/
 /** Find the security record whose LE identity address is matching */
-tBTM_SEC_DEV_REC* btm_find_dev_by_identity_addr(const RawAddress& bd_addr,
-                                                uint8_t addr_type) {
+static tBTM_SEC_DEV_REC* btm_find_dev_by_identity_addr(
+    const RawAddress& bd_addr, uint8_t addr_type) {
   list_node_t* end = list_end(btm_cb.sec_dev_rec);
   for (list_node_t* node = list_begin(btm_cb.sec_dev_rec); node != end;
        node = list_next(node)) {

@@ -24,9 +24,16 @@
 #define LOG_TAG "bluetooth"
 #endif
 
+static_assert(LOG_TAG != nullptr, "LOG_TAG should never be NULL");
+
 #if defined(OS_ANDROID)
 
 #include <log/log.h>
+
+#ifndef OSI_INCLUDE_LOG_H
+// Do not use GD include path if included from legacy OSI layer
+#include "common/init_flags.h"
+#endif
 
 #ifdef FUZZ_TARGET
 #define LOG_VERBOSE(...)
@@ -34,8 +41,23 @@
 #define LOG_INFO(...)
 #define LOG_WARN(...)
 #else
-#define LOG_VERBOSE(fmt, args...) ALOGV("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args)
-#define LOG_DEBUG(fmt, args...) ALOGD("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args)
+
+static_assert(LOG_TAG != nullptr, "LOG_TAG is null after header inclusion");
+
+#define LOG_VERBOSE(fmt, args...)                                             \
+  do {                                                                        \
+    if (bluetooth::common::InitFlags::IsDebugLoggingEnabledForTag(LOG_TAG)) { \
+      ALOGV("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args);          \
+    }                                                                         \
+  } while (false)
+
+#define LOG_DEBUG(fmt, args...)                                               \
+  do {                                                                        \
+    if (bluetooth::common::InitFlags::IsDebugLoggingEnabledForTag(LOG_TAG)) { \
+      ALOGD("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args);          \
+    }                                                                         \
+  } while (false)
+
 #define LOG_INFO(fmt, args...) ALOGI("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args)
 #define LOG_WARN(fmt, args...) ALOGW("%s:%d %s: " fmt, __FILE__, __LINE__, __func__, ##args)
 #endif /* FUZZ_TARGET */

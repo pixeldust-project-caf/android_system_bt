@@ -174,6 +174,13 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::ConnectionM
   void OnMasterLinkKeyComplete(hci::KeyFlag key_flag) override;
   void OnRoleChange(hci::Role new_role) override;
   void OnDisconnection(hci::ErrorCode reason) override;
+  void OnReadRemoteVersionInformationComplete(uint8_t lmp_version, uint16_t manufacturer_name, uint16_t sub_version);
+
+  struct EncryptionChangeListener {
+    Cid cid;
+    Psm psm;
+  };
+  void AddEncryptionChangeListener(EncryptionChangeListener);
 
  private:
   friend class DumpsysHelper;
@@ -202,6 +209,7 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::ConnectionM
   std::list<uint16_t> pending_outgoing_configuration_request_list_;
   bool used_by_security_module_ = false;
   bool has_requested_authentication_ = false;
+  std::list<EncryptionChangeListener> encryption_change_listener_;
   DISALLOW_COPY_AND_ASSIGN(Link);
 };
 

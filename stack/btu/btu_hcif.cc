@@ -41,6 +41,7 @@
 #include "stack/include/btm_iso_api.h"
 #include "stack/include/btu.h"
 #include "stack/include/dev_hci_link_interface.h"
+#include "stack/include/gatt_api.h"
 #include "stack/include/hci_evt_length.h"
 #include "stack/include/hcidefs.h"
 #include "stack/include/inq_hci_link_interface.h"
@@ -323,8 +324,7 @@ void btu_hcif_process_event(UNUSED_ATTR uint8_t controller_id, BT_HDR* p_msg) {
       btu_hcif_role_change_evt(p);
       break;
     case HCI_NUM_COMPL_DATA_PKTS_EVT:
-      l2c_link_process_num_completed_pkts(p, hci_evt_len);
-      IsoManager::GetInstance()->HandleNumComplDataPkts(p, hci_evt_len);
+      acl_process_num_completed_pkts(p, hci_evt_len);
       break;
     case HCI_MODE_CHANGE_EVT:
       btu_hcif_mode_change_evt(p);
@@ -423,6 +423,18 @@ void btu_hcif_process_event(UNUSED_ATTR uint8_t controller_id, BT_HDR* p_msg) {
 
         case HCI_BLE_REQ_PEER_SCA_CPL_EVT:
           btm_acl_process_sca_cmpl_pkt(ble_evt_len, p);
+          break;
+
+        case HCI_BLE_PERIODIC_ADV_SYNC_EST_EVT:
+          btm_ble_process_periodic_adv_sync_est_evt(ble_evt_len, p);
+          break;
+
+        case HCI_BLE_PERIODIC_ADV_REPORT_EVT:
+          btm_ble_process_periodic_adv_pkt(ble_evt_len, p);
+          break;
+
+        case HCI_BLE_PERIODIC_ADV_SYNC_LOST_EVT:
+          btm_ble_process_periodic_adv_sync_lost_evt(ble_evt_len, p);
           break;
 
         case HCI_BLE_CIS_EST_EVT:
@@ -530,8 +542,8 @@ static void btu_hcif_log_command_metrics(uint16_t opcode, uint8_t* p_cmd,
       }
       if (initiator_filter_policy == 0x00 ||
           (cmd_status != HCI_SUCCESS && !is_cmd_status)) {
-        // Selectively log to avoid log spam due to whitelist connections:
-        // - When doing non-whitelist connection
+        // Selectively log to avoid log spam due to acceptlist connections:
+        // - When doing non-acceptlist connection
         // - When there is an error in command status
         bluetooth::common::LogLinkLayerConnectionEvent(
             bd_addr_p, bluetooth::common::kUnknownConnectionHandle,
@@ -558,8 +570,8 @@ static void btu_hcif_log_command_metrics(uint16_t opcode, uint8_t* p_cmd,
       }
       if (initiator_filter_policy == 0x00 ||
           (cmd_status != HCI_SUCCESS && !is_cmd_status)) {
-        // Selectively log to avoid log spam due to whitelist connections:
-        // - When doing non-whitelist connection
+        // Selectively log to avoid log spam due to acceptlist connections:
+        // - When doing non-acceptlist connection
         // - When there is an error in command status
         bluetooth::common::LogLinkLayerConnectionEvent(
             bd_addr_p, bluetooth::common::kUnknownConnectionHandle,
@@ -572,7 +584,7 @@ static void btu_hcif_log_command_metrics(uint16_t opcode, uint8_t* p_cmd,
     }
     case HCI_BLE_CREATE_CONN_CANCEL:
       if (cmd_status != HCI_SUCCESS && !is_cmd_status) {
-        // Only log errors to prevent log spam due to whitelist connections
+        // Only log errors to prevent log spam due to acceptlist connections
         bluetooth::common::LogLinkLayerConnectionEvent(
             nullptr, bluetooth::common::kUnknownConnectionHandle,
             android::bluetooth::DIRECTION_OUTGOING,
@@ -581,15 +593,15 @@ static void btu_hcif_log_command_metrics(uint16_t opcode, uint8_t* p_cmd,
             android::bluetooth::hci::STATUS_UNKNOWN);
       }
       break;
-    case HCI_BLE_CLEAR_WHITE_LIST:
+    case HCI_BLE_CLEAR_ACCEPTLIST:
       bluetooth::common::LogLinkLayerConnectionEvent(
           nullptr, bluetooth::common::kUnknownConnectionHandle,
           android::bluetooth::DIRECTION_INCOMING,
           android::bluetooth::LINK_TYPE_ACL, opcode, hci_event, kUnknownBleEvt,
           cmd_status, android::bluetooth::hci::STATUS_UNKNOWN);
       break;
-    case HCI_BLE_ADD_WHITE_LIST:
-    case HCI_BLE_REMOVE_WHITE_LIST: {
+    case HCI_BLE_ADD_ACCEPTLIST:
+    case HCI_BLE_REMOVE_ACCEPTLIST: {
       uint8_t peer_addr_type;
       STREAM_TO_UINT8(peer_addr_type, p_cmd);
       STREAM_TO_BDADDR(bd_addr, p_cmd);
@@ -745,9 +757,9 @@ static void btu_hcif_log_command_complete_metrics(uint16_t opcode,
   uint16_t hci_ble_event = android::bluetooth::hci::BLE_EVT_UNKNOWN;
   RawAddress bd_addr = RawAddress::kEmpty;
   switch (opcode) {
-    case HCI_BLE_CLEAR_WHITE_LIST:
-    case HCI_BLE_ADD_WHITE_LIST:
-    case HCI_BLE_REMOVE_WHITE_LIST: {
+    case HCI_BLE_CLEAR_ACCEPTLIST:
+    case HCI_BLE_ADD_ACCEPTLIST:
+    case HCI_BLE_REMOVE_ACCEPTLIST: {
       STREAM_TO_UINT8(status, p_return_params);
       bluetooth::common::LogLinkLayerConnectionEvent(
           nullptr, bluetooth::common::kUnknownConnectionHandle,
@@ -1002,13 +1014,6 @@ static void btu_hcif_disconnection_comp_evt(uint8_t* p) {
   STREAM_TO_UINT8(reason, p);
 
   handle = HCID_GET_HANDLE(handle);
-
-  if ((reason != HCI_ERR_CONN_CAUSE_LOCAL_HOST) &&
-      (reason != HCI_ERR_PEER_USER)) {
-    /* Uncommon disconnection reasons */
-    HCI_TRACE_DEBUG("%s: Got Disconn Complete Event: reason=%d, handle=%d",
-                    __func__, reason, handle);
-  }
 
   /* If L2CAP or SCO doesn't know about it, send it to ISO */
   if (!l2c_link_hci_disc_comp(handle, reason) &&
@@ -1696,7 +1701,7 @@ static void btu_hcif_encryption_key_refresh_cmpl_evt(uint8_t* p) {
 
 extern void gatt_notify_conn_update(uint16_t handle, uint16_t interval,
                                     uint16_t latency, uint16_t timeout,
-                                    uint8_t status);
+                                    tGATT_STATUS status);
 
 static void btu_ble_ll_conn_param_upd_evt(uint8_t* p, uint16_t evt_len) {
   /* LE connection update has completed successfully as a master. */
@@ -1716,7 +1721,8 @@ static void btu_ble_ll_conn_param_upd_evt(uint8_t* p, uint16_t evt_len) {
 
   l2cble_process_conn_update_evt(handle, status, interval, latency, timeout);
 
-  gatt_notify_conn_update(handle & 0x0FFF, interval, latency, timeout, status);
+  gatt_notify_conn_update(handle & 0x0FFF, interval, latency, timeout,
+                          static_cast<tGATT_STATUS>(status));
 }
 
 static void btu_ble_proc_ltk_req(uint8_t* p) {

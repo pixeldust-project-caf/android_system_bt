@@ -27,6 +27,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unordered_set>
 
 #include "avct_api.h"
 #include "avdt_api.h"
@@ -51,6 +52,7 @@
 using bluetooth::Uuid;
 
 tBTA_JV_CB bta_jv_cb;
+std::unordered_set<uint16_t> used_l2cap_classic_dynamic_psm;
 
 static tBTA_JV_PCB* bta_jv_add_rfc_port(tBTA_JV_RFC_CB* p_cb,
                                         tBTA_JV_PCB* p_pcb_open);
@@ -609,6 +611,31 @@ static void bta_jv_set_free_psm(uint16_t psm) {
   }
 }
 
+static uint16_t bta_jv_allocate_l2cap_classic_psm() {
+  bool done = false;
+  uint16_t psm = bta_jv_cb.dyn_psm;
+
+  while (!done) {
+    psm += 2;
+    if (psm > 0xfeff) {
+      psm = 0x1001;
+    } else if (psm & 0x0100) {
+      /* the upper byte must be even */
+      psm += 0x0100;
+    }
+
+    /* if psm is in range of reserved BRCM Aware features */
+    if ((BRCM_RESERVED_PSM_START <= psm) && (psm <= BRCM_RESERVED_PSM_END))
+      continue;
+
+    /* make sure the newlly allocated psm is not used right now */
+    if (used_l2cap_classic_dynamic_psm.count(psm) == 0) done = true;
+  }
+  bta_jv_cb.dyn_psm = psm;
+
+  return (psm);
+}
+
 /** Obtain a free SCN (Server Channel Number) (RFCOMM channel or L2CAP PSM) */
 void bta_jv_get_channel_id(
     int32_t type /* One of BTA_JV_CONN_TYPE_ */,
@@ -646,7 +673,7 @@ void bta_jv_get_channel_id(
     case BTA_JV_CONN_TYPE_L2CAP:
       psm = bta_jv_get_free_psm();
       if (psm == 0) {
-        psm = L2CA_AllocatePSM();
+        psm = bta_jv_allocate_l2cap_classic_psm();
         VLOG(2) << __func__ << ": returned PSM=" << loghex(psm);
       }
       break;
@@ -874,15 +901,11 @@ void bta_jv_l2cap_connect(int32_t type, tBTA_SEC sec_mask, tBTA_JV_ROLE role,
                           tBTA_JV_L2CAP_CBACK* p_cback,
                           uint32_t l2cap_socket_id) {
   uint16_t handle = GAP_INVALID_HANDLE;
-  uint8_t chan_mode_mask = GAP_FCR_CHAN_OPT_BASIC;
 
   tL2CAP_CFG_INFO cfg;
   memset(&cfg, 0, sizeof(tL2CAP_CFG_INFO));
   if (cfg_param) {
     cfg = *cfg_param;
-    if (cfg.fcr_present && cfg.fcr.mode == L2CAP_FCR_ERTM_MODE) {
-      chan_mode_mask = GAP_FCR_CHAN_OPT_ERTM;
-    }
   }
 
   /* We need to use this value for MTU to be able to handle cases where cfg is
@@ -902,7 +925,7 @@ void bta_jv_l2cap_connect(int32_t type, tBTA_SEC sec_mask, tBTA_JV_ROLE role,
     {
       uint16_t max_mps = 0xffff;  // Let GAP_ConnOpen set the max_mps.
       handle = GAP_ConnOpen("", sec_id, 0, &peer_bd_addr, remote_psm, max_mps,
-                            &cfg, ertm_info.get(), sec_mask, chan_mode_mask,
+                            &cfg, ertm_info.get(), sec_mask,
                             bta_jv_l2cap_client_cback, type);
       if (handle != GAP_INVALID_HANDLE) {
         evt_data.status = BTA_JV_SUCCESS;
@@ -1023,15 +1046,11 @@ void bta_jv_l2cap_start_server(int32_t type, tBTA_SEC sec_mask,
                                uint32_t l2cap_socket_id) {
   uint16_t handle;
   tBTA_JV_L2CAP_START evt_data;
-  uint8_t chan_mode_mask = GAP_FCR_CHAN_OPT_BASIC;
 
   tL2CAP_CFG_INFO cfg;
   memset(&cfg, 0, sizeof(tL2CAP_CFG_INFO));
   if (cfg_param) {
     cfg = *cfg_param;
-    if (cfg.fcr_present && cfg.fcr.mode == L2CAP_FCR_ERTM_MODE) {
-      chan_mode_mask = GAP_FCR_CHAN_OPT_ERTM;
-    }
   }
 
   // FIX: MTU=0 means not present
@@ -1049,7 +1068,7 @@ void bta_jv_l2cap_start_server(int32_t type, tBTA_SEC sec_mask,
   if (0 == sec_id ||
       ((type == BTA_JV_CONN_TYPE_L2CAP) && (!bta_jv_check_psm(local_psm))) ||
       (handle = GAP_ConnOpen("JV L2CAP", sec_id, 1, nullptr, local_psm, max_mps,
-                             &cfg, ertm_info.get(), sec_mask, chan_mode_mask,
+                             &cfg, ertm_info.get(), sec_mask,
                              bta_jv_l2cap_server_cback, type)) ==
           GAP_INVALID_HANDLE) {
     bta_jv_free_sec_id(&sec_id);

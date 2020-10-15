@@ -155,7 +155,7 @@ void btif_gattc_upstreams_evt(uint16_t event, char* p_param) {
     }
 
     case BTA_GATTC_ACL_EVT:
-      LOG_DEBUG("BTA_GATTC_ACL_EVT: status = %d", p_data->status);
+      LOG_INFO("BTA_GATTC_ACL_EVT: status = %d", p_data->status);
       /* Ignore for now */
       break;
 
@@ -188,6 +188,11 @@ void btif_gattc_upstreams_evt(uint16_t event, char* p_param) {
                 p_data->conn_update.conn_id, p_data->conn_update.interval,
                 p_data->conn_update.latency, p_data->conn_update.timeout,
                 p_data->conn_update.status);
+      break;
+
+    case BTA_GATTC_SRVC_CHG_EVT:
+      HAL_CBACK(bt_gatt_callbacks, client->service_changed_cb,
+                p_data->service_changed.conn_id);
       break;
 
     default:
@@ -324,7 +329,7 @@ void btif_gattc_close_impl(int client_if, RawAddress address, int conn_id) {
   else
     BTA_GATTC_CancelOpen(client_if, address, true);
 
-  // Cancel pending background connections (remove from whitelist)
+  // Cancel pending background connections (remove from acceptlist)
   BTA_GATTC_CancelOpen(client_if, address, false);
 }
 

@@ -150,7 +150,6 @@ static void free_thread_slot(int h) {
 }
 void btsock_thread_init() {
   static int initialized;
-  APPL_TRACE_DEBUG("in initialized:%d", initialized);
   if (!initialized) {
     initialized = 1;
     int h;
@@ -409,10 +408,9 @@ static int process_cmd_sock(int h) {
   OSI_NO_INTR(ret = recv(fd, &cmd, sizeof(cmd), MSG_WAITALL));
 
   if (ret != sizeof(cmd)) {
-    APPL_TRACE_ERROR("recv cmd errno:%d", errno);
+    LOG_ERROR("recv cmd errno:%d", errno);
     return false;
   }
-  APPL_TRACE_DEBUG("cmd.id:%d", cmd.id);
   switch (cmd.id) {
     case CMD_ADD_FD:
       add_poll(h, cmd.fd, cmd.type, cmd.flags, cmd.user_id);
@@ -443,18 +441,6 @@ static int process_cmd_sock(int h) {
   return true;
 }
 
-static void print_events(short events) {
-  std::string flags("");
-  if ((events)&POLLIN) flags += " POLLIN";
-  if ((events)&POLLPRI) flags += " POLLPRI";
-  if ((events)&POLLOUT) flags += " POLLOUT";
-  if ((events)&POLLERR) flags += " POLLERR";
-  if ((events)&POLLHUP) flags += " POLLHUP ";
-  if ((events)&POLLNVAL) flags += " POLLNVAL";
-  if ((events)&POLLRDHUP) flags += " POLLRDHUP";
-  LOG_DEBUG("print poll event:%x = %s", (events), flags.c_str());
-}
-
 static void process_data_sock(int h, struct pollfd* pfds, int count) {
   asrt(count <= ts[h].poll_count);
   int i;
@@ -465,7 +451,6 @@ static void process_data_sock(int h, struct pollfd* pfds, int count) {
       uint32_t user_id = ts[h].ps[ps_i].user_id;
       int type = ts[h].ps[ps_i].type;
       int flags = 0;
-      print_events(pfds[i].revents);
       if (IS_READ(pfds[i].revents)) {
         flags |= SOCK_THREAD_FD_RD;
       }
@@ -536,7 +521,7 @@ static void* sock_poll_thread(void* arg) {
       }
       if (need_process_data_fd) process_data_sock(h, pfds, ret);
     } else {
-      LOG_DEBUG("no data, select ret: %d", ret);
+      LOG_INFO("no data, select ret: %d", ret);
     };
   }
   LOG_INFO("socket poll thread exiting, h:%d", h);

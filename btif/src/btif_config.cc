@@ -136,8 +136,7 @@ bool btif_get_device_type(const RawAddress& bda, int* p_device_type) {
 
   if (!btif_config_get_int(bd_addr_str, "DevType", p_device_type)) return false;
 
-  LOG_DEBUG("%s: Device [%s] device type %d", __func__, bd_addr_str,
-            *p_device_type);
+  LOG_INFO("Device [%s] device type %d", bd_addr_str, *p_device_type);
   return true;
 }
 
@@ -151,8 +150,7 @@ bool btif_get_address_type(const RawAddress& bda, tBLE_ADDR_TYPE* p_addr_type) {
   if (!btif_config_get_int(bd_addr_str, "AddrType", &val)) return false;
   *p_addr_type = static_cast<tBLE_ADDR_TYPE>(val);
 
-  LOG_DEBUG("%s: Device [%s] address type %d", __func__, bd_addr_str,
-            *p_addr_type);
+  LOG_INFO("Device [%s] address type %d", bd_addr_str, *p_addr_type);
   return true;
 }
 
@@ -453,6 +451,25 @@ bool btif_config_set_uint64(const std::string& section, const std::string& key,
   return true;
 }
 
+/*******************************************************************************
+ *
+ * Function         btif_config_get_str
+ *
+ * Description      Get the string value associated with a particular section
+ *                  and key.
+ *
+ *                  section : The section name (i.e "Adapter")
+ *                  key : The key name (i.e "Address")
+ *                  value : A pointer to a buffer where we will store the value
+ *                  size_bytes : The size of the buffer we have available to
+ *                               write the value into. Will be updated upon
+ *                               returning to contain the number of bytes
+ *                               written.
+ *
+ * Returns          True if a value was found, False otherwise.
+ *
+ ******************************************************************************/
+
 bool btif_config_get_str(const std::string& section, const std::string& key,
                          char* value, int* size_bytes) {
   if (bluetooth::shim::is_any_gd_enabled()) {
@@ -623,11 +640,10 @@ std::vector<RawAddress> btif_config_get_paired_devices() {
   result.reserve(names.size());
   for (const auto& name : names) {
     RawAddress addr = {};
-    if (!RawAddress::FromString(name, addr)) {
-      LOG(WARNING) << __func__ << ": " << name << " is not a valid address";
-      continue;
+    // Gather up known devices from configuration section names
+    if (RawAddress::FromString(name, addr)) {
+      result.emplace_back(addr);
     }
-    result.emplace_back(addr);
   }
   return result;
 }

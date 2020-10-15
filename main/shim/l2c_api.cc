@@ -35,7 +35,8 @@ uint16_t bluetooth::shim::L2CA_Register(uint16_t client_psm,
                                         const tL2CAP_APPL_INFO& callbacks,
                                         bool enable_snoop,
                                         tL2CAP_ERTM_INFO* p_ertm_info,
-                                        uint16_t required_mtu) {
+                                        uint16_t my_mtu,
+                                        uint16_t required_remote_mtu) {
   if (L2C_INVALID_PSM(client_psm)) {
     LOG_ERROR("%s Invalid classic psm:%hd", __func__, client_psm);
     return 0;
@@ -63,9 +64,10 @@ uint16_t bluetooth::shim::L2CA_Register(uint16_t client_psm,
     return 0;
   }
   LOG_INFO("%s classic client_psm:%hd psm:%hd", __func__, client_psm, psm);
-
+  // Minimum acceptable MTU is 48 bytes
+  required_remote_mtu = std::max<uint16_t>(required_remote_mtu, 48);
   return shim_l2cap.RegisterService(psm, callbacks, enable_snoop, p_ertm_info,
-                                    required_mtu);
+                                    my_mtu, required_remote_mtu);
 }
 
 void bluetooth::shim::L2CA_Deregister(uint16_t client_psm) {
@@ -98,53 +100,21 @@ void bluetooth::shim::L2CA_FreeLePSM(uint16_t psm) {
 /**
  * Classic Connection Oriented Channel APIS
  */
-uint16_t bluetooth::shim::L2CA_ErtmConnectReq(uint16_t psm,
-                                              const RawAddress& raw_address,
-                                              tL2CAP_ERTM_INFO* p_ertm_info) {
-  return shim_l2cap.CreateConnection(psm, raw_address);
-}
-
 uint16_t bluetooth::shim::L2CA_ConnectReq(uint16_t psm,
                                           const RawAddress& raw_address) {
   return shim_l2cap.CreateConnection(psm, raw_address);
-}
-
-bool bluetooth::shim::L2CA_ErtmConnectRsp(const RawAddress& p_bd_addr,
-                                          uint8_t id, uint16_t lcid,
-                                          uint16_t result, uint16_t status,
-                                          tL2CAP_ERTM_INFO* p_ertm_info) {
-  return shim_l2cap.ConnectResponse(p_bd_addr, id, lcid, result, status,
-                                    p_ertm_info);
-}
-
-bool bluetooth::shim::L2CA_ConnectRsp(const RawAddress& p_bd_addr, uint8_t id,
-                                      uint16_t lcid, uint16_t result,
-                                      uint16_t status) {
-  return bluetooth::shim::L2CA_ErtmConnectRsp(p_bd_addr, id, lcid, result,
-                                              status, nullptr);
-}
-
-bool bluetooth::shim::L2CA_ConfigReq(uint16_t cid, tL2CAP_CFG_INFO* cfg_info) {
-  return shim_l2cap.ConfigRequest(cid, cfg_info);
-}
-
-bool bluetooth::shim::L2CA_ConfigRsp(uint16_t cid, tL2CAP_CFG_INFO* cfg_info) {
-  return shim_l2cap.ConfigResponse(cid, cfg_info);
 }
 
 bool bluetooth::shim::L2CA_DisconnectReq(uint16_t cid) {
   return shim_l2cap.DisconnectRequest(cid);
 }
 
-bool bluetooth::shim::L2CA_DisconnectRsp(uint16_t cid) {
-  return shim_l2cap.DisconnectResponse(cid);
-}
-
 /**
  * Le Connection Oriented Channel APIs
  */
-uint16_t bluetooth::shim::L2CA_RegisterLECoc(
-    uint16_t psm, const tL2CAP_APPL_INFO& callbacks) {
+uint16_t bluetooth::shim::L2CA_RegisterLECoc(uint16_t psm,
+                                             const tL2CAP_APPL_INFO& callbacks,
+                                             uint16_t sec_level) {
   LOG_INFO("UNIMPLEMENTED %s psm:%hd", __func__, psm);
   return 0;
 }
@@ -178,6 +148,29 @@ bool bluetooth::shim::L2CA_GetPeerLECocConfig(uint16_t lcid,
   return false;
 }
 
+bool bluetooth::shim::L2CA_ReconfigCreditBasedConnsReq(
+    const RawAddress& bd_addr, std::vector<uint16_t>& lcids,
+    tL2CAP_LE_CFG_INFO* p_cfg) {
+  LOG_INFO("UNIMPLEMENTED %s addr: %s cfg:%p", __func__,
+           bd_addr.ToString().c_str(), p_cfg);
+  return false;
+}
+
+std::vector<uint16_t> bluetooth::shim::L2CA_ConnectCreditBasedReq(
+    uint16_t psm, const RawAddress& p_bd_addr, tL2CAP_LE_CFG_INFO* p_cfg) {
+  LOG_INFO("UNIMPLEMENTED %s addr:%s", __func__, p_bd_addr.ToString().c_str());
+  std::vector<uint16_t> result;
+  return result;
+}
+
+bool bluetooth::shim::L2CA_ConnectCreditBasedRsp(
+    const RawAddress& bd_addr, uint8_t id,
+    std::vector<uint16_t>& accepted_lcids, uint16_t result,
+    tL2CAP_LE_CFG_INFO* p_cfg) {
+  LOG_INFO("UNIMPLEMENTED %s addr:%s", __func__, bd_addr.ToString().c_str());
+  return false;
+}
+
 uint8_t bluetooth::shim::L2CA_DataWrite(uint16_t cid, BT_HDR* p_data) {
   bool write_success = shim_l2cap.Write(cid, p_data);
   return write_success ? L2CAP_DW_SUCCESS : L2CAP_DW_FAILED;
@@ -194,13 +187,7 @@ bool bluetooth::shim::L2CA_SetIdleTimeoutByBdAddr(const RawAddress& bd_addr,
 }
 
 bool bluetooth::shim::L2CA_SetAclPriority(const RawAddress& bd_addr,
-                                          uint8_t priority) {
-  LOG_INFO("UNIMPLEMENTED %s", __func__);
-  return false;
-}
-
-bool bluetooth::shim::L2CA_SetFlushTimeout(const RawAddress& bd_addr,
-                                           uint16_t flush_tout) {
+                                          tL2CAP_PRIORITY priority) {
   LOG_INFO("UNIMPLEMENTED %s", __func__);
   return false;
 }

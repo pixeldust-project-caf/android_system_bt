@@ -298,8 +298,7 @@ uint8_t avdt_ad_tc_tbl_to_idx(AvdtpTransportChannel* p_tbl) {
  * Returns          Nothing.
  *
  ******************************************************************************/
-void avdt_ad_tc_close_ind(AvdtpTransportChannel* p_tbl,
-                          UNUSED_ATTR uint16_t reason) {
+void avdt_ad_tc_close_ind(AvdtpTransportChannel* p_tbl) {
   AvdtpCcb* p_ccb;
   AvdtpScb* p_scb;
   tAVDT_SCB_TC_CLOSE close;
@@ -528,12 +527,10 @@ void avdt_ad_open_req(uint8_t type, AvdtpCcb* p_ccb, AvdtpScb* p_scb,
 
   if (type == AVDT_CHAN_SIG) {
     /* if signaling, get mtu from registration control block */
-    p_tbl->my_mtu = avdtp_cb.rcb.ctrl_mtu;
-    p_tbl->my_flush_to = L2CAP_DEFAULT_FLUSH_TO;
+    p_tbl->my_mtu = kAvdtpMtu;
   } else {
     /* otherwise get mtu from scb */
-    p_tbl->my_mtu = p_scb->stream_config.mtu;
-    p_tbl->my_flush_to = p_scb->stream_config.flush_to;
+    p_tbl->my_mtu = kAvdtpMtu;
 
     /* also set scb_hdl in rt_tbl */
     avdtp_cb.ad.rt_tbl[avdt_ccb_to_idx(p_ccb)][p_tbl->tcid].scb_hdl =
@@ -567,7 +564,7 @@ void avdt_ad_open_req(uint8_t type, AvdtpCcb* p_ccb, AvdtpScb* p_scb,
                        avdt_ccb_to_idx(p_ccb), p_tbl->tcid, lcid);
     } else {
       /* if connect req failed, call avdt_ad_tc_close_ind() */
-      avdt_ad_tc_close_ind(p_tbl, 0);
+      avdt_ad_tc_close_ind(p_tbl);
     }
   }
 }
@@ -597,13 +594,14 @@ void avdt_ad_close_req(uint8_t type, AvdtpCcb* p_ccb, AvdtpScb* p_scb) {
       break;
     case AVDT_AD_ST_ACP:
       /* if we're listening on this channel, send ourselves a close ind */
-      avdt_ad_tc_close_ind(p_tbl, 0);
+      avdt_ad_tc_close_ind(p_tbl);
       break;
     default:
       /* get tcid from type, scb */
       tcid = avdt_ad_type_to_tcid(type, p_scb);
 
       /* call l2cap disconnect req */
-      L2CA_DisconnectReq(avdtp_cb.ad.rt_tbl[avdt_ccb_to_idx(p_ccb)][tcid].lcid);
+      avdt_l2c_disconnect(
+          avdtp_cb.ad.rt_tbl[avdt_ccb_to_idx(p_ccb)][tcid].lcid);
   }
 }

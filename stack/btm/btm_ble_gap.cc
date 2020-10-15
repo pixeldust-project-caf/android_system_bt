@@ -55,6 +55,12 @@ extern tBTM_CB btm_cb;
 extern void btm_inq_remote_name_timer_timeout(void* data);
 extern bool btm_ble_init_pseudo_addr(tBTM_SEC_DEV_REC* p_dev_rec,
                                      const RawAddress& new_pseudo_addr);
+extern bool btm_identity_addr_to_random_pseudo(RawAddress* bd_addr,
+                                               uint8_t* p_addr_type,
+                                               bool refresh);
+extern void btm_ble_batchscan_init(void);
+extern void btm_ble_adv_filter_init(void);
+extern void btm_clear_all_pending_le_entry(void);
 
 #define BTM_EXT_BLE_RMT_NAME_TIMEOUT_MS (30 * 1000)
 #define MIN_ADV_LENGTH 2
@@ -368,7 +374,7 @@ inline bool BTM_LE_STATES_SUPPORTED(const uint8_t* x, uint8_t bit_num) {
  *                  events from a broadcast device.
  *
  * Parameters       start: start or stop observe.
- *                  white_list: use white list in observer mode or not.
+ *                  acceptlist: use acceptlist in observer mode or not.
  *
  * Returns          void
  *
@@ -412,7 +418,7 @@ tBTM_STATUS BTM_BleObserve(bool start, uint8_t duration,
       p_inq->scan_type = (p_inq->scan_type == BTM_BLE_SCAN_MODE_NONE)
                              ? BTM_BLE_SCAN_MODE_ACTI
                              : p_inq->scan_type;
-/* assume observe always not using white list */
+      /* assume observe always not using acceptlist */
       /* enable resolving list */
       btm_ble_enable_resolving_list_for_platform(BTM_BLE_RL_SCAN);
 
@@ -420,7 +426,6 @@ tBTM_STATUS BTM_BleObserve(bool start, uint8_t duration,
           p_inq->scan_type, (uint16_t)scan_interval, (uint16_t)scan_window,
           btm_cb.ble_ctr_cb.addr_mgnt_cb.own_addr_type, BTM_BLE_DEFAULT_SFP);
 
-      p_inq->scan_duplicate_filter = BTM_BLE_DUPLICATE_DISABLE;
       status = btm_ble_start_scan();
     }
 
@@ -603,9 +608,7 @@ bool BTM_BleConfigPrivacy(bool privacy_mode) {
      * address in controller */
     if (controller_get_interface()->supports_ble_privacy()) {
       gap_ble_attr_value.addr_resolution = 1;
-      /* check vendor specific capability */
-      p_cb->privacy_mode =
-          btm_cb.ble_ctr_cb.mixed_mode ? BTM_PRIVACY_MIXED : BTM_PRIVACY_1_2;
+      p_cb->privacy_mode = BTM_PRIVACY_1_2;
     } else /* 4.1/4.0 controller */
       p_cb->privacy_mode = BTM_PRIVACY_1_1;
   }
@@ -675,10 +678,15 @@ static uint8_t btm_set_conn_mode_adv_init_addr(
   uint8_t evt_type;
   tBTM_SEC_DEV_REC* p_dev_rec;
 
-  evt_type =
-      (p_cb->connectable_mode == BTM_BLE_NON_CONNECTABLE)
-          ? ((p_cb->scan_rsp) ? BTM_BLE_DISCOVER_EVT : BTM_BLE_NON_CONNECT_EVT)
-          : BTM_BLE_CONNECT_EVT;
+  if (p_cb->connectable_mode == BTM_BLE_NON_CONNECTABLE) {
+    if (p_cb->scan_rsp) {
+      evt_type = BTM_BLE_DISCOVER_EVT;
+    } else {
+      evt_type = BTM_BLE_NON_CONNECT_EVT;
+    }
+  } else {
+    evt_type = BTM_BLE_CONNECT_EVT;
+  }
 
   if (evt_type == BTM_BLE_CONNECT_EVT) {
     evt_type = p_cb->directed_conn;
@@ -833,34 +841,27 @@ uint16_t BTM_BleReadConnectability() {
 static void btm_ble_select_adv_interval(uint8_t evt_type,
                                         uint16_t* p_adv_int_min,
                                         uint16_t* p_adv_int_max) {
-  tBTM_BLE_INQ_CB* p_cb = &btm_cb.ble_ctr_cb.inq_var;
-  if (p_cb->adv_interval_min && p_cb->adv_interval_max) {
-    *p_adv_int_min = p_cb->adv_interval_min;
-    *p_adv_int_max = p_cb->adv_interval_max;
-  } else {
-    switch (evt_type) {
-      case BTM_BLE_CONNECT_EVT:
-      case BTM_BLE_CONNECT_LO_DUTY_DIR_EVT:
-        *p_adv_int_min = *p_adv_int_max = BTM_BLE_GAP_ADV_FAST_INT_1;
-        break;
+  switch (evt_type) {
+    case BTM_BLE_CONNECT_EVT:
+    case BTM_BLE_CONNECT_LO_DUTY_DIR_EVT:
+      *p_adv_int_min = *p_adv_int_max = BTM_BLE_GAP_ADV_FAST_INT_1;
+      break;
 
-      case BTM_BLE_NON_CONNECT_EVT:
-      case BTM_BLE_DISCOVER_EVT:
-        *p_adv_int_min = *p_adv_int_max = BTM_BLE_GAP_ADV_FAST_INT_2;
-        break;
+    case BTM_BLE_NON_CONNECT_EVT:
+    case BTM_BLE_DISCOVER_EVT:
+      *p_adv_int_min = *p_adv_int_max = BTM_BLE_GAP_ADV_FAST_INT_2;
+      break;
 
       /* connectable directed event */
-      case BTM_BLE_CONNECT_DIR_EVT:
-        *p_adv_int_min = BTM_BLE_GAP_ADV_DIR_MIN_INT;
-        *p_adv_int_max = BTM_BLE_GAP_ADV_DIR_MAX_INT;
-        break;
+    case BTM_BLE_CONNECT_DIR_EVT:
+      *p_adv_int_min = BTM_BLE_GAP_ADV_DIR_MIN_INT;
+      *p_adv_int_max = BTM_BLE_GAP_ADV_DIR_MAX_INT;
+      break;
 
-      default:
-        *p_adv_int_min = *p_adv_int_max = BTM_BLE_GAP_ADV_SLOW_INT;
-        break;
-    }
+    default:
+      *p_adv_int_min = *p_adv_int_max = BTM_BLE_GAP_ADV_SLOW_INT;
+      break;
   }
-  return;
 }
 
 /*******************************************************************************
@@ -917,7 +918,7 @@ void btm_ble_set_adv_flag(uint16_t connect_mode, uint16_t disc_mode) {
 
   btm_ble_update_dmt_flag_bits(&flag, connect_mode, disc_mode);
 
-  LOG_DEBUG("disc_mode %04x", disc_mode);
+  LOG_INFO("disc_mode %04x", disc_mode);
   /* update discoverable flag */
   if (disc_mode & BTM_BLE_LIMITED_DISCOVERABLE) {
     flag &= ~BTM_BLE_GEN_DISC_FLAG;
@@ -1099,7 +1100,8 @@ tBTM_STATUS btm_ble_set_connectability(uint16_t combined_mode) {
   return status;
 }
 
-void btm_send_hci_scan_enable(uint8_t enable, uint8_t filter_duplicates) {
+static void btm_send_hci_scan_enable(uint8_t enable,
+                                     uint8_t filter_duplicates) {
   if (controller_get_interface()->supports_ble_extended_advertising()) {
     btsnd_hcic_ble_set_extended_scan_enable(enable, filter_duplicates, 0x0000,
                                             0x0000);
@@ -1170,7 +1172,6 @@ tBTM_STATUS btm_ble_start_inquiry(uint8_t duration) {
     /* enable IRK list */
     btm_ble_enable_resolving_list_for_platform(BTM_BLE_RL_SCAN);
     p_ble_cb->inq_var.scan_type = BTM_BLE_SCAN_MODE_ACTI;
-    p_ble_cb->inq_var.scan_duplicate_filter = BTM_BLE_DUPLICATE_DISABLE;
     status = btm_ble_start_scan();
   } else if ((p_ble_cb->inq_var.scan_interval !=
               BTM_BLE_LOW_LATENCY_SCAN_INT) ||
@@ -1568,17 +1569,16 @@ void btm_ble_update_inq_result(tINQ_DB_ENT* p_i, uint8_t addr_type,
     }
   }
 
-  /* if BR/EDR not supported is not set, assume is a DUMO device */
   if ((p_cur->flag & BTM_BLE_BREDR_NOT_SPT) == 0 &&
       !ble_evt_type_is_directed(evt_type)) {
     if (p_cur->ble_addr_type != BLE_ADDR_RANDOM) {
-      BTM_TRACE_DEBUG("BR/EDR NOT support bit not set, treat as DUMO");
+      LOG_INFO("NOT_BR_EDR support bit not set, treat device as DUMO");
       p_cur->device_type |= BT_DEVICE_TYPE_DUMO;
     } else {
-      BTM_TRACE_DEBUG("Random address, treating device as LE only");
+      LOG_INFO("Random address, treat device as LE only");
     }
   } else {
-    BTM_TRACE_DEBUG("BR/EDR NOT SUPPORT bit set, LE only device");
+    LOG_INFO("NOT_BR/EDR support bit set, treat device as LE only");
   }
 }
 
@@ -1876,7 +1876,7 @@ void btm_ble_process_adv_pkt_cont(uint16_t evt_type, uint8_t addr_type,
   uint8_t result = btm_ble_is_discoverable(bda, adv_data);
   if (result == 0) {
     cache.Clear(addr_type, bda);
-    LOG_DEBUG("device no longer discoverable, discarding advertising packet");
+    LOG_INFO("device no longer discoverable, discarding advertising packet");
     return;
   }
 
@@ -1909,7 +1909,8 @@ void btm_ble_process_phy_update_pkt(uint8_t len, uint8_t* data) {
   STREAM_TO_UINT8(tx_phy, p);
   STREAM_TO_UINT8(rx_phy, p);
 
-  gatt_notify_phy_updated(status, handle, tx_phy, rx_phy);
+  gatt_notify_phy_updated(static_cast<tGATT_STATUS>(status), handle, tx_phy,
+                          rx_phy);
 }
 
 /*******************************************************************************
@@ -1924,7 +1925,7 @@ void btm_ble_process_phy_update_pkt(uint8_t len, uint8_t* data) {
 tBTM_STATUS btm_ble_start_scan(void) {
   tBTM_BLE_INQ_CB* p_inq = &btm_cb.ble_ctr_cb.inq_var;
   /* start scan, disable duplicate filtering */
-  btm_send_hci_scan_enable(BTM_BLE_SCAN_ENABLE, p_inq->scan_duplicate_filter);
+  btm_send_hci_scan_enable(BTM_BLE_SCAN_ENABLE, BTM_BLE_DUPLICATE_DISABLE);
 
   if (p_inq->scan_type == BTM_BLE_SCAN_MODE_ACTI)
     btm_ble_set_topology_mask(BTM_BLE_STATE_ACTIVE_SCAN_BIT);
@@ -2168,13 +2169,6 @@ static void btm_ble_observer_timer_timeout(UNUSED_ATTR void* data) {
   btm_ble_stop_observe();
 }
 
-void btm_ble_refresh_raddr_timer_timeout(UNUSED_ATTR void* data) {
-  if (btm_cb.ble_ctr_cb.addr_mgnt_cb.own_addr_type == BLE_ADDR_RANDOM) {
-    /* refresh the random addr */
-    btm_gen_resolvable_private_addr(base::Bind(&btm_gen_resolve_paddr_low));
-  }
-}
-
 /*******************************************************************************
  *
  * Function         btm_ble_read_remote_features_complete
@@ -2187,8 +2181,6 @@ void btm_ble_refresh_raddr_timer_timeout(UNUSED_ATTR void* data) {
  *
  ******************************************************************************/
 void btm_ble_read_remote_features_complete(uint8_t* p) {
-  BTM_TRACE_EVENT("%s", __func__);
-
   uint16_t handle;
   uint8_t status;
   STREAM_TO_UINT8(status, p);
@@ -2196,15 +2188,18 @@ void btm_ble_read_remote_features_complete(uint8_t* p) {
   handle = handle & 0x0FFF;  // only 12 bits meaningful
 
   if (status != HCI_SUCCESS) {
-    BTM_TRACE_ERROR("%s: failed for handle: 0x%04d, status 0x%02x", __func__,
-                    handle, status);
-    if (status != HCI_ERR_UNSUPPORTED_REM_FEATURE) return;
+    if (status != HCI_ERR_UNSUPPORTED_REM_FEATURE) {
+      LOG_ERROR("Failed to read remote features status:%s",
+                hci_error_code_text(status).c_str());
+      return;
+    }
+    LOG_WARN("Remote does not support reading remote feature");
   }
 
   if (status == HCI_SUCCESS) {
     if (!acl_set_peer_le_features_from_handle(handle, p)) {
-      BTM_TRACE_ERROR("%s: can't find acl for handle: 0x%04d", __func__,
-                      handle);
+      LOG_ERROR(
+          "Unable to find existing connection after read remote features");
       return;
     }
   }
@@ -2344,7 +2339,7 @@ void btm_ble_update_mode_operation(uint8_t link_role, const RawAddress* bd_addr,
   }
 
   /* in case of disconnected, we must cancel bgconn and restart
-     in order to add back device to white list in order to reconnect */
+     in order to add back device to acceptlist in order to reconnect */
   if (bd_addr) btm_ble_bgconn_cancel_if_disconnected(*bd_addr);
 
   /* when no connection is attempted, and controller is not rejecting last
