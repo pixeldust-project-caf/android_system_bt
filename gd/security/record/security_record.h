@@ -96,14 +96,6 @@ class SecurityRecord {
     return this->is_encryption_required_;
   }
 
-  void SetIsEncrypted(bool is_encrypted) {
-    this->is_encrypted_ = is_encrypted;
-  }
-
-  bool IsEncrypted() {
-    return this->is_encrypted_;
-  }
-
   bool IsClassicLinkKeyValid() const {
     return !std::all_of(link_key_.begin(), link_key_.end(), [](uint8_t b) { return b == 0; });
   }
@@ -126,7 +118,6 @@ class SecurityRecord {
   bool is_authenticated_ = false;
   bool requires_mitm_protection_ = false;
   bool is_encryption_required_ = false;
-  bool is_encrypted_ = false;
 
  public:
   /* First address we have ever seen this device with, that we used to create bond */
@@ -135,11 +126,17 @@ class SecurityRecord {
   /* Identity Address */
   std::optional<hci::AddressWithType> identity_address_;
 
-  std::optional<crypto_toolbox::Octet16> ltk;
-  std::optional<uint16_t> ediv;
-  std::optional<std::array<uint8_t, 8>> rand;
-  std::optional<crypto_toolbox::Octet16> irk;
-  std::optional<crypto_toolbox::Octet16> signature_key;
+  std::optional<crypto_toolbox::Octet16> remote_ltk;
+  uint8_t key_size;
+  uint8_t security_level;
+  std::optional<uint16_t> remote_ediv;
+  std::optional<std::array<uint8_t, 8>> remote_rand;
+  std::optional<crypto_toolbox::Octet16> remote_irk;
+  std::optional<crypto_toolbox::Octet16> remote_signature_key;
+
+  std::optional<crypto_toolbox::Octet16> local_ltk;
+  std::optional<uint16_t> local_ediv;
+  std::optional<std::array<uint8_t, 8>> local_rand;
 };
 
 }  // namespace record

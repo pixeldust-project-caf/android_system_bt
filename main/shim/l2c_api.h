@@ -18,6 +18,7 @@
 
 #include <set>
 #include <unordered_map>
+#include <vector>
 
 #include "stack/include/l2c_api.h"
 
@@ -40,7 +41,7 @@ namespace shim {
  ******************************************************************************/
 uint16_t L2CA_Register(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info,
                        bool enable_snoop, tL2CAP_ERTM_INFO* p_ertm_info,
-                       uint16_t required_mtu);
+                       uint16_t my_mtu, uint16_t required_remote_mtu);
 
 /*******************************************************************************
  *
@@ -106,36 +107,6 @@ uint16_t L2CA_ConnectReq(uint16_t psm, const RawAddress& p_bd_addr);
 
 /*******************************************************************************
  *
- * Function         L2CA_ConnectRsp
- *
- * Description      Higher layers call this function to accept an incoming
- *                  L2CAP connection, for which they had gotten an connect
- *                  indication callback.
- *
- * Returns          true for success, false for failure
- *
- ******************************************************************************/
-bool L2CA_ConnectRsp(const RawAddress& p_bd_addr, uint8_t id, uint16_t lcid,
-                     uint16_t result, uint16_t status);
-
-/*******************************************************************************
- *
- * Function         L2CA_ErtmConnectReq
- *
- * Description      Higher layers call this function to create an L2CAP
- *                  connection that needs to use Enhanced Retransmission Mode.
- *                  Note that the connection is not established at this time,
- *                  but connection establishment gets started. The callback
- *                  will be invoked when connection establishes or fails.
- *
- * Returns          the CID of the connection, or 0 if it failed to start
- *
- ******************************************************************************/
-uint16_t L2CA_ErtmConnectReq(uint16_t psm, const RawAddress& p_bd_addr,
-                             tL2CAP_ERTM_INFO* p_ertm_info);
-
-/*******************************************************************************
- *
  * Function         L2CA_RegisterLECoc
  *
  * Description      Other layers call this function to register for L2CAP
@@ -148,7 +119,8 @@ uint16_t L2CA_ErtmConnectReq(uint16_t psm, const RawAddress& p_bd_addr,
  *                  and BTM_SetSecurityLevel().
  *
  ******************************************************************************/
-uint16_t L2CA_RegisterLECoc(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info);
+uint16_t L2CA_RegisterLECoc(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info,
+                            uint16_t sec_level);
 
 /*******************************************************************************
  *
@@ -205,42 +177,50 @@ bool L2CA_GetPeerLECocConfig(uint16_t lcid, tL2CAP_LE_CFG_INFO* peer_cfg);
 
 /*******************************************************************************
  *
- * Function         L2CA_ErtmConnectRsp
+ *  Function         L2CA_ReconfigCreditBasedConnsReq
  *
- * Description      Higher layers call this function to accept an incoming
- *                  L2CAP connection, for which they had gotten an connect
- *                  indication callback, and for which the higher layer wants
- *                  to use Enhanced Retransmission Mode.
+ *  Description      Start reconfigure procedure on Credit Based Connection Oriented
+ *                   Channels.
  *
- * Returns          true for success, false for failure
+ *  Return value:    true if peer is connected
  *
  ******************************************************************************/
-bool L2CA_ErtmConnectRsp(const RawAddress& p_bd_addr, uint8_t id, uint16_t lcid,
-                         uint16_t result, uint16_t status,
-                         tL2CAP_ERTM_INFO* p_ertm_info);
+
+bool L2CA_ReconfigCreditBasedConnsReq(const RawAddress& bd_addr,
+                                      std::vector<uint16_t>& lcids,
+                                      tL2CAP_LE_CFG_INFO* p_cfg);
 
 /*******************************************************************************
  *
- * Function         L2CA_ConfigReq
+ *  Function         L2CA_ConnectCreditBasedReq
  *
- * Description      Higher layers call this function to send configuration.
+ *  Description      With this function L2CAP will initiate setup of up to 5 credit
+ *                   based connections for given psm using provided configuration.
+ *                   L2CAP will notify user on the connection result, by calling
+ *                   pL2CA_CreditBasedConnectCfm_Cb for each cid with a result.
  *
- * Returns          true if configuration sent, else false
+ *  Return value: vector of allocated local cids for the connection
  *
  ******************************************************************************/
-bool L2CA_ConfigReq(uint16_t cid, tL2CAP_CFG_INFO* p_cfg);
+
+extern std::vector<uint16_t> L2CA_ConnectCreditBasedReq(
+    uint16_t psm, const RawAddress& p_bd_addr, tL2CAP_LE_CFG_INFO* p_cfg);
 
 /*******************************************************************************
  *
- * Function         L2CA_ConfigRsp
+ *  Function         L2CA_ConnectCreditBasedRsp
  *
- * Description      Higher layers call this function to send a configuration
- *                  response.
+ *  Description      Response for the pL2CA_CreditBasedConnectInd_Cb which is the
+ *                   indication for peer requesting credit based connection.
  *
- * Returns          true if configuration response sent, else false
+ *  Return value:    true if peer is connected
  *
  ******************************************************************************/
-bool L2CA_ConfigRsp(uint16_t cid, tL2CAP_CFG_INFO* p_cfg);
+
+extern bool L2CA_ConnectCreditBasedRsp(const RawAddress& p_bd_addr, uint8_t id,
+                                       std::vector<uint16_t>& accepted_lcids,
+                                       uint16_t result,
+                                       tL2CAP_LE_CFG_INFO* p_cfg);
 
 /*******************************************************************************
  *
@@ -252,18 +232,6 @@ bool L2CA_ConfigRsp(uint16_t cid, tL2CAP_CFG_INFO* p_cfg);
  *
  ******************************************************************************/
 bool L2CA_DisconnectReq(uint16_t cid);
-
-/*******************************************************************************
- *
- * Function         L2CA_DisconnectRsp
- *
- * Description      Higher layers call this function to acknowledge the
- *                  disconnection of a channel.
- *
- * Returns          void
- *
- ******************************************************************************/
-bool L2CA_DisconnectRsp(uint16_t cid);
 
 /*******************************************************************************
  *
@@ -346,7 +314,7 @@ uint16_t L2CA_FlushChannel(uint16_t lcid, uint16_t num_to_flush);
  * Returns          true if a valid channel, else false
  *
  ******************************************************************************/
-bool L2CA_SetAclPriority(const RawAddress& bd_addr, uint8_t priority);
+bool L2CA_SetAclPriority(const RawAddress& bd_addr, tL2CAP_PRIORITY priority);
 
 /*******************************************************************************
  *
@@ -358,32 +326,6 @@ bool L2CA_SetAclPriority(const RawAddress& bd_addr, uint8_t priority);
  *
  ******************************************************************************/
 bool L2CA_SetTxPriority(uint16_t cid, tL2CAP_CHNL_PRIORITY priority);
-
-/*******************************************************************************
- *
- * Function         L2CA_SetFlushTimeout
- *
- * Description      This function set the automatic flush time out in Baseband
- *                  for ACL-U packets.
- *                  BdAddr : the remote BD address of ACL link. If it is
- *                           BT_DB_ANY then the flush time out will be applied
- *                           to all ACL link.
- *                  FlushTimeout: flush time out in ms
- *                           0x0000 : No automatic flush
- *                           L2CAP_NO_RETRANSMISSION : No retransmission
- *                           0x0002 - 0xFFFE : flush time out, if
- *                                             (flush_tout * 8) + 3 / 5) <=
- *                                             HCI_MAX_AUTOMATIC_FLUSH_TIMEOUT
- *                                             (in 625us slot).
- *                                    Otherwise, return false.
- *                           L2CAP_NO_AUTOMATIC_FLUSH : No automatic flush
- *
- * Returns          true if command succeeded, false if failed
- *
- * NOTE             This flush timeout applies to all logical channels active on
- *                  the ACL link.
- ******************************************************************************/
-bool L2CA_SetFlushTimeout(const RawAddress& bd_addr, uint16_t flush_tout);
 
 /*******************************************************************************
  *

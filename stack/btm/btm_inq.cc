@@ -49,6 +49,14 @@
 #include "stack/include/inq_hci_link_interface.h"
 
 extern void btm_inq_remote_name_timer_timeout(void* data);
+extern tBTM_STATUS btm_ble_read_remote_name(const RawAddress& remote_bda,
+                                            tBTM_CMPL_CB* p_cb);
+extern bool btm_ble_cancel_remote_name(const RawAddress& remote_bda);
+extern tBTM_STATUS btm_ble_set_discoverability(uint16_t combined_mode);
+extern tBTM_STATUS btm_ble_set_connectability(uint16_t combined_mode);
+
+extern tBTM_STATUS btm_ble_start_inquiry(uint8_t duration);
+extern void btm_ble_stop_inquiry(void);
 
 using bluetooth::Uuid;
 
@@ -121,11 +129,12 @@ const uint16_t BTM_EIR_UUID_LKUP_TBL[BTM_EIR_MAX_SERVICES] = {
 /******************************************************************************/
 /*            L O C A L    F U N C T I O N     P R O T O T Y P E S            */
 /******************************************************************************/
-void btm_clr_inq_db(const RawAddress* p_bda);
+static void btm_clr_inq_db(const RawAddress* p_bda);
 void btm_clr_inq_result_flt(void);
-void btm_inq_rmt_name_failed_cancelled(void);
-tBTM_STATUS btm_initiate_rem_name(const RawAddress& remote_bda, uint8_t origin,
-                                  uint64_t timeout_ms, tBTM_CMPL_CB* p_cb);
+static void btm_inq_rmt_name_failed_cancelled(void);
+static tBTM_STATUS btm_initiate_rem_name(const RawAddress& remote_bda,
+                                         uint8_t origin, uint64_t timeout_ms,
+                                         tBTM_CMPL_CB* p_cb);
 
 static uint8_t btm_convert_uuid_to_eir_service(uint16_t uuid16);
 void btm_set_eir_uuid(uint8_t* p_eir, tBTM_INQ_RESULTS* p_results);

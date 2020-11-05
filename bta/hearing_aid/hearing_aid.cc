@@ -201,7 +201,7 @@ static void write_rpt_ctl_cfg_cb(uint16_t conn_id, tGATT_STATUS status,
                                  uint16_t handle, void* data) {
   if (status != GATT_SUCCESS) {
     LOG(ERROR) << __func__ << ": handle=" << handle << ", conn_id=" << conn_id
-               << ", status=" << loghex(status);
+               << ", status=" << loghex(static_cast<uint8_t>(status));
   }
 }
 
@@ -317,17 +317,17 @@ class HearingAidImpl : public HearingAid {
     BTA_GATTC_Open(gatt_if, address, true, BT_TRANSPORT_LE, false);
   }
 
-  void AddToWhiteList(const RawAddress& address) override {
+  void AddToAcceptlist(const RawAddress& address) override {
     VLOG(2) << __func__ << " address: " << address;
     hearingDevices.Add(HearingDevice(address, true));
     BTA_GATTC_Open(gatt_if, address, false, BT_TRANSPORT_LE, false);
   }
 
-  void AddFromStorage(const HearingDevice& dev_info, uint16_t is_white_listed) {
+  void AddFromStorage(const HearingDevice& dev_info, uint16_t is_acceptlisted) {
     DVLOG(2) << __func__ << " " << dev_info.address
              << ", hiSyncId=" << loghex(dev_info.hi_sync_id)
-             << ", isWhiteListed=" << is_white_listed;
-    if (is_white_listed) {
+             << ", isAcceptlisted=" << is_acceptlisted;
+    if (is_acceptlisted) {
       hearingDevices.Add(dev_info);
 
       // TODO: we should increase the scanning window for few seconds, to get
@@ -361,7 +361,7 @@ class HearingAidImpl : public HearingAid {
 
     if (status != GATT_SUCCESS) {
       if (!hearingDevice->connecting_actively) {
-        // whitelist connection failed, that's ok.
+        // acceptlist connection failed, that's ok.
         return;
       }
 
@@ -482,8 +482,8 @@ class HearingAidImpl : public HearingAid {
         send_state_change_to_other_side(hearingDevice, conn_update);
         send_state_change(hearingDevice, conn_update);
       } else {
-        LOG(INFO) << __func__
-                  << ": error status=" << loghex(p_data->conn_update.status)
+        LOG(INFO) << __func__ << ": error status="
+                  << loghex(static_cast<uint8_t>(p_data->conn_update.status))
                   << ", conn_id=" << conn_id
                   << ", device=" << hearingDevice->address
                   << ", connection_update_status="
@@ -870,8 +870,7 @@ class HearingAidImpl : public HearingAid {
     uint16_t gap_handle = GAP_ConnOpen(
         "", service_id, false, &hearingDevice->address, psm, 514 /* MPS */,
         &cfg_info, nullptr, BTM_SEC_NONE /* TODO: request security ? */,
-        L2CAP_FCR_LE_COC_MODE, HearingAidImpl::GapCallbackStatic,
-        BT_TRANSPORT_LE);
+        HearingAidImpl::GapCallbackStatic, BT_TRANSPORT_LE);
     if (gap_handle == GAP_INVALID_HANDLE) {
       LOG(ERROR) << "UNABLE TO GET gap_handle";
       return;
@@ -929,7 +928,7 @@ class HearingAidImpl : public HearingAid {
     if (register_status != GATT_SUCCESS) {
       LOG(ERROR) << __func__
                  << ": BTA_GATTC_RegisterForNotifications failed, status="
-                 << loghex(register_status);
+                 << loghex(static_cast<uint8_t>(register_status));
       return;
     }
     std::vector<uint8_t> value(2);
@@ -1488,7 +1487,7 @@ class HearingAidImpl : public HearingAid {
     DoDisconnectCleanUp(hearingDevice);
 
     // This is needed just for the first connection. After stack is restarted,
-    // code that loads device will add them to whitelist.
+    // code that loads device will add them to acceptlist.
     BTA_GATTC_Open(gatt_if, hearingDevice->address, false, BT_TRANSPORT_LE,
                    false);
 
@@ -1729,7 +1728,7 @@ void hearingaid_gattc_callback(tBTA_GATTC_EVT event, tBTA_GATTC* p_data) {
 
     case BTA_GATTC_SRVC_DISC_DONE_EVT:
       if (!instance) return;
-      instance->OnServiceDiscDoneEvent(p_data->remote_bda);
+      instance->OnServiceDiscDoneEvent(p_data->service_changed.remote_bda);
       break;
 
     default:
@@ -1781,12 +1780,12 @@ HearingAid* HearingAid::Get() {
 };
 
 void HearingAid::AddFromStorage(const HearingDevice& dev_info,
-                                uint16_t is_white_listed) {
+                                uint16_t is_acceptlisted) {
   if (!instance) {
     LOG(ERROR) << "Not initialized yet";
   }
 
-  instance->AddFromStorage(dev_info, is_white_listed);
+  instance->AddFromStorage(dev_info, is_acceptlisted);
 };
 
 int HearingAid::GetDeviceCount() {

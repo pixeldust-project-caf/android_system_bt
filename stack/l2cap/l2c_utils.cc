@@ -34,6 +34,7 @@
 #include "l2c_int.h"
 #include "l2cdefs.h"
 #include "osi/include/allocator.h"
+#include "osi/include/log.h"
 #include "stack/btm/btm_sec.h"
 #include "stack/include/acl_api.h"
 
@@ -64,7 +65,6 @@ tL2C_LCB* l2cu_allocate_lcb(const RawAddress& p_bd_addr, bool is_bonding,
       p_lcb->in_use = true;
       p_lcb->link_state = LST_DISCONNECTED;
       p_lcb->InvalidateHandle();
-      p_lcb->SetLinkFlushTimeout(L2CAP_NO_AUTOMATIC_FLUSH);
       p_lcb->l2c_lcb_timer = alarm_new("l2c_lcb.l2c_lcb_timer");
       p_lcb->info_resp_timer = alarm_new("l2c_lcb.info_resp_timer");
       p_lcb->idle_timeout = l2cb.idle_timeout;
@@ -93,6 +93,14 @@ tL2C_LCB* l2cu_allocate_lcb(const RawAddress& p_bd_addr, bool is_bonding,
 
   /* If here, no free LCB found */
   return (NULL);
+}
+
+void l2cu_set_lcb_handle(struct t_l2c_linkcb& p_lcb, uint16_t handle) {
+  if (p_lcb.Handle() != HCI_INVALID_HANDLE) {
+    LOG_WARN("Should not replace active handle:%hu with new handle:%hu",
+             p_lcb.Handle(), handle);
+  }
+  p_lcb.SetHandle(handle);
 }
 
 /*******************************************************************************
@@ -477,6 +485,59 @@ void l2cu_reject_connection(tL2C_LCB* p_lcb, uint16_t remote_cid,
   UINT16_TO_STREAM(p, remote_cid);
   UINT16_TO_STREAM(p, result);
   UINT16_TO_STREAM(p, 0); /* Status of 0      */
+
+  l2c_link_check_send_pkts(p_lcb, 0, p_buf);
+}
+
+/*******************************************************************************
+ *
+ * Function         l2cu_send_credit_based_reconfig_req
+ *
+ * Description      Build and send an L2CAP "recoonfiguration request" message
+ *                  to the peer.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+void l2cu_send_credit_based_reconfig_req(tL2C_CCB* p_ccb,
+                                         tL2CAP_LE_CFG_INFO* p_cfg) {
+  BT_HDR* p_buf;
+  uint16_t cmd_len;
+  uint8_t* p;
+  tL2C_LCB* p_lcb = p_ccb->p_lcb;
+  tL2C_CCB* p_ccb_temp;
+
+  cmd_len = L2CAP_CMD_CREDIT_BASED_RECONFIG_REQ_MIN_LEN +
+            sizeof(uint16_t) * p_lcb->pending_ecoc_reconfig_cnt;
+
+  /* Create an identifier for this packet */
+  p_lcb->signal_id++;
+  l2cu_adj_id(p_lcb);
+
+  p_ccb->local_id = p_lcb->signal_id;
+
+  p_buf = l2cu_build_header(p_lcb, cmd_len, L2CAP_CMD_CREDIT_BASED_RECONFIG_REQ,
+                            p_lcb->signal_id);
+  if (p_buf == NULL) {
+    L2CAP_TRACE_WARNING("l2cu_send_reconfig_req - no buffer");
+    return;
+  }
+
+  p = (uint8_t*)(p_buf + 1) + L2CAP_SEND_CMD_OFFSET + HCI_DATA_PREAMBLE_SIZE +
+      L2CAP_PKT_OVERHEAD + L2CAP_CMD_OVERHEAD;
+
+  L2CAP_TRACE_DEBUG("l2cu_send_reconfig_req number of cids: %d mtu:%d mps:%d",
+                    p_lcb->pending_ecoc_reconfig_cnt, p_cfg->mtu, p_cfg->mps);
+
+  UINT16_TO_STREAM(p, p_cfg->mtu);
+  UINT16_TO_STREAM(p, p_cfg->mps);
+
+  for (p_ccb_temp = p_lcb->ccb_queue.p_first_ccb; p_ccb_temp;
+       p_ccb_temp = p_ccb_temp->p_next_ccb) {
+    if ((p_ccb_temp->in_use) && (p_ccb_temp->ecoc) &&
+        (p_ccb_temp->reconfig_started))
+      UINT16_TO_STREAM(p, p_ccb_temp->local_cid);
+  }
 
   l2c_link_check_send_pkts(p_lcb, 0, p_buf);
 }
@@ -1328,22 +1389,18 @@ tL2C_CCB* l2cu_allocate_ccb(tL2C_LCB* p_lcb, uint16_t cid) {
 
   p_ccb->p_lcb = p_lcb;
   p_ccb->p_rcb = NULL;
-  p_ccb->should_free_rcb = false;
 
   /* Set priority then insert ccb into LCB queue (if we have an LCB) */
   p_ccb->ccb_priority = L2CAP_CHNL_PRIORITY_LOW;
 
   if (p_lcb) l2cu_enqueue_ccb(p_ccb);
 
-  /* clear what peer wants to configure */
-  p_ccb->peer_cfg_bits = 0;
-
   /* Put in default values for configuration */
   memset(&p_ccb->our_cfg, 0, sizeof(tL2CAP_CFG_INFO));
   memset(&p_ccb->peer_cfg, 0, sizeof(tL2CAP_CFG_INFO));
 
   /* Put in default values for local/peer configurations */
-  p_ccb->our_cfg.flush_to = p_ccb->peer_cfg.flush_to = L2CAP_DEFAULT_FLUSH_TO;
+  p_ccb->our_cfg.flush_to = p_ccb->peer_cfg.flush_to = L2CAP_NO_AUTOMATIC_FLUSH;
   p_ccb->our_cfg.mtu = p_ccb->peer_cfg.mtu = L2CAP_DEFAULT_MTU;
   p_ccb->our_cfg.qos.service_type = p_ccb->peer_cfg.qos.service_type =
       L2CAP_DEFAULT_SERV_TYPE;
@@ -1358,8 +1415,6 @@ tL2C_CCB* l2cu_allocate_ccb(tL2C_LCB* p_lcb, uint16_t cid) {
   p_ccb->our_cfg.qos.delay_variation = p_ccb->peer_cfg.qos.delay_variation =
       L2CAP_DEFAULT_DELAY;
 
-  p_ccb->bypass_fcs = 0;
-  memset(&p_ccb->ertm_info, 0, sizeof(tL2CAP_ERTM_INFO));
   p_ccb->peer_cfg_already_rejected = false;
   p_ccb->fcr_cfg_tries = L2CAP_MAX_FCR_CFG_TRIES;
 
@@ -1373,16 +1428,9 @@ tL2C_CCB* l2cu_allocate_ccb(tL2C_LCB* p_lcb, uint16_t cid) {
   alarm_free(p_ccb->fcrb.mon_retrans_timer);
   p_ccb->fcrb.mon_retrans_timer = alarm_new("l2c_fcrb.mon_retrans_timer");
 
-  p_ccb->ertm_info.preferred_mode =
-      L2CAP_FCR_BASIC_MODE; /* Default mode for channel is basic mode */
-  p_ccb->ertm_info.allowed_modes =
-      L2CAP_FCR_CHAN_OPT_BASIC; /* Default mode for channel is basic mode */
-  p_ccb->ertm_info.fcr_rx_buf_size = L2CAP_FCR_RX_BUF_SIZE;
-  p_ccb->ertm_info.fcr_tx_buf_size = L2CAP_FCR_TX_BUF_SIZE;
-  p_ccb->ertm_info.user_rx_buf_size = L2CAP_USER_RX_BUF_SIZE;
-  p_ccb->ertm_info.user_tx_buf_size = L2CAP_USER_TX_BUF_SIZE;
-  p_ccb->max_rx_mtu = L2CAP_MTU_SIZE;
-  p_ccb->tx_mps = L2CAP_FCR_TX_BUF_SIZE - 32;
+  p_ccb->max_rx_mtu = BT_DEFAULT_BUFFER_SIZE -
+                      (L2CAP_MIN_OFFSET + L2CAP_SDU_LEN_OFFSET + L2CAP_FCS_LEN);
+  p_ccb->tx_mps = BT_DEFAULT_BUFFER_SIZE - 32;
 
   p_ccb->xmit_hold_q = fixed_queue_new(SIZE_MAX);
   p_ccb->fcrb.srej_rcv_hold_q = fixed_queue_new(SIZE_MAX);
@@ -1479,17 +1527,11 @@ void l2cu_release_ccb(tL2C_CCB* p_ccb) {
   /* If already released, could be race condition */
   if (!p_ccb->in_use) return;
 
-  btsnoop_get_interface()->clear_l2cap_whitelist(
+  btsnoop_get_interface()->clear_l2cap_allowlist(
       p_lcb->Handle(), p_ccb->local_cid, p_ccb->remote_cid);
 
   if (p_rcb && (p_rcb->psm != p_rcb->real_psm)) {
     BTM_SecClrServiceByPsm(p_rcb->psm);
-  }
-
-  if (p_ccb->should_free_rcb) {
-    osi_free(p_rcb);
-    p_ccb->p_rcb = NULL;
-    p_ccb->should_free_rcb = false;
   }
 
   /* Free the timer */
@@ -1758,14 +1800,19 @@ uint8_t l2cu_process_peer_cfg_req(tL2C_CCB* p_ccb, tL2CAP_CFG_INFO* p_cfg) {
   bool flush_to_ok = true;
   bool fcr_ok = true;
   uint8_t fcr_status;
+  uint16_t required_remote_mtu =
+      std::max<uint16_t>(L2CAP_MIN_MTU, p_ccb->p_rcb->required_remote_mtu);
 
   /* Ignore FCR parameters for basic mode */
   if (!p_cfg->fcr_present) p_cfg->fcr.mode = L2CAP_FCR_BASIC_MODE;
 
-  /* Save the MTU that our peer can receive */
-  if (p_cfg->mtu_present) {
+  if (!p_cfg->mtu_present && required_remote_mtu > L2CAP_DEFAULT_MTU) {
+    // We reject if we have a MTU requirement higher than default MTU
+    p_cfg->mtu = required_remote_mtu;
+    mtu_ok = false;
+  } else if (p_cfg->mtu_present) {
     /* Make sure MTU is at least the minimum */
-    if (p_cfg->mtu >= L2CAP_MIN_MTU) {
+    if (p_cfg->mtu >= required_remote_mtu) {
       /* In basic mode, limit the MTU to our buffer size */
       if ((!p_cfg->fcr_present) && (p_cfg->mtu > L2CAP_MTU_SIZE))
         p_cfg->mtu = L2CAP_MTU_SIZE;
@@ -1773,10 +1820,9 @@ uint8_t l2cu_process_peer_cfg_req(tL2C_CCB* p_ccb, tL2CAP_CFG_INFO* p_cfg) {
       /* Save the accepted value in case of renegotiation */
       p_ccb->peer_cfg.mtu = p_cfg->mtu;
       p_ccb->peer_cfg.mtu_present = true;
-      p_ccb->peer_cfg_bits |= L2CAP_CH_CFG_MASK_MTU;
     } else /* Illegal MTU value */
     {
-      p_cfg->mtu = L2CAP_MIN_MTU;
+      p_cfg->mtu = required_remote_mtu;
       mtu_ok = false;
     }
   }
@@ -1795,7 +1841,6 @@ uint8_t l2cu_process_peer_cfg_req(tL2C_CCB* p_ccb, tL2CAP_CFG_INFO* p_cfg) {
     {
       p_ccb->peer_cfg.flush_to_present = true;
       p_ccb->peer_cfg.flush_to = p_cfg->flush_to;
-      p_ccb->peer_cfg_bits |= L2CAP_CH_CFG_MASK_FLUSH_TO;
     }
   }
   /* Reload flush_to from a previously accepted config request */
@@ -1812,7 +1857,6 @@ uint8_t l2cu_process_peer_cfg_req(tL2C_CCB* p_ccb, tL2CAP_CFG_INFO* p_cfg) {
     if (p_cfg->qos.service_type <= SVC_TYPE_GUARANTEED) {
       p_ccb->peer_cfg.qos = p_cfg->qos;
       p_ccb->peer_cfg.qos_present = true;
-      p_ccb->peer_cfg_bits |= L2CAP_CH_CFG_MASK_QOS;
     } else /* Illegal service type value */
     {
       p_cfg->qos.service_type = SVC_TYPE_BEST_EFFORT;
@@ -1903,9 +1947,6 @@ void l2cu_process_peer_cfg_rsp(tL2C_CCB* p_ccb, tL2CAP_CFG_INFO* p_cfg) {
  *
  ******************************************************************************/
 void l2cu_process_our_cfg_req(tL2C_CCB* p_ccb, tL2CAP_CFG_INFO* p_cfg) {
-  tL2C_LCB* p_lcb;
-  uint16_t hci_flush_to;
-
   /* Save the QOS settings we are using for transmit */
   if (p_cfg->qos_present) {
     p_ccb->our_cfg.qos_present = true;
@@ -1929,46 +1970,15 @@ void l2cu_process_our_cfg_req(tL2C_CCB* p_ccb, tL2CAP_CFG_INFO* p_cfg) {
     p_ccb->fcrb.max_held_acks = p_cfg->fcr.tx_win_sz / 3;
 
     /* Include FCS option only if peer can handle it */
-    if (p_ccb->p_lcb->peer_ext_fea & L2CAP_EXTFEA_NO_CRC) {
-      /* FCS check can be bypassed if peer also desires to bypass */
-      if (p_cfg->fcs_present && p_cfg->fcs == L2CAP_CFG_FCS_BYPASS)
-        p_ccb->bypass_fcs |= L2CAP_CFG_FCS_OUR;
-    } else
+    if ((p_ccb->p_lcb->peer_ext_fea & L2CAP_EXTFEA_NO_CRC) == 0) {
       p_cfg->fcs_present = false;
+    }
   } else {
     p_cfg->fcr.mode = L2CAP_FCR_BASIC_MODE;
   }
 
   p_ccb->our_cfg.fcr.mode = p_cfg->fcr.mode;
   p_ccb->our_cfg.fcr_present = p_cfg->fcr_present;
-
-  /* Check the flush timeout. If it is lower than the current one used */
-  /* then we need to adjust the flush timeout sent to the controller   */
-  if (p_cfg->flush_to_present) {
-    if ((p_cfg->flush_to == 0) ||
-        (p_cfg->flush_to == L2CAP_NO_AUTOMATIC_FLUSH)) {
-      /* don't send invalid flush timeout */
-      /* SPEC: The sender of the Request shall specify its flush timeout value
-       */
-      /*       if it differs from the default value of 0xFFFF */
-      p_cfg->flush_to_present = false;
-    } else {
-      p_ccb->our_cfg.flush_to = p_cfg->flush_to;
-      p_lcb = p_ccb->p_lcb;
-
-      if (p_cfg->flush_to < p_lcb->LinkFlushTimeout()) {
-        p_lcb->SetLinkFlushTimeout(p_cfg->flush_to);
-
-        /* If the timeout is within range of HCI, set the flush timeout */
-        if (p_cfg->flush_to <= ((HCI_MAX_AUTOMATIC_FLUSH_TIMEOUT * 5) / 8)) {
-          /* Convert flush timeout to 0.625 ms units, with round */
-          hci_flush_to = ((p_cfg->flush_to * 8) + 3) / 5;
-          acl_write_automatic_flush_timeout(p_lcb->remote_bd_addr,
-                                            hci_flush_to);
-        }
-      }
-    }
-  }
 }
 
 /*******************************************************************************
@@ -2022,16 +2032,9 @@ bool l2cu_create_conn_le(tL2C_LCB* p_lcb) {
 /* This function initiates an acl connection to a LE device.
  * Returns true if request started successfully, false otherwise. */
 bool l2cu_create_conn_le(tL2C_LCB* p_lcb, uint8_t initiating_phys) {
-  tBT_DEVICE_TYPE dev_type;
-  tBLE_ADDR_TYPE addr_type;
-
-  BTM_ReadDevInfo(p_lcb->remote_bd_addr, &dev_type, &addr_type);
-
   if (!controller_get_interface()->supports_ble()) return false;
 
-  p_lcb->ble_addr_type = addr_type;
   p_lcb->transport = BT_TRANSPORT_LE;
-  p_lcb->initiating_phys = initiating_phys;
 
   return (l2cble_create_conn(p_lcb));
 }
@@ -2202,7 +2205,7 @@ bool l2cu_lcb_disconnecting(void) {
  *
  ******************************************************************************/
 
-bool l2cu_set_acl_priority(const RawAddress& bd_addr, uint8_t priority,
+bool l2cu_set_acl_priority(const RawAddress& bd_addr, tL2CAP_PRIORITY priority,
                            bool reset_after_rs) {
   tL2C_LCB* p_lcb;
   uint8_t* pp;
@@ -2706,6 +2709,68 @@ void l2cu_send_peer_ble_credit_based_conn_req(tL2C_CCB* p_ccb) {
 
 /*******************************************************************************
  *
+ * Function         l2cu_send_peer_credit_based_conn_req
+ *
+ * Description      Build and send a BLE packet to establish enhanced connection
+ *                  oriented L2CAP channel.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+void l2cu_send_peer_credit_based_conn_req(tL2C_CCB* p_ccb) {
+  BT_HDR* p_buf;
+  uint8_t* p;
+  tL2C_LCB* p_lcb = NULL;
+  uint16_t mtu;
+  uint16_t mps;
+  uint16_t initial_credit;
+
+  if (!p_ccb) return;
+
+  p_lcb = p_ccb->p_lcb;
+
+  /* Create an identifier for this packet */
+  p_ccb->p_lcb->signal_id++;
+  l2cu_adj_id(p_ccb->p_lcb);
+
+  p_ccb->local_id = p_lcb->signal_id;
+
+  p_buf = l2cu_build_header(p_lcb,
+                            L2CAP_CMD_CREDIT_BASED_CONN_REQ_MIN_LEN +
+                                2 * p_lcb->pending_ecoc_connection_cids.size(),
+                            L2CAP_CMD_CREDIT_BASED_CONN_REQ, p_ccb->local_id);
+  if (p_buf == NULL) {
+    L2CAP_TRACE_WARNING("%s - no buffer", __func__);
+    return;
+  }
+
+  p = (uint8_t*)(p_buf + 1) + L2CAP_SEND_CMD_OFFSET + HCI_DATA_PREAMBLE_SIZE +
+      L2CAP_PKT_OVERHEAD + L2CAP_CMD_OVERHEAD;
+
+  mtu = p_ccb->local_conn_cfg.mtu;
+  mps = p_ccb->local_conn_cfg.mps;
+  initial_credit = p_ccb->local_conn_cfg.credits;
+
+  L2CAP_TRACE_DEBUG(
+      "%s PSM:0x%04x mtu:%d mps:%d initial_credit:%d, cids_cnt %d", __func__,
+      p_ccb->p_rcb->real_psm, mtu, mps, initial_credit,
+      p_lcb->pending_ecoc_connection_cids.size());
+
+  UINT16_TO_STREAM(p, p_ccb->p_rcb->real_psm);
+  UINT16_TO_STREAM(p, mtu);
+  UINT16_TO_STREAM(p, mps);
+  UINT16_TO_STREAM(p, initial_credit);
+
+  for (uint16_t cid : p_lcb->pending_ecoc_connection_cids) {
+    L2CAP_TRACE_DEBUG("\n\t cid: ", cid);
+    UINT16_TO_STREAM(p, cid);
+  }
+
+  l2c_link_check_send_pkts(p_lcb, 0, p_buf);
+}
+
+/*******************************************************************************
+ *
  * Function         l2cu_reject_ble_coc_connection
  *
  * Description      Build and send an L2CAP "Credit based connection res"
@@ -2741,6 +2806,112 @@ void l2cu_reject_ble_coc_connection(tL2C_LCB* p_lcb, uint8_t rem_id,
 
 /*******************************************************************************
  *
+ * Function         l2cu_reject_credit_based_connection_req
+ *
+ * Description      Build and send an L2CAP "credit based connection
+ *res" message to the peer. This function is called for non-success cases.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+void l2cu_reject_credit_based_conn_req(tL2C_LCB* p_lcb, uint8_t rem_id,
+                                       uint8_t num_of_channels,
+                                       uint16_t result) {
+  BT_HDR* p_buf;
+  uint8_t* p;
+  uint8_t rsp_len = L2CAP_CMD_CREDIT_BASED_CONN_RES_MIN_LEN +
+                    sizeof(uint16_t) * num_of_channels;
+
+  p_buf = l2cu_build_header(p_lcb, rsp_len, L2CAP_CMD_CREDIT_BASED_CONN_RES,
+                            rem_id);
+  if (p_buf == NULL) {
+    L2CAP_TRACE_WARNING("l2cu_reject_credit_based_conn_req - no buffer");
+    return;
+  }
+
+  p = (uint8_t*)(p_buf + 1) + L2CAP_SEND_CMD_OFFSET + HCI_DATA_PREAMBLE_SIZE +
+      L2CAP_PKT_OVERHEAD + L2CAP_CMD_OVERHEAD;
+
+  memset(p, 0, rsp_len);
+  UINT16_TO_STREAM(p, L2CAP_CREDIT_BASED_MIN_MTU); /* dummy MTU to satisy PTS */
+  UINT16_TO_STREAM(p, L2CAP_CREDIT_BASED_MIN_MPS); /* dummy MPS to satisy PTS*/
+  UINT16_TO_STREAM(p, 1); /* dummy initial credit to satisy PTS */
+  UINT16_TO_STREAM(p, result);
+
+  l2c_link_check_send_pkts(p_lcb, 0, p_buf);
+}
+
+/*******************************************************************************
+ *
+ * Function         l2cu_send_peer_credit_based_conn_res
+ *
+ * Description      Build and send an L2CAP "Credit based connection res"
+ *                  message to the peer. This function is called in case of
+ *                  success.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+void l2cu_send_peer_credit_based_conn_res(tL2C_CCB* p_ccb,
+                                          std::vector<uint16_t>& accepted_cids,
+                                          uint16_t result) {
+  BT_HDR* p_buf;
+  uint8_t* p;
+
+  L2CAP_TRACE_DEBUG("%s", __func__);
+  uint8_t rsp_len =
+      L2CAP_CMD_CREDIT_BASED_CONN_RES_MIN_LEN +
+      p_ccb->p_lcb->pending_ecoc_connection_cids.size() * sizeof(uint16_t);
+
+  p_buf = l2cu_build_header(p_ccb->p_lcb, rsp_len,
+                            L2CAP_CMD_CREDIT_BASED_CONN_RES, p_ccb->remote_id);
+  if (p_buf == NULL) {
+    L2CAP_TRACE_WARNING("%s - no buffer", __func__);
+    return;
+  }
+
+  p = (uint8_t*)(p_buf + 1) + L2CAP_SEND_CMD_OFFSET + HCI_DATA_PREAMBLE_SIZE +
+      L2CAP_PKT_OVERHEAD + L2CAP_CMD_OVERHEAD;
+
+  memset(p, 0, rsp_len);
+  UINT16_TO_STREAM(p, p_ccb->local_conn_cfg.mtu);     /* MTU */
+  UINT16_TO_STREAM(p, p_ccb->local_conn_cfg.mps);     /* MPS */
+  UINT16_TO_STREAM(p, p_ccb->local_conn_cfg.credits); /* initial credit */
+
+  if (result == L2CAP_CONN_OK) {
+    /* In case of success, we need to check if stack
+     * did not have previous result stored e.g. when there was no
+     * resources for allocation all the requrested channels,
+     * before user indication.
+     */
+    result = p_ccb->p_lcb->pending_l2cap_result;
+  }
+
+  UINT16_TO_STREAM(p, result);
+
+  /* We need to keep order from the request.
+   * if this vector contais 0 it means channel has been rejected by
+   * the stack.
+   * If there is valid cid, we need to verify if it is accepted by upper layer.
+   */
+  for (uint16_t cid : p_ccb->p_lcb->pending_ecoc_connection_cids) {
+    if (cid == 0) {
+      UINT16_TO_STREAM(p, 0);
+      continue;
+    }
+    auto it = std::find(accepted_cids.begin(), accepted_cids.end(), cid);
+    if (it != accepted_cids.end()) {
+      UINT16_TO_STREAM(p, cid);
+    } else {
+      UINT16_TO_STREAM(p, 0);
+    }
+  }
+
+  l2c_link_check_send_pkts(p_ccb->p_lcb, 0, p_buf);
+}
+
+/*******************************************************************************
+ *
  * Function         l2cu_reject_ble_connection
  *
  * Description      Build and send an L2CAP "Credit based connection res"
@@ -2752,7 +2923,46 @@ void l2cu_reject_ble_coc_connection(tL2C_LCB* p_lcb, uint8_t rem_id,
  ******************************************************************************/
 void l2cu_reject_ble_connection(tL2C_CCB* p_ccb, uint8_t rem_id,
                                 uint16_t result) {
-  l2cu_reject_ble_coc_connection(p_ccb->p_lcb, rem_id, result);
+  if (p_ccb->ecoc)
+    l2cu_reject_credit_based_conn_req(
+        p_ccb->p_lcb, rem_id, p_ccb->p_lcb->pending_ecoc_reconfig_cnt, result);
+  else
+    l2cu_reject_ble_coc_connection(p_ccb->p_lcb, rem_id, result);
+}
+
+/*******************************************************************************
+ *
+ * Function         l2cu_send_ble_reconfig_rsp
+ *
+ * Description      Build and send an L2CAP "Credit based reconfig res"
+ *                  message to the peer. This function is called for non-success
+ *                  cases.
+ *
+ * Returns          void
+ *
+ ******************************************************************************/
+
+void l2cu_send_ble_reconfig_rsp(tL2C_LCB* p_lcb, uint8_t rem_id,
+                                uint16_t result) {
+  BT_HDR* p_buf;
+  uint8_t* p;
+
+  L2CAP_TRACE_DEBUG("l2cu_send_ble_reconfig_rsp result 0x04%x", result);
+
+  p_buf = l2cu_build_header(p_lcb, L2CAP_CMD_CREDIT_BASED_RECONFIG_RES_LEN,
+                            L2CAP_CMD_CREDIT_BASED_RECONFIG_RES, rem_id);
+  if (p_buf == NULL) {
+    L2CAP_TRACE_WARNING("l2cu_send_peer_ble_credit_based_conn_res - no buffer");
+    return;
+  }
+
+  p = (uint8_t*)(p_buf + 1) + L2CAP_SEND_CMD_OFFSET + HCI_DATA_PREAMBLE_SIZE +
+      L2CAP_PKT_OVERHEAD + L2CAP_CMD_OVERHEAD;
+
+  memset(p, 0, L2CAP_CMD_CREDIT_BASED_RECONFIG_RES_LEN);
+  UINT16_TO_STREAM(p, result);
+
+  l2c_link_check_send_pkts(p_lcb, 0, p_buf);
 }
 
 /*******************************************************************************
@@ -2935,10 +3145,6 @@ tL2C_CCB* l2cu_find_ccb_by_cid(tL2C_LCB* p_lcb, uint16_t local_cid) {
   return (p_ccb);
 }
 
-void l2cu_tx_complete(tL2C_TX_COMPLETE_CB_INFO* p_cbi) {
-  if (p_cbi->cb != NULL) p_cbi->cb(p_cbi->local_cid, p_cbi->num_sdu);
-}
-
 /******************************************************************************
  *
  * Function         l2cu_set_acl_hci_header
@@ -2968,11 +3174,9 @@ void l2cu_set_acl_hci_header(BT_HDR* p_buf, tL2C_CCB* p_ccb) {
       UINT16_TO_STREAM(p, p_buf->len);
     }
   } else {
-    if ((((p_buf->layer_specific & L2CAP_FLUSHABLE_MASK) ==
-          L2CAP_FLUSHABLE_CH_BASED) &&
-         (p_ccb->is_flushable)) ||
-        ((p_buf->layer_specific & L2CAP_FLUSHABLE_MASK) ==
-         L2CAP_FLUSHABLE_PKT)) {
+    if (((p_buf->layer_specific & L2CAP_FLUSHABLE_MASK) ==
+         L2CAP_FLUSHABLE_CH_BASED) &&
+        (p_ccb->is_flushable)) {
       UINT16_TO_STREAM(p, p_ccb->p_lcb->Handle() |
                               (L2CAP_PKT_START << L2CAP_PKT_TYPE_SHIFT));
     } else {

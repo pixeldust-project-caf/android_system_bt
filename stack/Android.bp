@@ -103,6 +103,7 @@ cc_library_static {
         "btm/ble_advertiser_hci_interface.cc",
         "acl/btm_acl.cc",
         "acl/ble_acl.cc",
+        "btm/ble_scanner_hci_interface.cc",
         "btm/btm_ble.cc",
         "btm/btm_ble_addr.cc",
         "btm/btm_ble_adv_filter.cc",
@@ -520,20 +521,27 @@ cc_test {
     host_supported: true,
     include_dirs: [
         "system/bt",
+        "system/bt/stack/btm",
         "system/bt/stack/include",
+        "system/bt/utils/include",
     ],
     srcs: crypto_toolbox_srcs + [
-        "test/stack_gatt_sr_hash_test.cc",
+        "gatt/gatt_db.cc",
         "gatt/gatt_sr_hash.cc",
+        "gatt/gatt_utils.cc",
+        "test/gatt/mock_gatt_utils_ref.cc",
+        "test/stack_gatt_sr_hash_test.cc",
     ],
     shared_libs: [
         "libcutils",
         "libcrypto",
+        "libprotobuf-cpp-lite",
     ],
     static_libs: [
+        "libbt-common",
+        "libbt-protos-lite",
         "liblog",
         "libosi",
-        "libbt-common",
     ],
 }
 
