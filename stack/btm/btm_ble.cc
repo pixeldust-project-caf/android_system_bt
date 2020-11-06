@@ -53,27 +53,10 @@ extern void gatt_notify_phy_updated(tGATT_STATUS status, uint16_t handle,
 /******************************************************************************/
 /* External Function to be called by other modules                            */
 /******************************************************************************/
-/********************************************************
- *
- * Function         BTM_SecAddBleDevice
- *
- * Description      Add/modify device.  This function will be normally called
- *                  during host startup to restore all required information
- *                  for a LE device stored in the NVRAM.
- *
- * Parameters:      bd_addr          - BD address of the peer
- *                  bd_name          - Name of the peer device. NULL if unknown.
- *                  dev_type         - Remote device's device type.
- *                  addr_type        - LE device address type.
- *
- * Returns          true if added OK, else false
- *
- ******************************************************************************/
-bool BTM_SecAddBleDevice(const RawAddress& bd_addr, BD_NAME bd_name,
-                         tBT_DEVICE_TYPE dev_type, tBLE_ADDR_TYPE addr_type) {
+bool BTM_SecAddBleDevice(const RawAddress& bd_addr, tBT_DEVICE_TYPE dev_type,
+                         tBLE_ADDR_TYPE addr_type) {
   if (bluetooth::shim::is_gd_shim_enabled()) {
-    return bluetooth::shim::BTM_SecAddBleDevice(bd_addr, bd_name, dev_type,
-                                                addr_type);
+    return bluetooth::shim::BTM_SecAddBleDevice(bd_addr, dev_type, addr_type);
   }
 
   BTM_TRACE_DEBUG("%s: dev_type=0x%x", __func__, dev_type);
@@ -90,7 +73,7 @@ bool BTM_SecAddBleDevice(const RawAddress& bd_addr, BD_NAME bd_name,
     p_dev_rec->conn_params.min_conn_int = BTM_BLE_CONN_PARAM_UNDEF;
     p_dev_rec->conn_params.max_conn_int = BTM_BLE_CONN_PARAM_UNDEF;
     p_dev_rec->conn_params.supervision_tout = BTM_BLE_CONN_PARAM_UNDEF;
-    p_dev_rec->conn_params.slave_latency = BTM_BLE_CONN_PARAM_UNDEF;
+    p_dev_rec->conn_params.peripheral_latency = BTM_BLE_CONN_PARAM_UNDEF;
 
     BTM_TRACE_DEBUG("%s: Device added, handle=0x%x, p_dev_rec=%p, bd_addr=%s",
                     __func__, p_dev_rec->ble_hci_handle, p_dev_rec,
@@ -99,11 +82,6 @@ bool BTM_SecAddBleDevice(const RawAddress& bd_addr, BD_NAME bd_name,
 
   memset(p_dev_rec->sec_bd_name, 0, sizeof(tBTM_BD_NAME));
 
-  if (bd_name && bd_name[0]) {
-    p_dev_rec->sec_flags |= BTM_SEC_NAME_KNOWN;
-    strlcpy((char*)p_dev_rec->sec_bd_name, (char*)bd_name,
-            BTM_MAX_REM_BD_NAME_LEN + 1);
-  }
   p_dev_rec->device_type |= dev_type;
   p_dev_rec->ble.ble_addr_type = addr_type;
 
@@ -402,25 +380,27 @@ void BTM_BleSecureConnectionOobDataReply(const RawAddress& bd_addr,
  *                  scan_window: scan window
  *                  min_conn_int     - minimum preferred connection interval
  *                  max_conn_int     - maximum preferred connection interval
- *                  slave_latency    - preferred slave latency
+ *                  peripheral_latency    - preferred peripheral latency
  *                  supervision_tout - preferred supervision timeout
  *
  * Returns          void
  *
  ******************************************************************************/
 void BTM_BleSetPrefConnParams(const RawAddress& bd_addr, uint16_t min_conn_int,
-                              uint16_t max_conn_int, uint16_t slave_latency,
+                              uint16_t max_conn_int,
+                              uint16_t peripheral_latency,
                               uint16_t supervision_tout) {
   if (bluetooth::shim::is_gd_shim_enabled()) {
     return bluetooth::shim::BTM_BleSetPrefConnParams(
-        bd_addr, min_conn_int, max_conn_int, slave_latency, supervision_tout);
+        bd_addr, min_conn_int, max_conn_int, peripheral_latency,
+        supervision_tout);
   }
   tBTM_SEC_DEV_REC* p_dev_rec = btm_find_dev(bd_addr);
 
   BTM_TRACE_API(
       "BTM_BleSetPrefConnParams min: %u  max: %u  latency: %u  \
                     tout: %u",
-      min_conn_int, max_conn_int, slave_latency, supervision_tout);
+      min_conn_int, max_conn_int, peripheral_latency, supervision_tout);
 
   if (BTM_BLE_ISVALID_PARAM(min_conn_int, BTM_BLE_CONN_INT_MIN,
                             BTM_BLE_CONN_INT_MAX) &&
@@ -428,10 +408,11 @@ void BTM_BleSetPrefConnParams(const RawAddress& bd_addr, uint16_t min_conn_int,
                             BTM_BLE_CONN_INT_MAX) &&
       BTM_BLE_ISVALID_PARAM(supervision_tout, BTM_BLE_CONN_SUP_TOUT_MIN,
                             BTM_BLE_CONN_SUP_TOUT_MAX) &&
-      (slave_latency <= BTM_BLE_CONN_LATENCY_MAX ||
-       slave_latency == BTM_BLE_CONN_PARAM_UNDEF)) {
+      (peripheral_latency <= BTM_BLE_CONN_LATENCY_MAX ||
+       peripheral_latency == BTM_BLE_CONN_PARAM_UNDEF)) {
     if (p_dev_rec) {
-      /* expect conn int and stout and slave latency to be updated all together
+      /* expect conn int and stout and peripheral latency to be updated all
+       * together
        */
       if (min_conn_int != BTM_BLE_CONN_PARAM_UNDEF ||
           max_conn_int != BTM_BLE_CONN_PARAM_UNDEF) {
@@ -445,10 +426,11 @@ void BTM_BleSetPrefConnParams(const RawAddress& bd_addr, uint16_t min_conn_int,
         else
           p_dev_rec->conn_params.max_conn_int = min_conn_int;
 
-        if (slave_latency != BTM_BLE_CONN_PARAM_UNDEF)
-          p_dev_rec->conn_params.slave_latency = slave_latency;
+        if (peripheral_latency != BTM_BLE_CONN_PARAM_UNDEF)
+          p_dev_rec->conn_params.peripheral_latency = peripheral_latency;
         else
-          p_dev_rec->conn_params.slave_latency = BTM_BLE_CONN_SLAVE_LATENCY_DEF;
+          p_dev_rec->conn_params.peripheral_latency =
+              BTM_BLE_CONN_PERIPHERAL_LATENCY_DEF;
 
         if (supervision_tout != BTM_BLE_CONN_PARAM_UNDEF)
           p_dev_rec->conn_params.supervision_tout = supervision_tout;
@@ -916,7 +898,7 @@ tL2CAP_LE_RESULT_CODE btm_ble_start_sec_check(const RawAddress& bd_addr,
   /* If there is no application registered with this PSM do not allow connection
    */
   if (!p_serv_rec) {
-    BTM_TRACE_WARNING("%s PSM: %d no application registerd", __func__, psm);
+    LOG_WARN("PSM: %d no application registered", psm);
     (*p_callback)(&bd_addr, BT_TRANSPORT_LE, p_ref_data, BTM_MODE_UNSUPPORTED);
     return L2CAP_LE_RESULT_NO_PSM;
   }
@@ -927,17 +909,17 @@ tL2CAP_LE_RESULT_CODE btm_ble_start_sec_check(const RawAddress& bd_addr,
 
   if (!is_originator) {
     if ((p_serv_rec->security_flags & BTM_SEC_IN_ENCRYPT) && !is_encrypted) {
-      BTM_TRACE_ERROR(
-          "%s: L2CAP_LE_RESULT_INSUFFICIENT_ENCRYP. service "
+      LOG_ERROR(
+          "L2CAP_LE_RESULT_INSUFFICIENT_ENCRYP. service "
           "security_flags=0x%x, ",
-          __func__, p_serv_rec->security_flags);
+          p_serv_rec->security_flags);
       return L2CAP_LE_RESULT_INSUFFICIENT_ENCRYP;
     } else if ((p_serv_rec->security_flags & BTM_SEC_IN_AUTHENTICATE) &&
                !(is_link_key_authed || is_authenticated)) {
-      BTM_TRACE_ERROR(
-          "%s: L2CAP_LE_RESULT_INSUFFICIENT_AUTHENTICATION. service "
+      LOG_ERROR(
+          "L2CAP_LE_RESULT_INSUFFICIENT_AUTHENTICATION. service "
           "security_flags=0x%x, ",
-          __func__, p_serv_rec->security_flags);
+          p_serv_rec->security_flags);
       return L2CAP_LE_RESULT_INSUFFICIENT_AUTHENTICATION;
     }
     /* TODO: When security is required, then must check that the key size of our
@@ -952,32 +934,34 @@ tL2CAP_LE_RESULT_CODE btm_ble_start_sec_check(const RawAddress& bd_addr,
 
   switch (sec_act) {
     case BTM_SEC_OK:
-      BTM_TRACE_DEBUG("%s Security met", __func__);
+      LOG_DEBUG("Security met");
       p_callback(&bd_addr, BT_TRANSPORT_LE, p_ref_data, BTM_SUCCESS);
       result = L2CAP_LE_RESULT_CONN_OK;
       break;
 
     case BTM_SEC_ENCRYPT:
-      BTM_TRACE_DEBUG("%s Encryption needs to be done", __func__);
+      LOG_DEBUG("Encryption needs to be done");
       ble_sec_act = BTM_BLE_SEC_ENCRYPT;
       break;
 
     case BTM_SEC_ENCRYPT_MITM:
-      BTM_TRACE_DEBUG("%s Pairing with MITM needs to be done", __func__);
+      LOG_DEBUG("Pairing with MITM needs to be done");
       ble_sec_act = BTM_BLE_SEC_ENCRYPT_MITM;
       break;
 
     case BTM_SEC_ENCRYPT_NO_MITM:
-      BTM_TRACE_DEBUG("%s Pairing with No MITM needs to be done", __func__);
+      LOG_DEBUG("Pairing with No MITM needs to be done");
       ble_sec_act = BTM_BLE_SEC_ENCRYPT_NO_MITM;
       break;
 
     case BTM_SEC_ENC_PENDING:
-      BTM_TRACE_DEBUG("%s Ecryption pending", __func__);
+      LOG_DEBUG("Ecryption pending");
       break;
   }
 
-  if (ble_sec_act == BTM_BLE_SEC_NONE) return result;
+  if (ble_sec_act == BTM_BLE_SEC_NONE) {
+    return result;
+  }
 
   l2cble_update_sec_act(bd_addr, sec_act);
   BTM_SetEncryption(bd_addr, BT_TRANSPORT_LE, p_callback, p_ref_data,
@@ -1309,7 +1293,7 @@ void btm_ble_link_sec_check(const RawAddress& bd_addr,
 
   if (p_dev_rec->sec_state == BTM_SEC_STATE_ENCRYPTING ||
       p_dev_rec->sec_state == BTM_SEC_STATE_AUTHENTICATING) {
-    /* race condition: discard the security request while master is encrypting
+    /* race condition: discard the security request while central is encrypting
      * the link */
     *p_sec_req_act = BTM_BLE_SEC_REQ_ACT_DISCARD;
   } else {
@@ -1376,8 +1360,8 @@ tBTM_STATUS btm_ble_set_encryption(const RawAddress& bd_addr,
     return (BTM_WRONG_MODE);
   }
 
-  BTM_TRACE_DEBUG("btm_ble_set_encryption sec_act=0x%x role_master=%d", sec_act,
-                  p_rec->role_master);
+  BTM_TRACE_DEBUG("btm_ble_set_encryption sec_act=0x%x role_central=%d",
+                  sec_act, p_rec->role_central);
 
   if (sec_act == BTM_BLE_SEC_ENCRYPT_MITM) {
     p_rec->security_required |= BTM_SEC_IN_MITM;
@@ -1385,13 +1369,13 @@ tBTM_STATUS btm_ble_set_encryption(const RawAddress& bd_addr,
 
   switch (sec_act) {
     case BTM_BLE_SEC_ENCRYPT:
-      if (link_role == HCI_ROLE_MASTER) {
+      if (link_role == HCI_ROLE_CENTRAL) {
         /* start link layer encryption using the security info stored */
         cmd = btm_ble_start_encrypt(bd_addr, false, NULL);
         break;
       }
-    /* if salve role then fall through to call SMP_Pair below which will send a
-       sec_request to request the master to encrypt the link */
+      /* if salve role then fall through to call SMP_Pair below which will send
+         a sec_request to request the central to encrypt the link */
       FALLTHROUGH_INTENDED; /* FALLTHROUGH */
     case BTM_BLE_SEC_ENCRYPT_NO_MITM:
     case BTM_BLE_SEC_ENCRYPT_MITM:
@@ -1405,7 +1389,7 @@ tBTM_STATUS btm_ble_set_encryption(const RawAddress& bd_addr,
         cmd = BTM_SUCCESS;
         break;
       }
-      if (link_role == HCI_ROLE_MASTER) {
+      if (link_role == HCI_ROLE_CENTRAL) {
         if (sec_req_act == BTM_BLE_SEC_REQ_ACT_ENCRYPT) {
           cmd = btm_ble_start_encrypt(bd_addr, false, NULL);
           break;
@@ -1430,7 +1414,7 @@ tBTM_STATUS btm_ble_set_encryption(const RawAddress& bd_addr,
  * Function         btm_ble_ltk_request
  *
  * Description      This function is called when encryption request is received
- *                  on a slave device.
+ *                  on a peripheral device.
  *
  *
  * Returns          void
@@ -1530,7 +1514,7 @@ void btm_ble_link_encrypted(const RawAddress& bd_addr, uint8_t encr_enable) {
       btm_sec_dev_rec_cback_event(p_dev_rec, BTM_SUCCESS, true);
     else if (p_dev_rec->sec_flags & ~BTM_SEC_LE_LINK_KEY_KNOWN) {
       btm_sec_dev_rec_cback_event(p_dev_rec, BTM_FAILED_ON_SECURITY, true);
-    } else if (p_dev_rec->role_master)
+    } else if (p_dev_rec->role_central)
       btm_sec_dev_rec_cback_event(p_dev_rec, BTM_ERR_PROCESSING, true);
   }
   /* to notify GATT to send data if any request is pending */
@@ -1542,7 +1526,7 @@ void btm_ble_link_encrypted(const RawAddress& bd_addr, uint8_t encr_enable) {
  * Function         btm_ble_ltk_request_reply
  *
  * Description      This function is called to send a LTK request reply on a
- *                  slave
+ *                  peripheral
  *                  device.
  *
  * Returns          void
@@ -1712,7 +1696,7 @@ void btm_ble_connected(const RawAddress& bda, uint16_t handle, uint8_t enc_mode,
   p_dev_rec->ble.pseudo_addr = bda;
   p_dev_rec->ble_hci_handle = handle;
   p_dev_rec->device_type |= BT_DEVICE_TYPE_BLE;
-  p_dev_rec->role_master = (role == HCI_ROLE_MASTER) ? true : false;
+  p_dev_rec->role_central = (role == HCI_ROLE_CENTRAL) ? true : false;
 
   if (!addr_matched) {
     p_dev_rec->ble.active_addr_type = tBTM_SEC_BLE::BTM_BLE_ADDR_PSEUDO;

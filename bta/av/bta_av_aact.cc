@@ -100,7 +100,7 @@ const tBTA_AV_CO_FUNCTS bta_av_a2dp_cos = {bta_av_co_audio_init,
                                            bta_av_co_audio_source_data_path,
                                            bta_av_co_audio_delay,
                                            bta_av_co_audio_update_mtu,
-                                           bta_av_co_content_protect_is_active};
+                                           bta_av_co_get_scmst_info};
 
 /* these tables translate AVDT events to SSM events */
 static const uint16_t bta_av_stream_evt_ok[] = {
@@ -780,7 +780,7 @@ void bta_av_do_disc_a2dp(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
                         BTA_AV_AVRC_TIMER_EVT, p_scb->hndl);
   }
 
-  if (bta_av_cb.features & BTA_AV_FEAT_MASTER) {
+  if (bta_av_cb.features & BTA_AV_FEAT_CENTRAL) {
     BTM_default_block_role_switch();
   }
   /* store peer addr other parameters */
@@ -1793,11 +1793,11 @@ void bta_av_do_start(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
     return;
   }
 
-  /* disallow role switch during streaming, only if we are the master role
-   * i.e. allow role switch, if we are slave.
-   * It would not hurt us, if the peer device wants us to be master */
+  /* disallow role switch during streaming, only if we are the central role
+   * i.e. allow role switch, if we are peripheral.
+   * It would not hurt us, if the peer device wants us to be central */
   if ((BTM_GetRole(p_scb->PeerAddress(), &cur_role) == BTM_SUCCESS) &&
-      (cur_role == HCI_ROLE_MASTER)) {
+      (cur_role == HCI_ROLE_CENTRAL)) {
     BTM_block_role_switch_for(p_scb->PeerAddress());
   }
 
@@ -1867,7 +1867,7 @@ void bta_av_str_stopped(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
       bta_av_cb.audio_open_cnt, p_data, start);
 
   bta_sys_idle(BTA_ID_AV, bta_av_cb.audio_open_cnt, p_scb->PeerAddress());
-  if ((bta_av_cb.features & BTA_AV_FEAT_MASTER) == 0 ||
+  if ((bta_av_cb.features & BTA_AV_FEAT_CENTRAL) == 0 ||
       bta_av_cb.audio_open_cnt == 1) {
     BTM_unblock_role_switch_for(p_scb->PeerAddress());
   }
@@ -2229,10 +2229,10 @@ void bta_av_start_ok(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
   if (!bta_av_link_role_ok(p_scb, A2DP_SET_ONE_BIT))
     p_scb->q_tag = BTA_AV_Q_TAG_START;
   else {
-    /* The wait flag may be set here while we are already master on the link */
+    /* The wait flag may be set here while we are already central on the link */
     /* this could happen if a role switch complete event occurred during
      * reconfig */
-    /* if we are now master on the link, there is no need to wait for the role
+    /* if we are now central on the link, there is no need to wait for the role
      * switch, */
     /* complete anymore so we can clear the wait for role switch flag */
     p_scb->wait &= ~BTA_AV_WAIT_ROLE_SW_BITS;
@@ -2291,12 +2291,12 @@ void bta_av_start_ok(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
   {
     /* If sink starts stream, disable sniff mode here */
     if (!initiator) {
-      /* If souce is the master role, disable role switch during streaming.
-       * Otherwise allow role switch, if source is slave.
+      /* If souce is the central role, disable role switch during streaming.
+       * Otherwise allow role switch, if source is peripheral.
        * Because it would not hurt source, if the peer device wants source to be
-       * master */
+       * central */
       if ((BTM_GetRole(p_scb->PeerAddress(), &cur_role) == BTM_SUCCESS) &&
-          (cur_role == HCI_ROLE_MASTER)) {
+          (cur_role == HCI_ROLE_CENTRAL)) {
         BTM_block_role_switch_for(p_scb->PeerAddress());
       }
     }
@@ -2382,7 +2382,7 @@ void bta_av_str_closed(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
       __func__, p_scb->PeerAddress().ToString().c_str(), p_scb->hndl,
       p_scb->open_status, p_scb->chnl, p_scb->co_started);
 
-  if ((bta_av_cb.features & BTA_AV_FEAT_MASTER) == 0 ||
+  if ((bta_av_cb.features & BTA_AV_FEAT_CENTRAL) == 0 ||
       bta_av_cb.audio_open_cnt == 1) {
     BTM_unblock_role_switch_for(p_scb->PeerAddress());
   }
@@ -2493,7 +2493,7 @@ void bta_av_suspend_cfm(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
   }
 
   bta_sys_idle(BTA_ID_AV, bta_av_cb.audio_open_cnt, p_scb->PeerAddress());
-  if ((bta_av_cb.features & BTA_AV_FEAT_MASTER) == 0 ||
+  if ((bta_av_cb.features & BTA_AV_FEAT_CENTRAL) == 0 ||
       bta_av_cb.audio_open_cnt == 1) {
     BTM_unblock_role_switch_for(p_scb->PeerAddress());
   }
@@ -3021,7 +3021,8 @@ void bta_av_vendor_offload_start(tBTA_AV_SCB* p_scb,
 
   UINT32_TO_STREAM(p_param, offload_start->codec_type);
   UINT16_TO_STREAM(p_param, offload_start->max_latency);
-  UINT16_TO_STREAM(p_param, offload_start->scms_t_enable);
+  ARRAY_TO_STREAM(p_param, offload_start->scms_t_enable,
+                  static_cast<int>(offload_start->scms_t_enable.size()));
   UINT32_TO_STREAM(p_param, offload_start->sample_rate);
   UINT8_TO_STREAM(p_param, offload_start->bits_per_sample);
   UINT8_TO_STREAM(p_param, offload_start->ch_mode);
@@ -3179,10 +3180,14 @@ static void bta_av_offload_codec_builder(tBTA_AV_SCB* p_scb,
   p_a2dp_offload->mtu = mtu;
   p_a2dp_offload->acl_hdl =
       BTM_GetHCIConnHandle(p_scb->PeerAddress(), BT_TRANSPORT_BR_EDR);
-  p_a2dp_offload->scms_t_enable =
-      p_scb->p_cos->cp_is_active(p_scb->PeerAddress());
-  APPL_TRACE_DEBUG("%s: scms_t_enable =%d", __func__,
-                   p_a2dp_offload->scms_t_enable);
+  btav_a2dp_scmst_info_t scmst_info =
+      p_scb->p_cos->get_scmst_info(p_scb->PeerAddress());
+  p_a2dp_offload->scms_t_enable[0] = scmst_info.enable_status;
+  p_a2dp_offload->scms_t_enable[1] = scmst_info.cp_header;
+  APPL_TRACE_DEBUG(
+      "%s: SCMS-T_enable status: %d, "
+      "SCMS-T header (if it's enabled): 0x%02x",
+      __func__, scmst_info.enable_status, scmst_info.cp_header);
 
   switch (A2DP_GetTrackSampleRate(p_scb->cfg.codec_info)) {
     case 44100:

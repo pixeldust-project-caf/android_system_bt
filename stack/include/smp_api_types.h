@@ -20,6 +20,7 @@
 #define SMP_API_TYPES_H
 
 #include "bt_target.h"
+#include "types/ble_address_with_type.h"
 
 /* SMP command code */
 #define SMP_OPCODE_PAIRING_REQ 0x01
@@ -28,7 +29,7 @@
 #define SMP_OPCODE_RAND 0x04
 #define SMP_OPCODE_PAIRING_FAILED 0x05
 #define SMP_OPCODE_ENCRYPT_INFO 0x06
-#define SMP_OPCODE_MASTER_ID 0x07
+#define SMP_OPCODE_CENTRAL_ID 0x07
 #define SMP_OPCODE_IDENTITY_INFO 0x08
 #define SMP_OPCODE_ID_ADDR 0x09
 #define SMP_OPCODE_SIGN_INFO 0x0A
@@ -146,7 +147,7 @@ typedef uint8_t tSMP_SEC_LEVEL;
 /* SMP key types */
 #define SMP_SEC_KEY_TYPE_ENC (1 << 0)  /* encryption key */
 #define SMP_SEC_KEY_TYPE_ID (1 << 1)   /* identity key */
-#define SMP_SEC_KEY_TYPE_CSRK (1 << 2) /* slave CSRK */
+#define SMP_SEC_KEY_TYPE_CSRK (1 << 2) /* peripheral CSRK */
 #define SMP_SEC_KEY_TYPE_LK (1 << 3)   /* BR/EDR link key */
 typedef uint8_t tSMP_KEYS;
 

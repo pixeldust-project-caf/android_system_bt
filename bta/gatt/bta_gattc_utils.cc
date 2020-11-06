@@ -473,7 +473,7 @@ bool bta_gattc_check_bg_conn(tGATT_IF client_if, const RawAddress& remote_bda,
     if (p_bg_tck->in_use && (p_bg_tck->remote_bda == remote_bda ||
                              p_bg_tck->remote_bda.IsEmpty())) {
       if (((p_bg_tck->cif_mask & (1 << (client_if - 1))) != 0) &&
-          role == HCI_ROLE_MASTER)
+          role == HCI_ROLE_CENTRAL)
         is_bg_conn = true;
     }
   }
@@ -607,7 +607,7 @@ bool bta_gattc_conn_dealloc(const RawAddress& remote_bda) {
 tBTA_GATTC_CLCB* bta_gattc_find_int_conn_clcb(tBTA_GATTC_DATA* p_msg) {
   tBTA_GATTC_CLCB* p_clcb = NULL;
 
-  if (p_msg->int_conn.role == HCI_ROLE_SLAVE)
+  if (p_msg->int_conn.role == HCI_ROLE_PERIPHERAL)
     bta_gattc_conn_find_alloc(p_msg->int_conn.remote_bda);
 
   /* try to locate a logic channel */
@@ -616,7 +616,7 @@ tBTA_GATTC_CLCB* bta_gattc_find_int_conn_clcb(tBTA_GATTC_DATA* p_msg) {
                                       p_msg->int_conn.transport);
   if (p_clcb == NULL) {
     /* for a background connection or listening connection */
-    if (/*p_msg->int_conn.role == HCI_ROLE_SLAVE ||  */
+    if (/*p_msg->int_conn.role == HCI_ROLE_PERIPHERAL ||  */
         bta_gattc_check_bg_conn(p_msg->int_conn.client_if,
                                 p_msg->int_conn.remote_bda,
                                 p_msg->int_conn.role)) {
