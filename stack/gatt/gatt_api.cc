@@ -32,6 +32,7 @@
 #include "gatt_api.h"
 #include "gatt_int.h"
 #include "l2c_api.h"
+#include "osi/include/log.h"
 #include "stack/gatt/connection_manager.h"
 #include "types/bt_transport.h"
 
@@ -460,7 +461,7 @@ tGATT_STATUS GATTS_HandleValueIndication(uint16_t conn_id, uint16_t attr_handle,
   tGATT_STATUS cmd_status = attp_send_sr_msg(*p_tcb, cid, p_msg);
   if (cmd_status == GATT_SUCCESS || cmd_status == GATT_CONGESTED) {
     *indicate_handle_p = indication.handle;
-    gatt_start_conf_timer(p_tcb);
+    gatt_start_conf_timer(p_tcb, cid);
   }
   return cmd_status;
 }
@@ -509,7 +510,7 @@ tGATT_STATUS GATTS_HandleValueNotification(uint16_t conn_id,
   tGATT_SR_MSG gatt_sr_msg;
   gatt_sr_msg.attr_value = notif;
 
-  uint16_t cid = gatt_tcb_get_att_cid(*p_tcb);
+  uint16_t cid = gatt_tcb_get_att_cid(*p_tcb, p_reg->eatt_support);
 
   BT_HDR* p_buf =
       attp_build_sr_msg(*p_tcb, GATT_HANDLE_VALUE_NOTIF, &gatt_sr_msg);
@@ -650,15 +651,14 @@ tGATT_STATUS GATTC_Discover(uint16_t conn_id, tGATT_DISC_TYPE disc_type,
     return GATT_ILLEGAL_PARAMETER;
   }
 
-  LOG(INFO) << __func__ << " conn_id=" << loghex(conn_id)
-            << ", disc_type=" << +disc_type
-            << ", s_handle=" << loghex(start_handle)
-            << ", e_handle=" << loghex(end_handle);
-
   if (!GATT_HANDLE_IS_VALID(start_handle) ||
       !GATT_HANDLE_IS_VALID(end_handle) ||
       /* search by type does not have a valid UUID param */
       (disc_type == GATT_DISC_SRVC_BY_UUID && uuid.IsEmpty())) {
+    LOG(WARNING) << __func__ << " Illegal parameter conn_id=" << loghex(conn_id)
+                 << ", disc_type=" << +disc_type
+                 << ", s_handle=" << loghex(start_handle)
+                 << ", e_handle=" << loghex(end_handle);
     return GATT_ILLEGAL_PARAMETER;
   }
 
@@ -668,13 +668,24 @@ tGATT_STATUS GATTC_Discover(uint16_t conn_id, tGATT_DISC_TYPE disc_type,
   }
 
   tGATT_CLCB* p_clcb = gatt_clcb_alloc(conn_id);
-  if (!p_clcb) return GATT_NO_RESOURCES;
+  if (!p_clcb) {
+    LOG(WARNING) << __func__ << " No resources conn_id=" << loghex(conn_id)
+                 << ", disc_type=" << +disc_type
+                 << ", s_handle=" << loghex(start_handle)
+                 << ", e_handle=" << loghex(end_handle);
+    return GATT_NO_RESOURCES;
+  }
 
   p_clcb->operation = GATTC_OPTYPE_DISCOVERY;
   p_clcb->op_subtype = disc_type;
   p_clcb->s_handle = start_handle;
   p_clcb->e_handle = end_handle;
   p_clcb->uuid = uuid;
+
+  LOG(INFO) << __func__ << " conn_id=" << loghex(conn_id)
+            << ", disc_type=" << +disc_type
+            << ", s_handle=" << loghex(start_handle)
+            << ", e_handle=" << loghex(end_handle);
 
   gatt_act_discovery(p_clcb);
   return GATT_SUCCESS;
@@ -893,14 +904,13 @@ tGATT_STATUS GATTC_SendHandleValueConfirm(uint16_t conn_id, uint16_t cid) {
     return GATT_SUCCESS;
   }
 
-  /*TODO Introduce timer per CID */
-  alarm_cancel(p_tcb->ind_ack_timer);
+  gatt_stop_ind_ack_timer(p_tcb, cid);
 
   VLOG(1) << "notif_count= " << p_tcb->ind_count;
   /* send confirmation now */
   tGATT_STATUS ret = attp_send_cl_confirmation_msg(*p_tcb, cid);
 
-  p_tcb->ind_count = 0;
+
 
   return ret;
 }
@@ -1080,7 +1090,8 @@ void GATT_StartIf(tGATT_IF gatt_if) {
   uint16_t conn_id;
   tBT_TRANSPORT transport;
 
-  VLOG(1) << __func__ << " gatt_if=" << +gatt_if;
+  LOG_DEBUG("Starting GATT interface gatt_if_:%hu", gatt_if);
+
   p_reg = gatt_get_regcb(gatt_if);
   if (p_reg != NULL) {
     start_idx = 0;
@@ -1122,8 +1133,6 @@ bool GATT_Connect(tGATT_IF gatt_if, const RawAddress& bd_addr, bool is_direct,
 bool GATT_Connect(tGATT_IF gatt_if, const RawAddress& bd_addr, bool is_direct,
                   tBT_TRANSPORT transport, bool opportunistic,
                   uint8_t initiating_phys) {
-  LOG(INFO) << __func__ << ": gatt_if=" << +gatt_if << ", address=" << bd_addr;
-
   /* Make sure app is registered */
   tGATT_REG* p_reg = gatt_get_regcb(gatt_if);
   if (!p_reg) {
@@ -1148,8 +1157,12 @@ bool GATT_Connect(tGATT_IF gatt_if, const RawAddress& bd_addr, bool is_direct,
 
   bool ret;
   if (is_direct) {
+    LOG_DEBUG("Starting direct connect gatt_if=%u address=%s", gatt_if,
+              bd_addr.ToString().c_str());
     ret = gatt_act_connect(p_reg, bd_addr, transport, initiating_phys);
   } else {
+    LOG_DEBUG("Starting background connect gatt_if=%u address=%s", gatt_if,
+              bd_addr.ToString().c_str());
     if (!BTM_BackgroundConnectAddressKnown(bd_addr)) {
       //  RPA can rotate, causing address to "expire" in the background
       //  connection list. RPA is allowed for direct connect, as such request

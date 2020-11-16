@@ -23,6 +23,7 @@
 #include "crypto_toolbox/crypto_toolbox.h"
 #include "hci/address_with_type.h"
 #include "os/log.h"
+#include "os/rand.h"
 #include "security/initial_informations.h"
 #include "security/internal/security_manager_impl.h"
 #include "security/pairing_handler_le.h"
@@ -77,17 +78,33 @@ void SecurityManagerImpl::Init() {
   ASSERT_LOG(storage_module_ != nullptr, "Storage module must not be null!");
   security_database_.LoadRecordsFromStorage();
 
-  // TODO(b/161543441): read the privacy policy from device-specific configuration, and IRK from config file.
+  storage::AdapterConfig adapter_config = storage_module_->GetAdapterConfig();
+  if (!adapter_config.GetLeIdentityResolvingKey()) {
+    auto mutation = storage_module_->Modify();
+    mutation.Add(adapter_config.SetLeIdentityResolvingKey(bluetooth::os::GenerateRandom<16>()));
+    mutation.Commit();
+  }
+
+  Address controllerAddress = controller_->GetMacAddress();
+  if (!adapter_config.GetAddress() || adapter_config.GetAddress().value() != controllerAddress) {
+    auto mutation = storage_module_->Modify();
+    mutation.Add(adapter_config.SetAddress(controllerAddress));
+    mutation.Commit();
+  }
+
+  local_identity_address_ =
+      hci::AddressWithType(adapter_config.GetAddress().value(), hci::AddressType::PUBLIC_DEVICE_ADDRESS);
+  local_identity_resolving_key_ = adapter_config.GetLeIdentityResolvingKey().value().bytes;
+
   hci::LeAddressManager::AddressPolicy address_policy = hci::LeAddressManager::AddressPolicy::USE_RESOLVABLE_ADDRESS;
   hci::AddressWithType address_with_type(hci::Address{}, hci::AddressType::RANDOM_DEVICE_ADDRESS);
-  crypto_toolbox::Octet16 irk = {
-      0x44, 0xfb, 0x4b, 0x8d, 0x6c, 0x58, 0x21, 0x0c, 0xf9, 0x3d, 0xda, 0xf1, 0x64, 0xa3, 0xbb, 0x7f};
+
   /* 7 minutes minimum, 15 minutes maximum for random address refreshing */
   auto minimum_rotation_time = std::chrono::minutes(7);
   auto maximum_rotation_time = std::chrono::minutes(15);
 
   acl_manager_->SetPrivacyPolicyForInitiatorAddress(
-      address_policy, address_with_type, irk, minimum_rotation_time, maximum_rotation_time);
+      address_policy, address_with_type, local_identity_resolving_key_, minimum_rotation_time, maximum_rotation_time);
 }
 
 void SecurityManagerImpl::CreateBond(hci::AddressWithType device) {
@@ -403,7 +420,11 @@ void SecurityManagerImpl::OnPairingHandlerComplete(hci::Address address, Pairing
   auto record = this->security_database_.FindOrCreate(remote);
   record->CancelPairing();
   security_database_.SaveRecordsToStorage();
-  UpdateLinkSecurityCondition(remote);
+  // Only call update link if we need to
+  auto policy_callback_entry = enforce_security_policy_callback_map_.find(remote);
+  if (policy_callback_entry != enforce_security_policy_callback_map_.end()) {
+    UpdateLinkSecurityCondition(remote);
+  }
 }
 
 void SecurityManagerImpl::OnL2capRegistrationCompleteLe(
@@ -467,7 +488,7 @@ void SecurityManagerImpl::OnSmpCommandLe(hci::AddressWithType device) {
   }
 
   auto my_role = channel->GetLinkOptions()->GetRole();
-  if (temp_cmd_view.GetCode() == Code::PAIRING_REQUEST && my_role == hci::Role::SLAVE) {
+  if (temp_cmd_view.GetCode() == Code::PAIRING_REQUEST && my_role == hci::Role::PERIPHERAL) {
     // TODO: if (pending_le_pairing_) { do not start another }
 
     LOG_INFO("start of security request handling!");
@@ -488,6 +509,8 @@ void SecurityManagerImpl::OnSmpCommandLe(hci::AddressWithType device) {
     InitialInformations initial_informations{
         .my_role = my_role,
         .my_connection_address = channel->GetLinkOptions()->GetLocalAddress(),
+        .my_identity_address = local_identity_address_,
+        .my_identity_resolving_key = local_identity_resolving_key_,
         /*TODO: properly obtain capabilities from device-specific storage*/
         .myPairingCapabilities = {.io_capability = local_le_io_capability_,
                                   .oob_data_flag = local_le_oob_data_present_,
@@ -558,6 +581,8 @@ void SecurityManagerImpl::ConnectionIsReadyStartPairing(LeFixedChannelEntry* sto
   InitialInformations initial_informations{
       .my_role = channel->GetLinkOptions()->GetRole(),
       .my_connection_address = channel->GetLinkOptions()->GetLocalAddress(),
+      .my_identity_address = local_identity_address_,
+      .my_identity_resolving_key = local_identity_resolving_key_,
       /*TODO: properly obtain capabilities from device-specific storage*/
       .myPairingCapabilities = {.io_capability = local_le_io_capability_,
                                 .oob_data_flag = local_le_oob_data_present_,
@@ -620,6 +645,7 @@ SecurityManagerImpl::SecurityManagerImpl(
     channel::SecurityManagerChannel* security_manager_channel,
     hci::HciLayer* hci_layer,
     hci::AclManager* acl_manager,
+    hci::Controller* controller,
     storage::StorageModule* storage_module,
     neighbor::NameDbModule* name_db_module)
     : security_handler_(security_handler),
@@ -629,6 +655,7 @@ SecurityManagerImpl::SecurityManagerImpl(
           hci_layer->GetLeSecurityInterface(security_handler_->BindOn(this, &SecurityManagerImpl::OnHciLeEvent))),
       security_manager_channel_(security_manager_channel),
       acl_manager_(acl_manager),
+      controller_(controller),
       storage_module_(storage_module),
       security_record_storage_(storage_module, security_handler),
       security_database_(security_record_storage_),
@@ -743,94 +770,60 @@ void SecurityManagerImpl::InternalEnforceSecurityPolicy(
     l2cap::classic::SecurityEnforcementInterface::ResultCallback result_callback) {
   if (IsSecurityRequirementSatisfied(remote, policy)) {
     // Notify client immediately if already satisfied
-    result_callback.Invoke(true);
+    std::move(result_callback).Invoke(true);
     return;
   }
 
-  hci::AuthenticationRequirements authentication_requirements = kDefaultAuthenticationRequirements;
-
+  // At this point we don't meet the security requirements; must pair
   auto record = this->security_database_.FindOrCreate(remote);
-  bool need_to_pair = false;
+  hci::AuthenticationRequirements authentication_requirements = kDefaultAuthenticationRequirements;
+  enforce_security_policy_callback_map_[remote] = {policy, std::move(result_callback)};
 
   switch (policy) {
     case l2cap::classic::SecurityPolicy::BEST:
     case l2cap::classic::SecurityPolicy::AUTHENTICATED_ENCRYPTED_TRANSPORT:
-      if (!record->IsPaired() || record->IsTemporary()) {
-        need_to_pair = true;
-      } else if (record->IsAuthenticated()) {
-        // if paired with MITM, only encryption is missing, so we just need to wait for encryption change callback
-      } else {
-        // We have an unauthenticated link key, so we need to pair again with MITM
-        // Need to pair again with MITM
-        need_to_pair = true;
-        authentication_requirements = hci::AuthenticationRequirements::GENERAL_BONDING_MITM_PROTECTION;
-        if (record->RequiresMitmProtection()) {
-          // Workaround for headset: If no MITM is needed during pairing, we don't mandate authenticated LK
-          // TODO(b/165671060): Use IO cap to check whether we can waive authenticated LK requirement
-          need_to_pair = false;
-        }
-      }
+      // Force MITM requirement locally
+      authentication_requirements = hci::AuthenticationRequirements::GENERAL_BONDING_MITM_PROTECTION;
       break;
     case l2cap::classic::SecurityPolicy::ENCRYPTED_TRANSPORT:
-      if (!record->IsPaired()) {
-        need_to_pair = true;
-        authentication_requirements = hci::AuthenticationRequirements::NO_BONDING;
-      } else {
-        // just need to wait for encryption change callback
-      }
+      authentication_requirements = hci::AuthenticationRequirements::GENERAL_BONDING;
       break;
     default:
+      // I could hear the voice of Myles, "This should be an ASSERT!"
+      ASSERT_LOG(false, "Unreachable code path");
       return;
   }
 
-  auto entry = enforce_security_policy_callback_map_.find(remote);
-  if (entry != enforce_security_policy_callback_map_.end()) {
-    LOG_WARN("Callback already pending for remote: '%s' !", remote.ToString().c_str());
-  } else {
-    enforce_security_policy_callback_map_[remote] = {policy, std::move(result_callback)};
-  }
-
-  if (need_to_pair && !record->IsPairing()) {
-    LOG_WARN("Dispatch #3");
-    DispatchPairingHandler(
-        record,
-        true,
-        this->local_io_capability_,
-        this->local_oob_data_present_,
-        std::as_const(authentication_requirements));
-  }
+  LOG_WARN("Dispatch #3");
+  DispatchPairingHandler(
+      record,
+      true,
+      this->local_io_capability_,
+      this->local_oob_data_present_,
+      std::as_const(authentication_requirements));
 }
 
 void SecurityManagerImpl::UpdateLinkSecurityCondition(hci::AddressWithType remote) {
-  auto record = this->security_database_.FindOrCreate(remote);
   auto entry = enforce_security_policy_callback_map_.find(remote);
   if (entry == enforce_security_policy_callback_map_.end()) {
-    LOG_ERROR("No security reuest pending for %s", remote.ToString().c_str());
+    LOG_ERROR("No L2CAP security policy callback pending for %s", remote.ToString().c_str());
     return;
   }
-
-  auto policy = entry->second.policy_;
-
-  if (IsSecurityRequirementSatisfied(remote, policy)) {
-    entry->second.callback_.Invoke(true);
-    enforce_security_policy_callback_map_.erase(entry);
-  }
+  std::move(entry->second.callback_).Invoke(IsSecurityRequirementSatisfied(remote, entry->second.policy_));
+  enforce_security_policy_callback_map_.erase(entry);
 }
 
 bool SecurityManagerImpl::IsSecurityRequirementSatisfied(
     hci::AddressWithType remote, l2cap::classic::SecurityPolicy policy) {
   auto record = security_database_.FindOrCreate(remote);
-
   switch (policy) {
     case l2cap::classic::SecurityPolicy::BEST:
     case l2cap::classic::SecurityPolicy::AUTHENTICATED_ENCRYPTED_TRANSPORT:
       return (record->IsPaired() && record->IsAuthenticated());
     case l2cap::classic::SecurityPolicy::ENCRYPTED_TRANSPORT:
       return record->IsPaired();
-    case l2cap::classic::SecurityPolicy::_SDP_ONLY_NO_SECURITY_WHATSOEVER_PLAINTEXT_TRANSPORT_OK:
-      return true;
     default:
-      return false;
+      return true;
   }
 }
 
@@ -838,7 +831,11 @@ void SecurityManagerImpl::EnforceSecurityPolicy(
     hci::AddressWithType remote,
     l2cap::classic::SecurityPolicy policy,
     l2cap::classic::SecurityEnforcementInterface::ResultCallback result_callback) {
-  this->InternalEnforceSecurityPolicy(remote, policy, std::move(result_callback));
+  LOG_INFO("Attempting to enforce security policy");
+  auto record = security_database_.FindOrCreate(remote);
+  if (!record->IsPairing()) {
+    this->InternalEnforceSecurityPolicy(remote, policy, std::move(result_callback));
+  }
 }
 
 void SecurityManagerImpl::EnforceLeSecurityPolicy(

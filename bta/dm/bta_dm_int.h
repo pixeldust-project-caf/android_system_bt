@@ -127,8 +127,6 @@ typedef struct {
   bool link_key_known;
   bool dc_known;
   BD_NAME bd_name;
-  uint8_t
-      features[HCI_FEATURE_BYTES_PER_PAGE * (HCI_EXT_FEATURES_PAGE_MAX + 1)];
   uint8_t pin_length;
 } tBTA_DM_API_ADD_DEVICE;
 
@@ -256,7 +254,7 @@ typedef struct {
   alarm_t* disable_timer;
   uint32_t wbt_sdp_handle; /* WIDCOMM Extensions SDP record handle */
   uint8_t wbt_scn;         /* WIDCOMM Extensions SCN */
-  uint8_t num_master_only;
+  uint8_t num_central_only;
   uint8_t pm_id;
   tBTA_PM_TIMER pm_timer[BTA_DM_NUM_PM_TIMER];
   uint8_t cur_av_count;   /* current AV connecions */
@@ -342,7 +340,7 @@ typedef struct {
   uint16_t page_timeout; /* timeout for page in slots */
   uint16_t link_timeout; /* link supervision timeout in slots */
   bool avoid_scatter; /* true to avoid scatternet when av is streaming (be the
-                         master) */
+                         central) */
 
 } tBTA_DM_CFG;
 

@@ -110,7 +110,6 @@ static void smp_connect_callback(uint16_t channel, const RawAddress& bd_addr,
         smp_sm_event(p_cb, SMP_L2CAP_CONN_EVT, NULL);
       }
     } else {
-      int_data.reason = reason;
       /* Disconnected while doing security */
       smp_sm_event(p_cb, SMP_L2CAP_DISCONN_EVT, &int_data);
     }
@@ -237,7 +236,6 @@ static void smp_br_connect_callback(uint16_t channel, const RawAddress& bd_addr,
       smp_br_state_machine_event(p_cb, SMP_BR_L2CAP_CONN_EVT, NULL);
     }
   } else {
-    int_data.reason = reason;
     /* Disconnected while doing security */
     smp_br_state_machine_event(p_cb, SMP_BR_L2CAP_DISCONN_EVT, &int_data);
   }
@@ -281,7 +279,7 @@ static void smp_br_data_received(uint16_t channel, const RawAddress& bd_addr,
   if (SMP_OPCODE_PAIRING_REQ == cmd) {
     if ((p_cb->state == SMP_STATE_IDLE) &&
         (p_cb->br_state == SMP_BR_STATE_IDLE)) {
-      p_cb->role = HCI_ROLE_SLAVE;
+      p_cb->role = HCI_ROLE_PERIPHERAL;
       p_cb->smp_over_br = true;
       p_cb->pairing_bda = bd_addr;
     } else if (bd_addr != p_cb->pairing_bda) {

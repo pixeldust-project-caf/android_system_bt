@@ -133,6 +133,12 @@ class DualModeController : public Device {
   // 7.1.11
   void LinkKeyRequestNegativeReply(CommandPacketView args);
 
+  // 7.1.12
+  void PinCodeRequestReply(CommandPacketView args);
+
+  // 7.1.13
+  void PinCodeRequestNegativeReply(CommandPacketView args);
+
   // 7.1.14
   void ChangeConnectionPacketType(CommandPacketView args);
 
@@ -146,7 +152,7 @@ class DualModeController : public Device {
   void ChangeConnectionLinkKey(CommandPacketView args);
 
   // 7.1.18
-  void MasterLinkKey(CommandPacketView args);
+  void CentralLinkKey(CommandPacketView args);
 
   // 7.1.19
   void RemoteNameRequest(CommandPacketView args);
@@ -189,6 +195,9 @@ class DualModeController : public Device {
 
   // 7.1.36
   void IoCapabilityRequestNegativeReply(CommandPacketView args);
+
+  // 7.1.53
+  void RemoteOobExtendedDataRequestReply(CommandPacketView args);
 
   // Link Policy Commands
   // Bluetooth Core Specification Version 4.2 Volume 2 Part E 7.2
@@ -319,6 +328,9 @@ class DualModeController : public Device {
   // 7.3.59
   void WriteSimplePairingMode(CommandPacketView args);
 
+  // 7.3.60
+  void ReadLocalOobData(CommandPacketView args);
+
   // 7.3.61
   void ReadInquiryResponseTransmitPowerLevel(CommandPacketView args);
 
@@ -327,6 +339,9 @@ class DualModeController : public Device {
 
   // 7.3.92
   void WriteSecureConnectionsHostSupport(CommandPacketView args);
+
+  // 7.3.95
+  void ReadLocalOobExtendedData(CommandPacketView args);
 
   // Informational Parameters Commands
   // Bluetooth Core Specification Version 4.2 Volume 2 Part E 7.4
