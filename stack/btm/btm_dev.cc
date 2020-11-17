@@ -99,24 +99,6 @@ bool BTM_SecAddDevice(const RawAddress& bd_addr, DEV_CLASS dev_class,
             BTM_MAX_REM_BD_NAME_LEN + 1);
   }
 
-  p_dev_rec->num_read_pages = 0;
-  if (features) {
-    bool found = false;
-    memcpy(p_dev_rec->feature_pages, features,
-           sizeof(p_dev_rec->feature_pages));
-    for (int i = HCI_EXT_FEATURES_PAGE_MAX; !found && i >= 0; i--) {
-      for (int j = 0; j < HCI_FEATURE_BYTES_PER_PAGE; j++) {
-        if (p_dev_rec->feature_pages[i][j] != 0) {
-          found = true;
-          p_dev_rec->num_read_pages = i + 1;
-          break;
-        }
-      }
-    }
-  } else {
-    memset(p_dev_rec->feature_pages, 0, sizeof(p_dev_rec->feature_pages));
-  }
-
   if (p_link_key) {
     VLOG(2) << __func__ << ": BDA: " << bd_addr;
     p_dev_rec->sec_flags |= BTM_SEC_LINK_KEY_KNOWN;
@@ -132,13 +114,6 @@ bool BTM_SecAddDevice(const RawAddress& bd_addr, DEV_CLASS dev_class,
           BTM_SEC_16_DIGIT_PIN_AUTHED | BTM_SEC_LINK_KEY_AUTHED;
     }
   }
-
-#if (BTIF_MIXED_MODE_INCLUDED == TRUE)
-  if (key_type < BTM_MAX_PRE_SM4_LKEY_TYPE)
-    p_dev_rec->sm4 = BTM_SM4_KNOWN;
-  else
-    p_dev_rec->sm4 = BTM_SM4_TRUE;
-#endif
 
   p_dev_rec->rmt_io_caps = BTM_IO_CAP_OUT;
   p_dev_rec->device_type |= BT_DEVICE_TYPE_BREDR;
@@ -290,27 +265,18 @@ bool btm_dev_support_role_switch(const RawAddress& bd_addr) {
     return false;
   }
 
-  if (!controller_get_interface()->supports_master_slave_role_switch()) {
+  if (!controller_get_interface()->supports_central_peripheral_role_switch()) {
     BTM_TRACE_DEBUG("%s Local controller does not support role switch",
                     __func__);
     return false;
   }
 
-  if (HCI_SWITCH_SUPPORTED(p_dev_rec->feature_pages[0])) {
+  if (p_dev_rec->remote_supports_hci_role_switch) {
     BTM_TRACE_DEBUG("%s Peer controller supports role switch", __func__);
     return true;
   }
 
-  /* If the feature field is all zero, we never received them */
-  bool feature_empty = true;
-  for (int xx = 0; xx < BD_FEATURES_LEN; xx++) {
-    if (p_dev_rec->feature_pages[0][xx] != 0x00) {
-      feature_empty = false; /* at least one is != 0 */
-      break;
-    }
-  }
-
-  if (feature_empty) {
+  if (!p_dev_rec->remote_feature_received) {
     BTM_TRACE_DEBUG(
         "%s Unknown peer capabilities, assuming peer supports role switch",
         __func__);

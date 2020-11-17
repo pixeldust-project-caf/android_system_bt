@@ -30,7 +30,7 @@ typedef char tBTM_LOC_BD_NAME[BTM_MAX_LOC_BD_NAME_LEN + 1];
 typedef struct {
   uint16_t min_conn_int;
   uint16_t max_conn_int;
-  uint16_t slave_latency;
+  uint16_t peripheral_latency;
   uint16_t supervision_tout;
 
 } tBTM_LE_CONN_PRAMS;
@@ -63,7 +63,7 @@ typedef struct {
   uint8_t term_service_name[BT_MAX_SERVICE_NAME_LEN + 1];
 } tBTM_SEC_SERV_REC;
 
-/* LE Security information of device in Slave Role */
+/* LE Security information of device in Peripheral Role */
 typedef struct {
   Octet16 irk;   /* peer diverified identity root */
   Octet16 pltk;  /* peer long term key */
@@ -73,7 +73,7 @@ typedef struct {
   Octet16 lcsrk; /* local SRK peer device used to secured sign local data  */
 
   BT_OCTET8 rand;        /* random vector for LTK generation */
-  uint16_t ediv;         /* LTK diversifier of this slave device */
+  uint16_t ediv;         /* LTK diversifier of this peripheral device */
   uint16_t div;          /* local DIV  to generate local LTK=d1(ER,DIV,0) and
                             CSRK=d1(ER,DIV,1)  */
   uint8_t sec_level;     /* local pairing security level */
@@ -107,7 +107,7 @@ typedef struct {
   tADDRESS_TYPE active_addr_type;
 
   tBTM_LE_KEY_TYPE key_type; /* bit mask of valid key types in record */
-  tBTM_SEC_BLE_KEYS keys;    /* LE device security info in slave rode */
+  tBTM_SEC_BLE_KEYS keys;    /* LE device security info in peripheral rode */
 } tBTM_SEC_BLE;
 
 enum : uint16_t {
@@ -132,6 +132,22 @@ enum : uint16_t {
   /* pairing is done with 16 digit pin */
   BTM_SEC_16_DIGIT_PIN_AUTHED = 0x4000,
 };
+
+typedef enum : uint8_t {
+  BTM_SEC_STATE_IDLE = 0,
+  BTM_SEC_STATE_AUTHENTICATING = 1,
+  BTM_SEC_STATE_ENCRYPTING = 2,
+  BTM_SEC_STATE_GETTING_NAME = 3,
+  BTM_SEC_STATE_AUTHORIZING = 4,
+  BTM_SEC_STATE_SWITCHING_ROLE = 5,
+  /* disconnecting BR/EDR */
+  BTM_SEC_STATE_DISCONNECTING = 6,
+  /* delay to check for encryption to work around */
+  /* controller problems */
+  BTM_SEC_STATE_DELAY_FOR_ENC = 7,
+  BTM_SEC_STATE_DISCONNECTING_BLE = 8,
+  BTM_SEC_STATE_DISCONNECTING_BOTH = 9,
+} tSECURITY_STATE;
 
 /*
  * Define structure for Security Device Record.
@@ -162,7 +178,7 @@ typedef struct {
                                uint8_t pin_length);
   friend void BTM_PINCodeReply(const RawAddress& bd_addr, uint8_t res,
                                uint8_t pin_len, uint8_t* p_pin);
-  friend void btm_sec_auth_complete(uint16_t handle, uint8_t status);
+  friend void btm_sec_auth_complete(uint16_t handle, tHCI_STATUS status);
   friend void btm_sec_connected(const RawAddress& bda, uint16_t handle,
                                 uint8_t status, uint8_t enc_mode);
   friend void btm_sec_encrypt_change(uint16_t handle, uint8_t status,
@@ -243,22 +259,6 @@ typedef struct {
 
   tBTM_BD_NAME sec_bd_name; /* User friendly name of the device. (may be
                                truncated to save space in dev_rec table) */
-  BD_FEATURES feature_pages[HCI_EXT_FEATURES_PAGE_MAX +
-                            1]; /* Features supported by the device */
-  uint8_t num_read_pages;
-
-#define BTM_SEC_STATE_IDLE 0
-#define BTM_SEC_STATE_AUTHENTICATING 1
-#define BTM_SEC_STATE_ENCRYPTING 2
-#define BTM_SEC_STATE_GETTING_NAME 3
-#define BTM_SEC_STATE_AUTHORIZING 4
-#define BTM_SEC_STATE_SWITCHING_ROLE 5
-#define BTM_SEC_STATE_DISCONNECTING 6 /* disconnecting BR/EDR */
-#define BTM_SEC_STATE_DELAY_FOR_ENC \
-  7 /* delay to check for encryption to work around */
-    /* controller problems */
-#define BTM_SEC_STATE_DISCONNECTING_BLE 8  /* disconnecting BLE */
-#define BTM_SEC_STATE_DISCONNECTING_BOTH 9 /* disconnecting BR/EDR and BLE */
 
   uint8_t sec_state;          /* Operating state                    */
   bool is_security_state_idle() const {
@@ -293,14 +293,11 @@ typedef struct {
   }
 
   bool is_originator;         /* true if device is originating connection */
-  bool role_master;           /* true if current mode is master     */
+  bool role_central;          /* true if current mode is central     */
   uint16_t security_required; /* Security required for connection   */
   bool link_key_not_sent; /* link key notification has not been sent waiting for
                              name */
   uint8_t link_key_type;  /* Type of key used in pairing   */
-
-#define BTM_MAX_PRE_SM4_LKEY_TYPE \
-  BTM_LKEY_TYPE_REMOTE_UNIT /* the link key type used by legacy pairing */
 
 #define BTM_SM4_UNKNOWN 0x00
 #define BTM_SM4_KNOWN 0x10
@@ -323,6 +320,8 @@ typedef struct {
   /* "Secure Connections Only" mode and it receives */
   /* HCI_IO_CAPABILITY_REQUEST_EVT from the peer before */
   /* it knows peer's support for Secure Connections */
+  bool remote_supports_hci_role_switch = false;
+  bool remote_feature_received = false;
 
   uint16_t ble_hci_handle; /* use in DUMO connection */
   uint16_t get_ble_hci_handle() const { return ble_hci_handle; }
@@ -355,19 +354,5 @@ typedef struct {
 
   tBTM_SEC_BLE ble;
   tBTM_LE_CONN_PRAMS conn_params;
-
-#define BTM_SEC_RS_NOT_PENDING 0 /* Role Switch not in progress */
-#define BTM_SEC_RS_PENDING 1     /* Role Switch in progress */
-#define BTM_SEC_DISC_PENDING 2   /* Disconnect is pending */
-  uint8_t rs_disc_pending;
-  bool is_role_switch_idle() const {
-    return rs_disc_pending == BTM_SEC_RS_NOT_PENDING;
-  }
-  bool is_role_switch_pending() const {
-    return rs_disc_pending == BTM_SEC_RS_PENDING;
-  }
-  bool is_role_switch_disconnecting() const {
-    return rs_disc_pending == BTM_SEC_DISC_PENDING;
-  }
 
 } tBTM_SEC_DEV_REC;
