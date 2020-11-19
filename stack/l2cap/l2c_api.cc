@@ -80,6 +80,11 @@ uint16_t L2CA_Register(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info,
         psm, p_cb_info, enable_snoop, p_ertm_info, my_mtu, required_remote_mtu);
   }
 
+  const bool config_cfm_cb = (p_cb_info.pL2CA_ConfigCfm_Cb != nullptr);
+  const bool config_ind_cb = (p_cb_info.pL2CA_ConfigInd_Cb != nullptr);
+  const bool data_ind_cb = (p_cb_info.pL2CA_DataInd_Cb != nullptr);
+  const bool disconnect_ind_cb = (p_cb_info.pL2CA_DisconnectInd_Cb != nullptr);
+
   tL2C_RCB* p_rcb;
   uint16_t vpsm = psm;
 
@@ -90,9 +95,11 @@ uint16_t L2CA_Register(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info,
   **             for here because it is possible to be only a client
   **             or only a server.
   */
-  if ((!p_cb_info.pL2CA_ConfigCfm_Cb) || (!p_cb_info.pL2CA_ConfigInd_Cb) ||
-      (!p_cb_info.pL2CA_DataInd_Cb) || (!p_cb_info.pL2CA_DisconnectInd_Cb)) {
-    L2CAP_TRACE_ERROR("L2CAP - no cb registering PSM: 0x%04x", psm);
+  if (!config_cfm_cb || !data_ind_cb || !disconnect_ind_cb) {
+    LOG_ERROR(
+        "L2CAP - no cb registering PSM: 0x%04x cfg_cfm:%u cfg_ind:%u"
+        " data_ind:%u discon_int:%u",
+        psm, config_cfm_cb, config_ind_cb, data_ind_cb, disconnect_ind_cb);
     return (0);
   }
 
@@ -877,21 +884,26 @@ bool L2CA_DisconnectReq(uint16_t cid) {
 
   tL2C_CCB* p_ccb;
 
-  L2CAP_TRACE_API("L2CA_DisconnectReq()  CID: 0x%04x", cid);
-
   /* Find the channel control block. We don't know the link it is on. */
   p_ccb = l2cu_find_ccb_by_cid(NULL, cid);
   if (p_ccb == NULL) {
-    L2CAP_TRACE_WARNING("L2CAP - no CCB for L2CA_disc_req, CID: %d", cid);
+    LOG_WARN("L2CAP - no CCB for L2CA_disc_req, CID: %d", cid);
     return (false);
   }
+
+  LOG_DEBUG("L2CAP Local disconnect request CID: 0x%04x", cid);
 
   l2c_csm_execute(p_ccb, L2CEVT_L2CA_DISCONNECT_REQ, NULL);
 
   return (true);
 }
 
-bool L2CA_DisconnectLECocReq(uint16_t cid) { return L2CA_DisconnectReq(cid); }
+bool L2CA_DisconnectLECocReq(uint16_t cid) {
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    return bluetooth::shim::L2CA_DisconnectLECocReq(cid);
+  }
+  return L2CA_DisconnectReq(cid);
+}
 
 bool L2CA_GetRemoteCid(uint16_t lcid, uint16_t* rcid) {
   if (bluetooth::shim::is_gd_l2cap_enabled()) {
@@ -1460,6 +1472,10 @@ uint8_t L2CA_DataWrite(uint16_t cid, BT_HDR* p_data) {
 }
 
 uint8_t L2CA_LECocDataWrite(uint16_t cid, BT_HDR* p_data) {
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    return bluetooth::shim::L2CA_LECocDataWrite(cid, p_data);
+  }
+
   return L2CA_DataWrite(cid, p_data);
 }
 

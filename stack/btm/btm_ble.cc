@@ -53,7 +53,7 @@ extern void gatt_notify_phy_updated(tGATT_STATUS status, uint16_t handle,
 /******************************************************************************/
 /* External Function to be called by other modules                            */
 /******************************************************************************/
-bool BTM_SecAddBleDevice(const RawAddress& bd_addr, tBT_DEVICE_TYPE dev_type,
+void BTM_SecAddBleDevice(const RawAddress& bd_addr, tBT_DEVICE_TYPE dev_type,
                          tBLE_ADDR_TYPE addr_type) {
   if (bluetooth::shim::is_gd_shim_enabled()) {
     return bluetooth::shim::BTM_SecAddBleDevice(bd_addr, dev_type, addr_type);
@@ -94,8 +94,6 @@ bool BTM_SecAddBleDevice(const RawAddress& bd_addr, tBT_DEVICE_TYPE dev_type,
     BTM_TRACE_DEBUG("InqDb  device_type =0x%x  addr_type=0x%x",
                     p_info->results.device_type, p_info->results.ble_addr_type);
   }
-
-  return true;
 }
 
 /*******************************************************************************
@@ -113,7 +111,7 @@ bool BTM_SecAddBleDevice(const RawAddress& bd_addr, tBT_DEVICE_TYPE dev_type,
  * Returns          true if added OK, else false
  *
  ******************************************************************************/
-bool BTM_SecAddBleKey(const RawAddress& bd_addr, tBTM_LE_KEY_VALUE* p_le_key,
+void BTM_SecAddBleKey(const RawAddress& bd_addr, tBTM_LE_KEY_VALUE* p_le_key,
                       tBTM_LE_KEY_TYPE key_type) {
   if (bluetooth::shim::is_gd_shim_enabled()) {
     return bluetooth::shim::BTM_SecAddBleKey(bd_addr, p_le_key, key_type);
@@ -129,17 +127,16 @@ bool BTM_SecAddBleKey(const RawAddress& bd_addr, tBTM_LE_KEY_VALUE* p_le_key,
     LOG(WARNING) << __func__
                  << " Wrong Type, or No Device record for bdaddr: " << bd_addr
                  << ", Type: " << key_type;
-    return (false);
+    return;
   }
 
   VLOG(1) << __func__ << " BDA: " << bd_addr << ", Type: " << key_type;
 
   btm_sec_save_le_key(bd_addr, key_type, p_le_key, false);
 
-  if (key_type == BTM_LE_KEY_PID || key_type == BTM_LE_KEY_LID)
+  if (key_type == BTM_LE_KEY_PID || key_type == BTM_LE_KEY_LID) {
     btm_ble_resolving_list_load_dev(p_dev_rec);
-
-  return (true);
+  }
 }
 
 /*******************************************************************************
@@ -2071,6 +2068,53 @@ void btm_ble_set_random_address(const RawAddress& random_bda) {
     btm_ble_start_scan();
   }
   btm_ble_resume_bg_conn();
+}
+
+/*******************************************************************************
+ *
+ * Function         btm_ble_get_acl_remote_addr
+ *
+ * Description      This function reads the active remote address used for the
+ *                  connection.
+ *
+ * Returns          success return true, otherwise false.
+ *
+ ******************************************************************************/
+bool btm_ble_get_acl_remote_addr(uint16_t hci_handle, RawAddress& conn_addr,
+                                 tBLE_ADDR_TYPE* p_addr_type) {
+  tBTM_SEC_DEV_REC* p_dev_rec = btm_find_dev_by_handle(hci_handle);
+  if (p_dev_rec == nullptr) {
+    LOG_WARN("Unable to find security device record hci_handle:%hu",
+             hci_handle);
+    // TODO Release acl resource
+    return false;
+  }
+
+  bool st = true;
+
+  switch (p_dev_rec->ble.active_addr_type) {
+    case tBTM_SEC_BLE::BTM_BLE_ADDR_PSEUDO:
+      conn_addr = p_dev_rec->bd_addr;
+      *p_addr_type = p_dev_rec->ble.ble_addr_type;
+      break;
+
+    case tBTM_SEC_BLE::BTM_BLE_ADDR_RRA:
+      conn_addr = p_dev_rec->ble.cur_rand_addr;
+      *p_addr_type = BLE_ADDR_RANDOM;
+      break;
+
+    case tBTM_SEC_BLE::BTM_BLE_ADDR_STATIC:
+      conn_addr = p_dev_rec->ble.identity_address_with_type.bda;
+      *p_addr_type = p_dev_rec->ble.identity_address_with_type.type;
+      break;
+
+    default:
+      LOG_WARN("Unable to find record with active address type: %d",
+               p_dev_rec->ble.active_addr_type);
+      st = false;
+      break;
+  }
+  return st;
 }
 
 #if BTM_BLE_CONFORMANCE_TESTING == TRUE
