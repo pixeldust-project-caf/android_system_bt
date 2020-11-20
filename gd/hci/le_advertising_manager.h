@@ -31,8 +31,8 @@ class AdvertisingConfig {
   std::vector<GapData> scan_response;
   uint16_t interval_min;
   uint16_t interval_max;
-  AdvertisingType event_type;
-  AddressType address_type;
+  AdvertisingType advertising_type;
+  OwnAddressType own_address_type;
   PeerAddressType peer_address_type;
   Address peer_address;
   uint8_t channel_map;
@@ -54,9 +54,6 @@ class ExtendedAdvertisingConfig : public AdvertisingConfig {
   SecondaryPhyType secondary_advertising_phy;
   uint8_t sid = 0x00;
   Enable enable_scan_request_notifications = Enable::DISABLED;
-  OwnAddressType own_address_type;
-  Operation operation;  // TODO(b/149221472): Support fragmentation
-  FragmentPreference fragment_preference = FragmentPreference::CONTROLLER_SHOULD_NOT;
   ExtendedAdvertisingConfig() = default;
   ExtendedAdvertisingConfig(const AdvertisingConfig& config);
 };
@@ -100,18 +97,14 @@ class LeAdvertisingManager : public bluetooth::Module {
   static constexpr AdvertiserId kInvalidId = 0xFF;
   static constexpr uint8_t kInvalidHandle = 0xFF;
   static constexpr uint8_t kAdvertisingSetIdMask = 0x0F;
+  static constexpr FragmentPreference kFragment_preference = FragmentPreference::CONTROLLER_SHOULD_NOT;
   LeAdvertisingManager();
 
   size_t GetNumberOfAdvertisingInstances() const;
 
-  // Return -1 if the advertiser was not created, otherwise the advertiser ID.
-  AdvertiserId CreateAdvertiser(const AdvertisingConfig& config,
-                                const common::Callback<void(Address, AddressType)>& scan_callback,
-                                const common::Callback<void(ErrorCode, uint8_t, uint8_t)>& set_terminated_callback,
-                                os::Handler* handler);
   AdvertiserId ExtendedCreateAdvertiser(
       int reg_id,
-      const ExtendedAdvertisingConfig& config,
+      const ExtendedAdvertisingConfig config,
       const common::Callback<void(Address, AddressType)>& scan_callback,
       const common::Callback<void(ErrorCode, uint8_t, uint8_t)>& set_terminated_callback,
       os::Handler* handler);
@@ -147,6 +140,12 @@ class LeAdvertisingManager : public bluetooth::Module {
   std::string ToString() const override;
 
  private:
+  // Return -1 if the advertiser was not created, otherwise the advertiser ID.
+  AdvertiserId create_advertiser(
+      const AdvertisingConfig config,
+      const common::Callback<void(Address, AddressType)>& scan_callback,
+      const common::Callback<void(ErrorCode, uint8_t, uint8_t)>& set_terminated_callback,
+      os::Handler* handler);
   struct impl;
   std::unique_ptr<impl> pimpl_;
   DISALLOW_COPY_AND_ASSIGN(LeAdvertisingManager);
