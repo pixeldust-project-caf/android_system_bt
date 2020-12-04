@@ -190,4 +190,7 @@ interface IBluetooth
 
     boolean registerBluetoothConnectionCallback(in IBluetoothConnectionCallback callback);
     boolean unregisterBluetoothConnectionCallback(in IBluetoothConnectionCallback callback);
+
+    int getDeviceType(in BluetoothDevice device);
+
 }
