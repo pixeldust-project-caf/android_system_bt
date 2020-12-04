@@ -234,21 +234,31 @@ typedef struct {
 
 #define BT_HDR_SIZE (sizeof(BT_HDR))
 
-#define BT_PSM_SDP 0x0001
-#define BT_PSM_RFCOMM 0x0003
-#define BT_PSM_TCS 0x0005
-#define BT_PSM_CTP 0x0007
-#define BT_PSM_BNEP 0x000F
-#define BT_PSM_HIDC 0x0011
-#define BT_PSM_HIDI 0x0013
-#define BT_PSM_UPNP 0x0015
-#define BT_PSM_AVCTP 0x0017
-#define BT_PSM_AVDTP 0x0019
-#define BT_PSM_AVCTP_13 0x001B /* Advanced Control - Browsing */
-#define BT_PSM_UDI_CP \
-  0x001D /* Unrestricted Digital Information Profile C-Plane  */
-#define BT_PSM_ATT 0x001F /* Attribute Protocol  */
-#define BT_PSM_EATT 0x0027
+enum : uint16_t {
+  BT_PSM_SDP = 0x0001,
+  BT_PSM_RFCOMM = 0x0003,
+  BT_PSM_TCS = 0x0005,
+  TCS_PSM_INTERCOM = 5,
+  BT_PSM_CTP = 0x0007,
+  TCS_PSM_CORDLESS = 7,
+  BT_PSM_BNEP = 0x000F,
+  BT_PSM_HIDC = 0x0011,
+  HID_PSM_CONTROL = 0x0011,
+  BT_PSM_HIDI = 0x0013,
+  HID_PSM_INTERRUPT = 0x0013,
+  BT_PSM_UPNP = 0x0015,
+  BT_PSM_AVCTP = 0x0017,
+  BT_PSM_AVDTP = 0x0019,
+  BT_PSM_AVCTP_13 = 0x001B, /* Advanced Control - Browsing */
+  BT_PSM_UDI_CP =
+      0x001D,          /* Unrestricted Digital Information Profile C-Plane  */
+  BT_PSM_ATT = 0x001F, /* Attribute Protocol  */
+  BT_PSM_EATT = 0x0027,
+  /* We will not allocate a PSM in the reserved range to 3rd party apps
+   */
+  BRCM_RESERVED_PSM_START = 0x5AE1,
+  BRCM_RESERVED_PSM_END = 0x5AFF,
+};
 
 /* These macros extract the HCI opcodes from a buffer
  */
@@ -613,11 +623,11 @@ typedef uint8_t
 
 #ifdef __cplusplus
 // Bit order [0]:0-7 [1]:8-15 ... [7]:56-63
-inline std::string bd_features_text(BD_FEATURES features) {
+inline std::string bd_features_text(const BD_FEATURES& features) {
   uint8_t len = BD_FEATURES_LEN;
   char buf[255];
   char* pbuf = buf;
-  uint8_t* b = features;
+  const uint8_t* b = features;
   while (len--) {
     pbuf += sprintf(pbuf, "0x%02x ", *b++);
   }
@@ -670,11 +680,6 @@ typedef struct {
 #define BT_EIR_SERVICE_DATA_32BITS_UUID_TYPE 0x20
 #define BT_EIR_SERVICE_DATA_128BITS_UUID_TYPE 0x21
 #define BT_EIR_MANUFACTURER_SPECIFIC_TYPE 0xFF
-
-/* We will not allocate a PSM in the reserved range to 3rd party apps
- */
-#define BRCM_RESERVED_PSM_START 0x5AE1
-#define BRCM_RESERVED_PSM_END 0x5AFF
 
 /* Device Types
  */
@@ -745,12 +750,5 @@ inline std::string DeviceTypeText(tBT_DEVICE_TYPE type) {
 #define TRACE_TYPE_API 0x00000002
 #define TRACE_TYPE_EVENT 0x00000003
 #define TRACE_TYPE_DEBUG 0x00000004
-
-#define TCS_PSM_INTERCOM 5
-#define TCS_PSM_CORDLESS 7
-#define BT_PSM_BNEP 0x000F
-/* Define PSMs HID uses */
-#define HID_PSM_CONTROL 0x0011
-#define HID_PSM_INTERRUPT 0x0013
 
 #endif

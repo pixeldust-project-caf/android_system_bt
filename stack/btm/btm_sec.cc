@@ -26,8 +26,8 @@
 
 #include "stack/btm/btm_sec.h"
 
-#include <frameworks/base/core/proto/android/bluetooth/enums.pb.h>
-#include <frameworks/base/core/proto/android/bluetooth/hci/enums.pb.h>
+#include <frameworks/proto_logging/stats/enums/bluetooth/enums.pb.h>
+#include <frameworks/proto_logging/stats/enums/bluetooth/hci/enums.pb.h>
 #include <log/log.h>
 #include <string.h>
 
@@ -1077,7 +1077,7 @@ tBTM_STATUS BTM_SetEncryption(const RawAddress& bd_addr,
       p_dev_rec->security_required, p_dev_rec, p_callback);
 
   if (transport == BT_TRANSPORT_LE) {
-    if (BTM_IsAclConnectionUp(bd_addr, transport)) {
+    if (BTM_IsAclConnectionUp(bd_addr, BT_TRANSPORT_LE)) {
       rc = btm_ble_set_encryption(bd_addr, sec_act,
                                   acl_link_role(bd_addr, transport));
     } else {
