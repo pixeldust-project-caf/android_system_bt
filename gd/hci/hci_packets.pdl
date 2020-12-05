@@ -621,12 +621,13 @@ packet CommandPacket {
 // Packets for interfaces
 
 packet DiscoveryCommand : CommandPacket { _payload_, }
-packet ConnectionManagementCommand : CommandPacket { _payload_, }
+packet AclCommand : CommandPacket { _payload_, }
+packet ConnectionManagementCommand : AclCommand { _payload_, }
 packet SecurityCommand : CommandPacket { _payload_, }
 packet ScoConnectionCommand : CommandPacket { _payload_, }
 packet LeAdvertisingCommand : CommandPacket { _payload_, }
 packet LeScanningCommand : CommandPacket { _payload_, }
-packet LeConnectionManagementCommand : CommandPacket { _payload_, }
+packet LeConnectionManagementCommand : AclCommand { _payload_, }
 packet LeSecurityCommand : CommandPacket { _payload_, }
 packet VendorCommand : CommandPacket { _payload_, }
 
@@ -785,7 +786,9 @@ enum ErrorCode: 8 {
   ROLE_CHANGE_NOT_ALLOWED = 0x21,
   LINK_LAYER_COLLISION = 0x23,
   ENCRYPTION_MODE_NOT_ACCEPTABLE = 0x25,
+  ROLE_SWITCH_FAILED = 0x35,
   CONTROLLER_BUSY = 0x3A,
+  CONNECTION_FAILED_ESTABLISHMENT = 0x3E,
 }
 
 // Events that are defined with their respective commands
@@ -888,7 +891,7 @@ enum DisconnectReason : 8 {
   UNACCEPTABLE_CONNECTION_PARAMETERS = 0x3B,
 }
 
-packet Disconnect : ConnectionManagementCommand (op_code = DISCONNECT) {
+packet Disconnect : AclCommand (op_code = DISCONNECT) {
   connection_handle : 12,
   _reserved_ : 4,
   reason : DisconnectReason,
@@ -1055,7 +1058,7 @@ packet ReadRemoteExtendedFeatures : ConnectionManagementCommand (op_code = READ_
 packet ReadRemoteExtendedFeaturesStatus : CommandStatus (command_op_code = READ_REMOTE_EXTENDED_FEATURES) {
 }
 
-packet ReadRemoteVersionInformation : ConnectionManagementCommand (op_code = READ_REMOTE_VERSION_INFORMATION) {
+packet ReadRemoteVersionInformation : AclCommand (op_code = READ_REMOTE_VERSION_INFORMATION) {
   connection_handle : 12,
   _reserved_ : 4,
 }
@@ -2301,7 +2304,7 @@ packet ReadLinkQualityComplete : CommandComplete (command_op_code = READ_LINK_QU
   link_quality : 8,
 }
 
-packet ReadRssi : ConnectionManagementCommand (op_code = READ_RSSI) {
+packet ReadRssi : AclCommand (op_code = READ_RSSI) {
   connection_handle : 12,
   _reserved_ : 4,
 }
@@ -4620,7 +4623,7 @@ packet VendorSpecificEvent : EventPacket (event_code = VENDOR_SPECIFIC) {
   _payload_,
 }
 
-enum qualityReportId : 8 {
+enum QualityReportId : 8 {
   MONITOR_MODE = 0x01,
   APPROACH_LSTO = 0x02,
   A2DP_AUDIO_CHOPPY = 0x03,
@@ -4632,7 +4635,7 @@ enum qualityReportId : 8 {
 }
 
 packet BqrEvent : VendorSpecificEvent (subevent_code = BQR_EVENT) {
-  quality_report_id : qualityReportId,
+  quality_report_id : QualityReportId,
   _payload_,
 }
 

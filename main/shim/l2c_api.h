@@ -57,18 +57,6 @@ void L2CA_Deregister(uint16_t psm);
 
 /*******************************************************************************
  *
- * Function         L2CA_AllocatePSM
- *
- * Description      Other layers call this function to find an unused PSM for
- *                  L2CAP services.
- *
- * Returns          PSM to use.
- *
- ******************************************************************************/
-uint16_t L2CA_AllocatePSM(void);
-
-/*******************************************************************************
- *
  * Function         L2CA_AllocateLePSM
  *
  * Description      Other layers call this function to find an unused LE PSM for
@@ -514,6 +502,11 @@ void L2CA_SetBondingState(const RawAddress& p_bd_addr, bool is_bonding);
 
 // Indicated by shim stack manager that GD L2cap is enabled but Security is not
 void L2CA_UseLegacySecurityModule();
+
+void L2CA_SwitchRoleToCentral(const RawAddress& addr);
+
+bool L2CA_ReadRemoteVersion(const RawAddress& addr, uint8_t* lmp_version,
+                            uint16_t* manufacturer, uint16_t* lmp_sub_version);
 
 }  // namespace shim
 }  // namespace bluetooth
