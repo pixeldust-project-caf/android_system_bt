@@ -96,7 +96,8 @@ class LeAddressManager {
   void unregister_client(LeAddressManagerCallback* callback);
   void prepare_to_rotate();
   void rotate_random_address();
-  void on_le_set_random_address_complete(CommandCompleteView view);
+  void schedule_rotate_random_address();
+  void set_random_address();
   hci::Address generate_rpa();
   hci::Address generate_nrpa();
   std::chrono::milliseconds get_next_private_address_interval_ms();

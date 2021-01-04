@@ -95,14 +95,6 @@ void LinkManager::ConnectDynamicChannelServices(
     }
     return;
   }
-  if (dynamic_channel_service_manager_->GetService(psm)->GetSecurityPolicy() !=
-          SecurityPolicy::_SDP_ONLY_NO_SECURITY_WHATSOEVER_PLAINTEXT_TRANSPORT_OK &&
-      !link->IsAuthenticated()) {
-    link->AddChannelPendingingAuthentication(
-        {psm, link->ReserveDynamicChannel(), std::move(pending_dynamic_channel_connection)});
-    link->Authenticate();
-    return;
-  }
   link->SendConnectionRequest(psm, link->ReserveDynamicChannel(), std::move(pending_dynamic_channel_connection));
 }
 
@@ -159,9 +151,16 @@ void LinkManager::handle_link_security_ensure_authenticated(hci::Address remote)
     LOG_WARN("Remote is disconnected");
     return;
   }
-  if (!link->IsAuthenticated()) {
-    link->Authenticate();
+  link->Authenticate();
+}
+
+void LinkManager::handle_link_security_ensure_encrypted(hci::Address remote) {
+  auto link = GetLink(remote);
+  if (link == nullptr) {
+    LOG_WARN("Remote is disconnected");
+    return;
   }
+  link->Encrypt();
 }
 
 /**
@@ -171,7 +170,10 @@ void LinkManager::handle_link_security_ensure_authenticated(hci::Address remote)
 class LinkSecurityInterfaceImpl : public LinkSecurityInterface {
  public:
   LinkSecurityInterfaceImpl(os::Handler* handler, LinkManager* link_manager, Link* link)
-      : handler_(handler), link_manager_(link_manager), remote_(link->GetDevice().GetAddress()) {}
+      : handler_(handler),
+        link_manager_(link_manager),
+        remote_(link->GetDevice().GetAddress()),
+        acl_handle_(link->GetAclHandle()) {}
 
   hci::Address GetRemoteAddress() override {
     return remote_;
@@ -193,9 +195,22 @@ class LinkSecurityInterfaceImpl : public LinkSecurityInterface {
     handler_->CallOn(link_manager_, &LinkManager::handle_link_security_ensure_authenticated, remote_);
   }
 
+  void EnsureEncrypted() override {
+    handler_->CallOn(link_manager_, &LinkManager::handle_link_security_ensure_encrypted, remote_);
+  }
+
+  uint16_t GetAclHandle() override {
+    return acl_handle_;
+  }
+
+  hci::Role GetRole() override {
+    return link_manager_->GetLink(remote_)->GetRole();
+  }
+
   os::Handler* handler_;
   LinkManager* link_manager_;
   hci::Address remote_;
+  uint16_t acl_handle_;
 };
 
 void LinkManager::OnConnectSuccess(std::unique_ptr<hci::acl_manager::ClassicAclConnection> acl_connection) {
@@ -209,6 +224,9 @@ void LinkManager::OnConnectSuccess(std::unique_ptr<hci::acl_manager::ClassicAclC
   ASSERT(link != nullptr);
   link->SendInformationRequest(InformationRequestInfoType::EXTENDED_FEATURES_SUPPORTED);
   link->SendInformationRequest(InformationRequestInfoType::FIXED_CHANNELS_SUPPORTED);
+  link->ReadRemoteVersionInformation();
+  link->ReadRemoteSupportedFeatures();
+  link->ReadRemoteExtendedFeatures(1);
 
   // Allocate and distribute channels for all registered fixed channel services
   auto fixed_channel_services = fixed_channel_service_manager_->GetRegisteredServices();
@@ -241,8 +259,10 @@ void LinkManager::OnConnectFail(hci::Address device, hci::ErrorCode reason) {
   auto pending_link = pending_links_.find(device);
   if (pending_link == pending_links_.end()) {
     // There is no pending link, exit
-    LOG_DEBUG("Connection to %s failed without a pending link; reason: %s", device.ToString().c_str(),
-              hci::ErrorCodeText(reason).c_str());
+    LOG_INFO(
+        "Connection to %s failed without a pending link; reason: %s",
+        device.ToString().c_str(),
+        hci::ErrorCodeText(reason).c_str());
     if (pending_dynamic_channels_callbacks_.find(device) != pending_dynamic_channels_callbacks_.end()) {
       for (Link::PendingDynamicChannelConnection& callbacks : pending_dynamic_channels_callbacks_[device]) {
         callbacks.on_fail_callback_.Invoke(DynamicChannelManager::ConnectionResult{
@@ -268,10 +288,53 @@ void LinkManager::OnDisconnect(hci::Address device, hci::ErrorCode status) {
   auto* link = GetLink(device);
   ASSERT_LOG(link != nullptr, "Device %s is disconnected with reason 0x%x, but not in local database",
              device.ToString().c_str(), static_cast<uint8_t>(status));
-  links_.erase(device);
   if (link_security_interface_listener_handler_ != nullptr) {
     link_security_interface_listener_handler_->CallOn(
         link_security_interface_listener_, &LinkSecurityInterfaceListener::OnLinkDisconnected, device);
+  }
+  links_.erase(device);
+}
+
+void LinkManager::OnAuthenticationComplete(hci::Address device) {
+  if (link_security_interface_listener_handler_ != nullptr) {
+    link_security_interface_listener_handler_->CallOn(
+        link_security_interface_listener_, &LinkSecurityInterfaceListener::OnAuthenticationComplete, device);
+  }
+}
+
+void LinkManager::OnEncryptionChange(hci::Address device, hci::EncryptionEnabled enabled) {
+  if (link_security_interface_listener_handler_ != nullptr) {
+    link_security_interface_listener_handler_->CallOn(
+        link_security_interface_listener_,
+        &LinkSecurityInterfaceListener::OnEncryptionChange,
+        device,
+        enabled == hci::EncryptionEnabled::ON || enabled == hci::EncryptionEnabled::BR_EDR_AES_CCM);
+  }
+}
+
+void LinkManager::OnReadRemoteVersionInformation(
+    hci::Address device, uint8_t lmp_version, uint16_t manufacturer_name, uint16_t sub_version) {
+  if (link_security_interface_listener_handler_ != nullptr) {
+    link_security_interface_listener_handler_->CallOn(
+        link_security_interface_listener_,
+        &LinkSecurityInterfaceListener::OnReadRemoteVersionInformation,
+        device,
+        lmp_version,
+        manufacturer_name,
+        sub_version);
+  }
+}
+
+void LinkManager::OnReadRemoteExtendedFeatures(
+    hci::Address device, uint8_t page_number, uint8_t max_page_number, uint64_t features) {
+  if (link_security_interface_listener_handler_ != nullptr) {
+    link_security_interface_listener_handler_->CallOn(
+        link_security_interface_listener_,
+        &LinkSecurityInterfaceListener::OnReadRemoteExtendedFeatures,
+        device,
+        page_number,
+        max_page_number,
+        features);
   }
 }
 

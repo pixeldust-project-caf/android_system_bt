@@ -36,26 +36,18 @@
 
 #include "bt_common.h"
 #include "bt_target.h"
-#include "bta_api.h"
 #include "bta_jv_api.h"
-#include "bta_jv_co.h"
-#include "btif_common.h"
 #include "btif_sock_sdp.h"
 #include "btif_sock_thread.h"
 #include "btif_sock_util.h"
 #include "btif_uid.h"
 #include "btif_util.h"
 #include "btm_api.h"
-#include "btm_int.h"
-#include "btu.h"
 #include "common/metrics.h"
-#include "hcimsgs.h"
-#include "osi/include/compat.h"
 #include "osi/include/list.h"
 #include "osi/include/log.h"
 #include "osi/include/osi.h"
 #include "port_api.h"
-#include "sdp_api.h"
 
 /* The JV interface can have only one user, hence we need to call a few
  * L2CAP functions from this file. */
@@ -293,10 +285,6 @@ bt_status_t btsock_rfc_listen(const char* service_name,
 
   if ((flags & BTSOCK_FLAG_NO_SDP) == 0) {
     if (!service_uuid || service_uuid->IsEmpty()) {
-      APPL_TRACE_DEBUG(
-          "%s: service_uuid not set AND BTSOCK_FLAG_NO_SDP is not set - "
-          "changing to SPP",
-          __func__);
       // Use serial port profile to listen to specified channel
       service_uuid = &UUID_SPP;
     } else {
@@ -313,11 +301,11 @@ bt_status_t btsock_rfc_listen(const char* service_name,
   rfc_slot_t* slot =
       alloc_rfc_slot(NULL, service_name, *service_uuid, channel, flags, true);
   if (!slot) {
-    LOG_ERROR("%s unable to allocate RFCOMM slot.", __func__);
+    LOG_ERROR("unable to allocate RFCOMM slot");
     return BT_STATUS_FAIL;
   }
-  APPL_TRACE_DEBUG("BTA_JvGetChannelId: service_name: %s - channel: %d",
-                   service_name, channel);
+  LOG_INFO("Adding listening socket service_name: %s - channel: %d",
+           service_name, channel);
   BTA_JvGetChannelId(BTA_JV_CONN_TYPE_RFCOMM, slot->id, channel);
   *sock_fd = slot->app_fd;  // Transfer ownership of fd to caller.
   /*TODO:

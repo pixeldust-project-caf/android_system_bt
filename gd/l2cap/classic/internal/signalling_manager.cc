@@ -92,10 +92,20 @@ void ClassicSignallingManager::SendConnectionRequest(Psm psm, Cid local_cid) {
   dynamic_service_manager_->GetSecurityEnforcementInterface()->Enforce(
       link_->GetDevice(),
       dynamic_service_manager_->GetService(psm)->GetSecurityPolicy(),
-      handler_->BindOnceOn(this, &ClassicSignallingManager::on_security_result_for_outgoing, psm, local_cid));
+      handler_->BindOnceOn(
+          this,
+          &ClassicSignallingManager::on_security_result_for_outgoing,
+          SecurityEnforcementType::LINK_KEY,
+          psm,
+          local_cid));
 }
 
-void ClassicSignallingManager::on_security_result_for_outgoing(Psm psm, Cid local_cid, bool result) {
+void ClassicSignallingManager::on_security_result_for_outgoing(
+    SecurityEnforcementType type, Psm psm, Cid local_cid, bool result) {
+  if (enqueue_buffer_.get() == nullptr) {
+    LOG_ERROR("Got security result callback after deletion");
+    return;
+  }
   if (!result) {
     LOG_WARN("Security requirement can't be satisfied. Dropping connection request");
     DynamicChannelManager::ConnectionResult connection_result{
@@ -104,6 +114,12 @@ void ClassicSignallingManager::on_security_result_for_outgoing(Psm psm, Cid loca
         .l2cap_connection_response_result = ConnectionResponseResult::NO_RESOURCES_AVAILABLE,
     };
     link_->OnOutgoingConnectionRequestFail(local_cid, connection_result);
+    return;
+  }
+  if (type == SecurityEnforcementType::LINK_KEY && !link_->IsAuthenticated() &&
+      dynamic_service_manager_->GetService(psm)->GetSecurityPolicy() !=
+          SecurityPolicy::_SDP_ONLY_NO_SECURITY_WHATSOEVER_PLAINTEXT_TRANSPORT_OK) {
+    link_->Encrypt();
     return;
   }
 
@@ -167,12 +183,14 @@ void ClassicSignallingManager::OnConnectionRequest(SignalId signal_id, Psm psm, 
                              ConnectionResponseStatus::NO_FURTHER_INFORMATION_AVAILABLE);
     return;
   }
+  /* TODO(zachoverflow): add back in with policy
   if (channel_allocator_->IsPsmUsed(psm)) {
     LOG_WARN("Psm already exists");
     send_connection_response(signal_id, remote_cid, kInvalidCid, ConnectionResponseResult::PSM_NOT_SUPPORTED,
                              ConnectionResponseStatus::NO_FURTHER_INFORMATION_AVAILABLE);
     return;
   }
+  */
 
   if (!dynamic_service_manager_->IsServiceRegistered(psm)) {
     LOG_INFO("Service for this psm (%d) is not registered", psm);
@@ -190,6 +208,10 @@ void ClassicSignallingManager::OnConnectionRequest(SignalId signal_id, Psm psm, 
 
 void ClassicSignallingManager::on_security_result_for_incoming(
     Psm psm, Cid remote_cid, SignalId signal_id, bool result) {
+  if (enqueue_buffer_.get() == nullptr) {
+    LOG_ERROR("Got security result callback after deletion");
+    return;
+  }
   if (!result) {
     send_connection_response(
         signal_id,
@@ -282,21 +304,21 @@ void ClassicSignallingManager::OnConfigurationRequest(SignalId signal_id, Cid ci
   ConfigurationResponseResult result = ConfigurationResponseResult::SUCCESS;
   auto remote_rfc_mode = RetransmissionAndFlowControlModeOption::L2CAP_BASIC;
 
+  auto initial_config_option = dynamic_service_manager_->GetService(channel->GetPsm())->GetConfigOption();
+
   for (auto& option : options) {
     switch (option->type_) {
       case ConfigurationOptionType::MTU: {
         auto* config = MtuConfigurationOption::Specialize(option.get());
-        if (config->mtu_ < kMinimumClassicMtu) {
-          LOG_WARN("Configuration request with Invalid MTU");
-          config->mtu_ = kDefaultClassicMtu;
+        if (config->mtu_ < initial_config_option.minimal_remote_mtu) {
+          LOG_WARN("Configuration request with unacceptable MTU");
+          config->mtu_ = initial_config_option.minimal_remote_mtu;
           rsp_options.emplace_back(std::make_unique<MtuConfigurationOption>(*config));
           result = ConfigurationResponseResult::UNACCEPTABLE_PARAMETERS;
         }
-        configuration_state.outgoing_mtu_ = config->mtu_;
         break;
       }
       case ConfigurationOptionType::FLUSH_TIMEOUT: {
-        // TODO: Handle this configuration option
         break;
       }
       case ConfigurationOptionType::RETRANSMISSION_AND_FLOW_CONTROL: {
@@ -331,8 +353,6 @@ void ClassicSignallingManager::OnConfigurationRequest(SignalId signal_id, Cid ci
         break;
     }
   }
-
-  auto initial_config_option = dynamic_service_manager_->GetService(channel->GetPsm())->GetConfigOption();
 
   if (remote_rfc_mode == RetransmissionAndFlowControlModeOption::L2CAP_BASIC &&
       initial_config_option.channel_mode ==
@@ -370,7 +390,6 @@ void ClassicSignallingManager::SendInitialConfigRequest(Cid local_cid) {
 
   auto mtu_configuration = std::make_unique<MtuConfigurationOption>();
   mtu_configuration->mtu_ = initial_config.incoming_mtu;
-  configuration_state.incoming_mtu_ = initial_config.incoming_mtu;
 
   auto fcs_option = std::make_unique<FrameCheckSequenceOption>();
   fcs_option->fcs_type_ = FcsType::NO_FCS;
@@ -423,7 +442,6 @@ void ClassicSignallingManager::negotiate_configuration(Cid cid, Continuation is_
         // MTU is non-negotiable option. Use default mtu size
         auto mtu_configuration = std::make_unique<MtuConfigurationOption>();
         mtu_configuration->mtu_ = kDefaultClassicMtu;
-        configuration_state.incoming_mtu_ = kDefaultClassicMtu;
         negotiation_config.emplace_back(std::move(mtu_configuration));
         can_negotiate = true;
         break;
@@ -468,7 +486,7 @@ void ClassicSignallingManager::negotiate_configuration(Cid cid, Continuation is_
   if (can_negotiate) {
     send_configuration_request(channel->GetRemoteCid(), std::move(negotiation_config));
   } else {
-    LOG_DEBUG("No suggested parameter received");
+    LOG_INFO("No suggested parameter received");
   }
 }
 
@@ -520,12 +538,10 @@ void ClassicSignallingManager::OnConfigurationResponse(SignalId signal_id, Cid c
   for (auto& option : options) {
     switch (option->type_) {
       case ConfigurationOptionType::MTU: {
-        auto config = MtuConfigurationOption::Specialize(option.get());
-        configuration_state.incoming_mtu_ = config->mtu_;
+        // Since they accepted our MTU, no need to read the new value.
         break;
       }
       case ConfigurationOptionType::FLUSH_TIMEOUT: {
-        // TODO: Handle this configuration option
         break;
       }
       case ConfigurationOptionType::RETRANSMISSION_AND_FLOW_CONTROL: {

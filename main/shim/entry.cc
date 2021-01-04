@@ -37,7 +37,7 @@
 namespace bluetooth {
 namespace shim {
 
-os::Handler* GetGdShimHandler() { return GetDumpsys()->GetGdShimHandler(); }
+os::Handler* GetGdShimHandler() { return Stack::GetInstance()->GetHandler(); }
 
 hci::LeAdvertisingManager* GetAdvertising() {
   return Stack::GetInstance()
@@ -79,6 +79,12 @@ hci::HciLayer* GetHciLayer() {
 
 L2cap* GetL2cap() {
   return Stack::GetInstance()->GetStackManager()->GetInstance<L2cap>();
+}
+
+l2cap::classic::L2capClassicModule* GetL2capClassicModule() {
+  return Stack::GetInstance()
+      ->GetStackManager()
+      ->GetInstance<bluetooth::l2cap::classic::L2capClassicModule>();
 }
 
 bluetooth::l2cap::le::L2capLeModule* GetL2capLeModule() {

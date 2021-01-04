@@ -67,9 +67,9 @@ class ClassicAclConnection : public AclConnection {
   virtual bool ReadAfhChannelMap();
   virtual bool ReadRssi();
   virtual bool ReadClock(WhichClock which_clock);
-  virtual bool ReadRemoteVersionInformation();
+  virtual bool ReadRemoteVersionInformation() override;
   virtual bool ReadRemoteSupportedFeatures();
-  virtual bool ReadRemoteExtendedFeatures();
+  virtual bool ReadRemoteExtendedFeatures(uint8_t page_number);
 
   // Called once before passing the connection to the client
   virtual ConnectionManagementCallbacks* GetEventCallbacks();

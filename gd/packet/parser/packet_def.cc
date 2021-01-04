@@ -41,10 +41,10 @@ void PacketDef::GenParserDefinition(std::ostream& s) const {
   // Specialize function
   if (parent_ != nullptr) {
     s << "static " << name_ << "View Create(" << parent_->name_ << "View parent)";
-    s << "{ return " << name_ << "View(parent); }";
+    s << "{ return " << name_ << "View(std::move(parent)); }";
   } else {
     s << "static " << name_ << "View Create(PacketView<" << (is_little_endian_ ? "" : "!") << "kLittleEndian> packet) ";
-    s << "{ return " << name_ << "View(packet); }";
+    s << "{ return " << name_ << "View(std::move(packet)); }";
   }
 
   GenTestingParserFromBytes(s);
@@ -71,10 +71,10 @@ void PacketDef::GenParserDefinition(std::ostream& s) const {
   s << " protected:\n";
   // Constructor from a View
   if (parent_ != nullptr) {
-    s << name_ << "View(" << parent_->name_ << "View parent)";
-    s << " : " << parent_->name_ << "View(parent) { was_validated_ = false; }";
+    s << "explicit " << name_ << "View(" << parent_->name_ << "View parent)";
+    s << " : " << parent_->name_ << "View(std::move(parent)) { was_validated_ = false; }";
   } else {
-    s << name_ << "View(PacketView<" << (is_little_endian_ ? "" : "!") << "kLittleEndian> packet) ";
+    s << "explicit " << name_ << "View(PacketView<" << (is_little_endian_ ? "" : "!") << "kLittleEndian> packet) ";
     s << " : PacketView<" << (is_little_endian_ ? "" : "!") << "kLittleEndian>(packet) { was_validated_ = false;}";
   }
 
@@ -103,7 +103,7 @@ void PacketDef::GenTestingParserFromBytes(std::ostream& s) const {
     parent_parens++;
     ancestor_ptr = ancestor_ptr->parent_;
   }
-  s << "vec";
+  s << "PacketView<" << (is_little_endian_ ? "" : "!") << "kLittleEndian>(vec)";
   for (size_t i = 0; i < parent_parens; i++) {
     s << ")";
   }
@@ -439,7 +439,7 @@ void PacketDef::GenTestDefine(std::ostream& s) const {
   s << "void CompareBytes(std::vector<uint8_t> captured_packet) {";
   s << name_ << "View view = " << name_ << "View::FromBytes(captured_packet);";
   s << "if (!view.IsValid()) { LOG_INFO(\"Invalid Packet Bytes (size = %zu)\", view.size());";
-  s << "for (size_t i = 0; i < view.size(); i++) { LOG_DEBUG(\"%5zd:%02X\", i, *(view.begin() + i)); }}";
+  s << "for (size_t i = 0; i < view.size(); i++) { LOG_INFO(\"%5zd:%02X\", i, *(view.begin() + i)); }}";
   s << "ASSERT_TRUE(view.IsValid());";
   s << "auto packet = " << name_ << "Builder::FromView(view);";
   s << "std::shared_ptr<std::vector<uint8_t>> packet_bytes = std::make_shared<std::vector<uint8_t>>();";
@@ -646,7 +646,7 @@ void PacketDef::GenBuilderParameterChecker(std::ostream& s) const {
 }
 
 void PacketDef::GenBuilderConstructor(std::ostream& s) const {
-  s << name_ << "Builder(";
+  s << "explicit " << name_ << "Builder(";
 
   // Generate the constructor parameters.
   auto params = GetParamList().GetFieldsWithoutTypes({

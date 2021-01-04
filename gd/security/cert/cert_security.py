@@ -88,11 +88,15 @@ class CertSecurity(PySecurity):
         self._device.wait_channel_ready()
         self._hci = PyHci(device)
         self._hci.register_for_events(
-            hci_packets.EventCode.LINK_KEY_REQUEST, hci_packets.EventCode.IO_CAPABILITY_REQUEST,
-            hci_packets.EventCode.IO_CAPABILITY_RESPONSE, hci_packets.EventCode.USER_PASSKEY_NOTIFICATION,
-            hci_packets.EventCode.USER_PASSKEY_REQUEST, hci_packets.EventCode.USER_CONFIRMATION_REQUEST,
-            hci_packets.EventCode.REMOTE_HOST_SUPPORTED_FEATURES_NOTIFICATION,
-            hci_packets.EventCode.LINK_KEY_NOTIFICATION, hci_packets.EventCode.SIMPLE_PAIRING_COMPLETE)
+            hci_packets.EventCode.ENCRYPTION_CHANGE, hci_packets.EventCode.CHANGE_CONNECTION_LINK_KEY_COMPLETE,
+            hci_packets.EventCode.CENTRAL_LINK_KEY_COMPLETE, hci_packets.EventCode.RETURN_LINK_KEYS,
+            hci_packets.EventCode.PIN_CODE_REQUEST, hci_packets.EventCode.LINK_KEY_REQUEST,
+            hci_packets.EventCode.LINK_KEY_NOTIFICATION, hci_packets.EventCode.ENCRYPTION_KEY_REFRESH_COMPLETE,
+            hci_packets.EventCode.IO_CAPABILITY_REQUEST, hci_packets.EventCode.IO_CAPABILITY_RESPONSE,
+            hci_packets.EventCode.REMOTE_OOB_DATA_REQUEST, hci_packets.EventCode.SIMPLE_PAIRING_COMPLETE,
+            hci_packets.EventCode.USER_PASSKEY_NOTIFICATION, hci_packets.EventCode.KEYPRESS_NOTIFICATION,
+            hci_packets.EventCode.USER_CONFIRMATION_REQUEST, hci_packets.EventCode.USER_PASSKEY_REQUEST,
+            hci_packets.EventCode.REMOTE_HOST_SUPPORTED_FEATURES_NOTIFICATION)
         self._hci_event_stream = self._hci.get_event_stream()
 
     def create_bond(self, address, type):
@@ -115,7 +119,7 @@ class CertSecurity(PySecurity):
         """
         logging.info("Cert: setting IO Capabilities data to '%s'" % self._io_capabilities_name_lookup.get(
             io_capabilities, "ERROR"))
-        self._io_caps = self._io_cap_lookup.get(io_capabilities, hci_packets.IoCapability.DISPLAY_YES_NO)
+        self._io_caps = self._io_cap_lookup.get(io_capabilities, hci_packets.IoCapability.DISPLAY_ONLY)
 
     def set_authentication_requirements(self, auth_reqs):
         """
@@ -205,6 +209,13 @@ class CertSecurity(PySecurity):
             Cert side needs to pass
         """
         pass
+
+    def wait_for_disconnect_event(self):
+        """
+            Cert side needs to pass
+        """
+        logging.info("Cert: Waiting for DISCONNECT_COMPLETE")
+        assertThat(self._hci_event_stream).emits(HciMatchers.DisconnectionComplete())
 
     def close(self):
         safeClose(self._hci)

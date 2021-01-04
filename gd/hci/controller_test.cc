@@ -25,6 +25,7 @@
 
 #include "common/bind.h"
 #include "common/callback.h"
+#include "common/init_flags.h"
 #include "hci/address.h"
 #include "hci/hci_layer.h"
 #include "os/thread.h"
@@ -101,11 +102,6 @@ class TestHciLayer : public HciLayer {
         event_builder =
             ReadLocalSupportedCommandsCompleteBuilder::Create(num_packets, ErrorCode::SUCCESS, supported_commands);
       } break;
-      case (OpCode::READ_LOCAL_SUPPORTED_FEATURES): {
-        uint64_t lmp_features = 0x012345678abcdef;
-        event_builder =
-            ReadLocalSupportedFeaturesCompleteBuilder::Create(num_packets, ErrorCode::SUCCESS, lmp_features);
-      } break;
       case (OpCode::READ_LOCAL_EXTENDED_FEATURES): {
         ReadLocalExtendedFeaturesView read_command = ReadLocalExtendedFeaturesView::Create(command);
         ASSERT_TRUE(read_command.IsValid());
@@ -179,10 +175,16 @@ class TestHciLayer : public HciLayer {
         event_mask = view.GetEventMask();
         event_builder = SetEventMaskCompleteBuilder::Create(num_packets, ErrorCode::SUCCESS);
       } break;
+      case (OpCode::LE_SET_EVENT_MASK): {
+        auto view = LeSetEventMaskView::Create(command);
+        ASSERT_TRUE(view.IsValid());
+        le_event_mask = view.GetLeEventMask();
+        event_builder = LeSetEventMaskCompleteBuilder::Create(num_packets, ErrorCode::SUCCESS);
+      } break;
+
       case (OpCode::RESET):
       case (OpCode::SET_EVENT_FILTER):
       case (OpCode::HOST_BUFFER_SIZE):
-      case (OpCode::LE_SET_EVENT_MASK):
         command_queue_.push(command);
         not_empty_.notify_all();
         return;
@@ -237,7 +239,7 @@ class TestHciLayer : public HciLayer {
     }
     EXPECT_TRUE(command_queue_.size() > 0);
     if (command_queue_.empty()) {
-      return CommandPacketView::Create(std::make_shared<std::vector<uint8_t>>());
+      return CommandPacketView::Create(PacketView<kLittleEndian>(std::make_shared<std::vector<uint8_t>>()));
     }
     CommandPacketView command = command_queue_.front();
     EXPECT_EQ(command.GetOpCode(), op_code);
@@ -254,6 +256,7 @@ class TestHciLayer : public HciLayer {
   constexpr static uint16_t total_num_acl_data_packets = 10;
   constexpr static uint16_t total_num_synchronous_data_packets = 12;
   uint64_t event_mask = 0;
+  uint64_t le_event_mask = 0;
 
  private:
   common::ContextualCallback<void(EventPacketView)> number_of_completed_packets_callback_;
@@ -265,6 +268,7 @@ class TestHciLayer : public HciLayer {
 class ControllerTest : public ::testing::Test {
  protected:
   void SetUp() override {
+    bluetooth::common::InitFlags::SetAllForTesting();
     test_hci_layer_ = new TestHciLayer;
     fake_registry_.InjectTestModule(&HciLayer::Factory, test_hci_layer_);
     client_handler_ = fake_registry_.GetTestModuleHandler(&HciLayer::Factory);
@@ -286,45 +290,30 @@ class ControllerTest : public ::testing::Test {
 TEST_F(ControllerTest, startup_teardown) {}
 
 TEST_F(ControllerTest, read_controller_info) {
-  ASSERT_EQ(controller_->GetControllerAclPacketLength(), test_hci_layer_->acl_data_packet_length);
-  ASSERT_EQ(controller_->GetControllerNumAclPacketBuffers(), test_hci_layer_->total_num_acl_data_packets);
-  ASSERT_EQ(controller_->GetControllerScoPacketLength(), test_hci_layer_->synchronous_data_packet_length);
-  ASSERT_EQ(controller_->GetControllerNumScoPacketBuffers(), test_hci_layer_->total_num_synchronous_data_packets);
-  ASSERT_EQ(controller_->GetControllerMacAddress(), Address::kAny);
-  LocalVersionInformation local_version_information = controller_->GetControllerLocalVersionInformation();
+  ASSERT_EQ(controller_->GetAclPacketLength(), test_hci_layer_->acl_data_packet_length);
+  ASSERT_EQ(controller_->GetNumAclPacketBuffers(), test_hci_layer_->total_num_acl_data_packets);
+  ASSERT_EQ(controller_->GetScoPacketLength(), test_hci_layer_->synchronous_data_packet_length);
+  ASSERT_EQ(controller_->GetNumScoPacketBuffers(), test_hci_layer_->total_num_synchronous_data_packets);
+  ASSERT_EQ(controller_->GetMacAddress(), Address::kAny);
+  LocalVersionInformation local_version_information = controller_->GetLocalVersionInformation();
   ASSERT_EQ(local_version_information.hci_version_, HciVersion::V_5_0);
   ASSERT_EQ(local_version_information.hci_revision_, 0x1234);
   ASSERT_EQ(local_version_information.lmp_version_, LmpVersion::V_4_2);
   ASSERT_EQ(local_version_information.manufacturer_name_, 0xBAD);
   ASSERT_EQ(local_version_information.lmp_subversion_, 0x5678);
-  std::array<uint8_t, 64> supported_commands;
-  for (int i = 0; i < 37; i++) {
-    supported_commands[i] = 0xff;
-  }
-  for (int i = 37; i < 64; i++) {
-    supported_commands[i] = 0x00;
-  }
-  ASSERT_EQ(controller_->GetControllerLocalSupportedCommands(), supported_commands);
-  ASSERT_EQ(controller_->GetControllerLocalSupportedFeatures(), 0x012345678abcdef);
-  ASSERT_EQ(controller_->GetControllerLocalExtendedFeaturesMaxPageNumber(), 0x02);
-  ASSERT_EQ(controller_->GetControllerLocalExtendedFeatures(0), 0x012345678abcdef);
-  ASSERT_EQ(controller_->GetControllerLocalExtendedFeatures(1), 0x012345678abcdf0);
-  ASSERT_EQ(controller_->GetControllerLocalExtendedFeatures(2), 0x012345678abcdf1);
-  ASSERT_EQ(controller_->GetControllerLocalExtendedFeatures(100), 0x00);
-  ASSERT_EQ(controller_->GetControllerLeBufferSize().le_data_packet_length_, 0x16);
-  ASSERT_EQ(controller_->GetControllerLeBufferSize().total_num_le_packets_, 0x08);
-  ASSERT_EQ(controller_->GetControllerLeLocalSupportedFeatures(), 0x001f123456789abc);
-  ASSERT_EQ(controller_->GetControllerLeSupportedStates(), 0x001f123456789abe);
-  ASSERT_EQ(controller_->GetControllerLeMaximumDataLength().supported_max_tx_octets_, 0x12);
-  ASSERT_EQ(controller_->GetControllerLeMaximumDataLength().supported_max_rx_octets_, 0x56);
-  ASSERT_EQ(controller_->GetControllerLeMaximumAdvertisingDataLength(), 0x0672);
-  ASSERT_EQ(controller_->GetControllerLeNumberOfSupportedAdverisingSets(), 0xF0);
+  ASSERT_EQ(controller_->GetLeBufferSize().le_data_packet_length_, 0x16);
+  ASSERT_EQ(controller_->GetLeBufferSize().total_num_le_packets_, 0x08);
+  ASSERT_EQ(controller_->GetLeSupportedStates(), 0x001f123456789abe);
+  ASSERT_EQ(controller_->GetLeMaximumDataLength().supported_max_tx_octets_, 0x12);
+  ASSERT_EQ(controller_->GetLeMaximumDataLength().supported_max_rx_octets_, 0x56);
+  ASSERT_EQ(controller_->GetLeMaximumAdvertisingDataLength(), 0x0672);
+  ASSERT_EQ(controller_->GetLeNumberOfSupportedAdverisingSets(), 0xF0);
 }
 
 TEST_F(ControllerTest, read_write_local_name) {
-  ASSERT_EQ(controller_->GetControllerLocalName(), "DUT");
+  ASSERT_EQ(controller_->GetLocalName(), "DUT");
   controller_->WriteLocalName("New name");
-  ASSERT_EQ(controller_->GetControllerLocalName(), "New name");
+  ASSERT_EQ(controller_->GetLocalName(), "New name");
 }
 
 TEST_F(ControllerTest, send_set_event_mask_command) {
@@ -383,11 +372,12 @@ TEST_F(ControllerTest, send_host_buffer_size_command) {
 }
 
 TEST_F(ControllerTest, send_le_set_event_mask_command) {
-  controller_->LeSetEventMask(0x000000000000001F);
-  auto packet = test_hci_layer_->GetCommand(OpCode::LE_SET_EVENT_MASK);
-  auto command = LeSetEventMaskView::Create(packet);
-  ASSERT_TRUE(command.IsValid());
-  ASSERT_EQ(command.GetLeEventMask(), 0x000000000000001F);
+  uint64_t new_le_event_mask = test_hci_layer_->event_mask - 1;
+  controller_->LeSetEventMask(new_le_event_mask);
+  // Send another command to make sure it was applied
+  controller_->Reset();
+  auto packet = test_hci_layer_->GetCommand(OpCode::RESET);
+  ASSERT_EQ(new_le_event_mask, test_hci_layer_->le_event_mask);
 }
 
 TEST_F(ControllerTest, is_supported_test) {
@@ -400,7 +390,7 @@ TEST_F(ControllerTest, is_supported_test) {
 }
 
 TEST_F(ControllerTest, feature_spec_version_055_test) {
-  EXPECT_EQ(controller_->GetControllerVendorCapabilities().version_supported_, 55);
+  EXPECT_EQ(controller_->GetVendorCapabilities().version_supported_, 55);
   EXPECT_TRUE(controller_->IsSupported(OpCode::LE_MULTI_ADVT));
   EXPECT_FALSE(controller_->IsSupported(OpCode::LE_TRACK_ADV));
   EXPECT_FALSE(controller_->IsSupported(OpCode::CONTROLLER_DEBUG_INFO));
@@ -409,7 +399,7 @@ TEST_F(ControllerTest, feature_spec_version_055_test) {
 }
 
 TEST_F(ControllerTest, feature_spec_version_095_test) {
-  EXPECT_EQ(controller_->GetControllerVendorCapabilities().version_supported_, 95);
+  EXPECT_EQ(controller_->GetVendorCapabilities().version_supported_, 95);
   EXPECT_TRUE(controller_->IsSupported(OpCode::LE_MULTI_ADVT));
   EXPECT_TRUE(controller_->IsSupported(OpCode::LE_TRACK_ADV));
   EXPECT_FALSE(controller_->IsSupported(OpCode::CONTROLLER_DEBUG_INFO));
@@ -418,7 +408,7 @@ TEST_F(ControllerTest, feature_spec_version_095_test) {
 }
 
 TEST_F(ControllerTest, feature_spec_version_096_test) {
-  EXPECT_EQ(controller_->GetControllerVendorCapabilities().version_supported_, 96);
+  EXPECT_EQ(controller_->GetVendorCapabilities().version_supported_, 96);
   EXPECT_TRUE(controller_->IsSupported(OpCode::LE_MULTI_ADVT));
   EXPECT_TRUE(controller_->IsSupported(OpCode::LE_TRACK_ADV));
   EXPECT_FALSE(controller_->IsSupported(OpCode::CONTROLLER_DEBUG_INFO));
@@ -427,7 +417,7 @@ TEST_F(ControllerTest, feature_spec_version_096_test) {
 }
 
 TEST_F(ControllerTest, feature_spec_version_098_test) {
-  EXPECT_EQ(controller_->GetControllerVendorCapabilities().version_supported_, 98);
+  EXPECT_EQ(controller_->GetVendorCapabilities().version_supported_, 98);
   EXPECT_TRUE(controller_->IsSupported(OpCode::LE_MULTI_ADVT));
   EXPECT_TRUE(controller_->IsSupported(OpCode::LE_TRACK_ADV));
   EXPECT_FALSE(controller_->IsSupported(OpCode::CONTROLLER_DEBUG_INFO));

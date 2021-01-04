@@ -36,6 +36,8 @@ namespace l2cap {
 namespace classic {
 namespace internal {
 
+class DumpsysHelper;
+
 class LinkManager : public hci::acl_manager::ConnectionCallbacks {
  public:
   LinkManager(os::Handler* l2cap_handler, hci::AclManager* acl_manager,
@@ -63,6 +65,12 @@ class LinkManager : public hci::acl_manager::ConnectionCallbacks {
   void OnConnectSuccess(std::unique_ptr<hci::acl_manager::ClassicAclConnection> acl_connection) override;
   void OnConnectFail(hci::Address device, hci::ErrorCode reason) override;
   virtual void OnDisconnect(hci::Address device, hci::ErrorCode status);
+  void OnAuthenticationComplete(hci::Address device);
+  void OnEncryptionChange(hci::Address device, hci::EncryptionEnabled enabled);
+  void OnReadRemoteVersionInformation(
+      hci::Address device, uint8_t lmp_version, uint16_t manufacturer_name, uint16_t sub_version);
+  void OnReadRemoteExtendedFeatures(
+      hci::Address device, uint8_t page_number, uint8_t max_page_number, uint64_t features);
 
   // FixedChannelManager methods
 
@@ -82,10 +90,12 @@ class LinkManager : public hci::acl_manager::ConnectionCallbacks {
  private:
   // Handles requests from LinkSecurityInterface
   friend class LinkSecurityInterfaceImpl;
+  friend class DumpsysHelper;
   void handle_link_security_hold(hci::Address remote);
   void handle_link_security_release(hci::Address remote);
   void handle_link_security_disconnect(hci::Address remote);
   void handle_link_security_ensure_authenticated(hci::Address remote);
+  void handle_link_security_ensure_encrypted(hci::Address remote);
 
   // Dependencies
   os::Handler* l2cap_handler_;

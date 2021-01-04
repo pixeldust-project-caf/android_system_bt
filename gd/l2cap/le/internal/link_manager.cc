@@ -134,7 +134,7 @@ void LinkManager::OnLeConnectFail(hci::AddressWithType address_with_type, hci::E
   auto pending_link = pending_links_.find(address_with_type);
   if (pending_link == pending_links_.end()) {
     // There is no pending link, exit
-    LOG_DEBUG("Connection to %s failed without a pending link", address_with_type.ToString().c_str());
+    LOG_INFO("Connection to %s failed without a pending link", address_with_type.ToString().c_str());
     return;
   }
   for (auto& pending_fixed_channel_connection : pending_link->second.pending_fixed_channel_connections_) {
@@ -145,6 +145,16 @@ void LinkManager::OnLeConnectFail(hci::AddressWithType address_with_type, hci::E
   }
   // Remove entry in pending link list
   pending_links_.erase(pending_link);
+}
+
+void LinkManager::OnAdvertisingSetTerminated(
+    bluetooth::hci::ErrorCode status, uint16_t connection_handle, hci::AddressWithType advertiser_address) {
+  for (auto& [address, link] : links_) {
+    if (link.GetAclConnection()->GetHandle() == connection_handle) {
+      link.GetAclConnection()->SetLocalAddress(advertiser_address);
+      return;
+    }
+  }
 }
 
 void LinkManager::OnDisconnect(bluetooth::hci::AddressWithType address_with_type) {

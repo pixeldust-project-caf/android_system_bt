@@ -18,7 +18,6 @@
 
 #include "hci/address.h"
 #include "hci/hci_packets.h"
-#include "include/hci.h"
 #include "include/inquiry.h"
 #include "include/phy.h"
 #include "model/controller/acl_connection_handler.h"
@@ -51,6 +50,7 @@ class LinkLayerController {
   void StartSimplePairing(const Address& address);
   void AuthenticateRemoteStage1(const Address& address, PairingType pairing_type);
   void AuthenticateRemoteStage2(const Address& address);
+  void SaveKeyAndAuthenticate(uint8_t key_type, const Address& peer);
   ErrorCode LinkKeyRequestReply(const Address& address,
                                 const std::array<uint8_t, 16>& key);
   ErrorCode LinkKeyRequestNegativeReply(const Address& address);
@@ -59,24 +59,31 @@ class LinkLayerController {
                                      uint8_t authentication_requirements);
   ErrorCode IoCapabilityRequestNegativeReply(const Address& peer,
                                              ErrorCode reason);
+  ErrorCode PinCodeRequestReply(const Address& peer, std::vector<uint8_t> pin);
+  ErrorCode PinCodeRequestNegativeReply(const Address& peer);
   ErrorCode UserConfirmationRequestReply(const Address& peer);
   ErrorCode UserConfirmationRequestNegativeReply(const Address& peer);
   ErrorCode UserPasskeyRequestReply(const Address& peer,
                                     uint32_t numeric_value);
   ErrorCode UserPasskeyRequestNegativeReply(const Address& peer);
   ErrorCode RemoteOobDataRequestReply(const Address& peer,
-                                      const std::vector<uint8_t>& c,
-                                      const std::vector<uint8_t>& r);
+                                      const std::array<uint8_t, 16>& c,
+                                      const std::array<uint8_t, 16>& r);
   ErrorCode RemoteOobDataRequestNegativeReply(const Address& peer);
+  ErrorCode RemoteOobExtendedDataRequestReply(
+      const Address& peer, const std::array<uint8_t, 16>& c_192,
+      const std::array<uint8_t, 16>& r_192,
+      const std::array<uint8_t, 16>& c_256,
+      const std::array<uint8_t, 16>& r_256);
   void HandleSetConnectionEncryption(const Address& address, uint16_t handle, uint8_t encryption_enable);
   ErrorCode SetConnectionEncryption(uint16_t handle, uint8_t encryption_enable);
   void HandleAuthenticationRequest(const Address& address, uint16_t handle);
   ErrorCode AuthenticationRequested(uint16_t handle);
 
   ErrorCode AcceptConnectionRequest(const Address& addr, bool try_role_switch);
-  void MakeSlaveConnection(const Address& addr, bool try_role_switch);
+  void MakePeripheralConnection(const Address& addr, bool try_role_switch);
   ErrorCode RejectConnectionRequest(const Address& addr, uint8_t reason);
-  void RejectSlaveConnection(const Address& addr, uint8_t reason);
+  void RejectPeripheralConnection(const Address& addr, uint8_t reason);
   ErrorCode CreateConnection(const Address& addr, uint16_t packet_type,
                              uint8_t page_scan_mode, uint16_t clock_offset,
                              uint8_t allow_role_switch);
@@ -165,11 +172,54 @@ class LinkLayerController {
   bool LeResolvingListFull();
   void LeSetPrivacyMode(uint8_t address_type, Address addr, uint8_t mode);
 
+  void LeReadIsoTxSync(uint16_t handle);
+  void LeSetCigParameters(
+      uint8_t cig_id, uint32_t sdu_interval_m_to_s,
+      uint32_t sdu_interval_s_to_m,
+      bluetooth::hci::ClockAccuracy clock_accuracy,
+      bluetooth::hci::Packing packing, bluetooth::hci::Enable framing,
+      uint16_t max_transport_latency_m_to_s,
+      uint16_t max_transport_latency_s_to_m,
+      std::vector<bluetooth::hci::CisParametersConfig> cis_config);
+  bluetooth::hci::ErrorCode LeCreateCis(
+      std::vector<bluetooth::hci::CreateCisConfig> cis_config);
+  bluetooth::hci::ErrorCode LeRemoveCig(uint8_t cig_id);
+  bluetooth::hci::ErrorCode LeAcceptCisRequest(uint16_t handle);
+  bluetooth::hci::ErrorCode LeRejectCisRequest(
+      uint16_t handle, bluetooth::hci::ErrorCode reason);
+  bluetooth::hci::ErrorCode LeCreateBig(
+      uint8_t big_handle, uint8_t advertising_handle, uint8_t num_bis,
+      uint32_t sdu_interval, uint16_t max_sdu, uint16_t max_transport_latency,
+      uint8_t rtn, bluetooth::hci::SecondaryPhyType phy,
+      bluetooth::hci::Packing packing, bluetooth::hci::Enable framing,
+      bluetooth::hci::Enable encryption, std::vector<uint16_t> broadcast_code);
+  bluetooth::hci::ErrorCode LeTerminateBig(uint8_t big_handle,
+                                           bluetooth::hci::ErrorCode reason);
+  bluetooth::hci::ErrorCode LeBigCreateSync(
+      uint8_t big_handle, uint16_t sync_handle,
+      bluetooth::hci::Enable encryption, std::vector<uint16_t> broadcast_code,
+      uint8_t mse, uint16_t big_syunc_timeout, std::vector<uint8_t> bis);
+  void LeBigTerminateSync(uint8_t big_handle);
+  bluetooth::hci::ErrorCode LeRequestPeerSca(uint16_t request_handle);
+  void LeSetupIsoDataPath(uint16_t connection_handle,
+                          bluetooth::hci::DataPathDirection data_path_direction,
+                          uint8_t data_path_id, uint64_t codec_id,
+                          uint32_t controller_Delay,
+                          std::vector<uint8_t> codec_configuration);
+  void LeRemoveIsoDataPath(
+      uint16_t connection_handle,
+      bluetooth::hci::DataPathDirection data_path_direction);
+
   void HandleLeEnableEncryption(uint16_t handle, std::array<uint8_t, 8> rand,
                                 uint16_t ediv, std::array<uint8_t, 16> ltk);
 
   ErrorCode LeEnableEncryption(uint16_t handle, std::array<uint8_t, 8> rand,
                                uint16_t ediv, std::array<uint8_t, 16> ltk);
+
+  ErrorCode LeLongTermKeyRequestReply(uint16_t handle,
+                                      std::array<uint8_t, 16> ltk);
+
+  ErrorCode LeLongTermKeyRequestNegativeReply(uint16_t handle);
 
   ErrorCode SetLeAdvertisingEnable(uint8_t le_advertising_enable);
 
@@ -199,10 +249,13 @@ class LinkLayerController {
   void SetLeFilterDuplicates(uint8_t le_scan_filter_duplicates) {
     le_scan_filter_duplicates_ = le_scan_filter_duplicates;
   }
-  void SetLeAddressType(uint8_t le_address_type) {
+  void SetLeAddressType(bluetooth::hci::OwnAddressType le_address_type) {
     le_address_type_ = le_address_type;
   }
   ErrorCode SetLeConnect(bool le_connect) {
+    if (le_connect_ == le_connect) {
+      return ErrorCode::COMMAND_DISALLOWED;
+    }
     le_connect_ = le_connect;
     return ErrorCode::SUCCESS;
   }
@@ -248,7 +301,7 @@ class LinkLayerController {
 
   ErrorCode ChangeConnectionPacketType(uint16_t handle, uint16_t types);
   ErrorCode ChangeConnectionLinkKey(uint16_t handle);
-  ErrorCode MasterLinkKey(uint8_t key_flag);
+  ErrorCode CentralLinkKey(uint8_t key_flag);
   ErrorCode HoldMode(uint16_t handle, uint16_t hold_mode_max_interval,
                      uint16_t hold_mode_min_interval);
   ErrorCode SniffMode(uint16_t handle, uint16_t sniff_max_interval,
@@ -268,6 +321,11 @@ class LinkLayerController {
   ErrorCode WriteDefaultLinkPolicySettings(uint16_t settings);
   uint16_t ReadDefaultLinkPolicySettings();
 
+  void ReadLocalOobData();
+  void ReadLocalOobExtendedData();
+
+  void HandleIso(bluetooth::hci::IsoPacketView iso);
+
  protected:
   void SendLeLinkLayerPacket(
       std::unique_ptr<model::packets::LinkLayerPacketBuilder> packet);
@@ -286,6 +344,11 @@ class LinkLayerController {
   void IncomingIoCapabilityResponsePacket(
       model::packets::LinkLayerPacketView packet);
   void IncomingIoCapabilityNegativeResponsePacket(
+      model::packets::LinkLayerPacketView packet);
+  void IncomingIsoPacket(model::packets::LinkLayerPacketView packet);
+  void IncomingIsoConnectionRequestPacket(
+      model::packets::LinkLayerPacketView packet);
+  void IncomingIsoConnectionResponsePacket(
       model::packets::LinkLayerPacketView packet);
   void IncomingLeAdvertisementPacket(
       model::packets::LinkLayerPacketView packet);
@@ -353,6 +416,9 @@ class LinkLayerController {
                      Phy::Type phy_type)>
       send_to_remote_;
 
+  uint32_t oob_id_ = 1;
+  uint32_t key_id_ = 1;
+
   // LE state
   std::vector<uint8_t> le_event_mask_;
 
@@ -369,7 +435,7 @@ class LinkLayerController {
   uint16_t le_scan_window_{};
   uint8_t le_scan_filter_policy_{};
   uint8_t le_scan_filter_duplicates_{};
-  uint8_t le_address_type_{};
+  bluetooth::hci::OwnAddressType le_address_type_{};
 
   bool le_connect_{false};
   uint16_t le_connection_interval_min_{};

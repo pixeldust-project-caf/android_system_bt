@@ -27,6 +27,7 @@
 #include "security/initial_informations.h"
 #include "security/smp_packets.h"
 #include "security/test/fake_hci_layer.h"
+#include "security/test/fake_name_db.h"
 #include "security/test/fake_security_interface.h"
 
 namespace bluetooth {
@@ -59,6 +60,25 @@ class FakeSecurityManagerChannel : public channel::SecurityManagerChannel {
   void OnLinkDisconnected(hci::Address address) override {
     LOG_ERROR("CALLED");
   }
+
+  void OnEncryptionChange(hci::Address address, bool encrypted) override {
+    LOG_ERROR("CALLED");
+  }
+
+  void OnAuthenticationComplete(hci::Address remote) override {
+    LOG_ERROR("CALLED");
+  }
+};
+
+class TestUI : public UI {
+ public:
+  ~TestUI() override {}
+  void DisplayPairingPrompt(const hci::AddressWithType& address, std::string name) override {}
+  void Cancel(const hci::AddressWithType& address) override {}
+  void DisplayConfirmValue(ConfirmationData data) override {}
+  void DisplayYesNoDialog(ConfirmationData data) override {}
+  void DisplayEnterPasskeyDialog(ConfirmationData data) override {}
+  void DisplayPasskey(ConfirmationData data) override {}
 };
 
 class SecurityManagerChannelCallback : public ISecurityManagerChannelListener {
@@ -113,7 +133,7 @@ class SecurityManagerChannelCallback : public ISecurityManagerChannelListener {
   }
 
   void OnConnectionClosed(hci::Address address) override {
-    LOG_DEBUG("Called");
+    LOG_INFO("Called");
   }
 
  private:
@@ -128,13 +148,23 @@ class ClassicPairingHandlerTest : public ::testing::Test {
  protected:
   void SetUp() override {
     hci_layer_ = new FakeHciLayer();
+    name_db_module_ = new FakeNameDbModule();
     fake_registry_.InjectTestModule(&FakeHciLayer::Factory, hci_layer_);
+    fake_registry_.InjectTestModule(&neighbor::NameDbModule::Factory, name_db_module_);
     handler_ = fake_registry_.GetTestModuleHandler(&FakeHciLayer::Factory);
     channel_ = new FakeSecurityManagerChannel(handler_, hci_layer_);
     security_record_ = std::make_shared<record::SecurityRecord>(device_);
-    pairing_handler_ = new pairing::ClassicPairingHandler(channel_, security_record_, handler_,
-                                                          common::Bind(&pairing_complete_callback), user_interface_,
-                                                          user_interface_handler_, "Fake name");
+    user_interface_ = new TestUI();
+    user_interface_handler_ = handler_;
+    pairing_handler_ = new pairing::ClassicPairingHandler(
+        channel_,
+        security_record_,
+        handler_,
+        common::Bind(&pairing_complete_callback),
+        user_interface_,
+        user_interface_handler_,
+        "Fake name",
+        name_db_module_);
     channel_callback_ = new SecurityManagerChannelCallback(pairing_handler_);
     channel_->SetChannelListener(channel_callback_);
     security_interface_ = new FakeSecurityInterface(handler_, channel_);
@@ -145,6 +175,7 @@ class ClassicPairingHandlerTest : public ::testing::Test {
     channel_->SetChannelListener(nullptr);
     synchronize();
     fake_registry_.StopAll();
+    delete user_interface_;
     delete pairing_handler_;
     delete channel_;
     delete channel_callback_;
@@ -153,6 +184,7 @@ class ClassicPairingHandlerTest : public ::testing::Test {
 
   void synchronize() {
     fake_registry_.SynchronizeModuleHandler(&FakeHciLayer::Factory, std::chrono::milliseconds(20));
+    fake_registry_.SynchronizeModuleHandler(&FakeNameDbModule::Factory, std::chrono::milliseconds(20));
   }
 
   void ReceiveLinkKeyRequest(hci::AddressWithType device) {
@@ -200,6 +232,7 @@ class ClassicPairingHandlerTest : public ::testing::Test {
   UI* user_interface_;
   os::Handler* user_interface_handler_;
   l2cap::classic::SecurityInterface* security_interface_ = nullptr;
+  FakeNameDbModule* name_db_module_ = nullptr;
 };
 
 // Security Manager Boot Sequence (Required for SSP, these are already set at boot time)
@@ -311,7 +344,7 @@ TEST_F(ClassicPairingHandlerTest, locally_initiatied_display_only_display_yes_no
   ReceiveLinkKeyNotification(device_, link_key, key_type);
   ASSERT_EQ(link_key, security_record_->GetLinkKey());
   ASSERT_EQ(key_type, security_record_->GetKeyType());
-  ASSERT_FALSE(security_record_->IsAuthenticated());
+  ASSERT_TRUE(security_record_->IsAuthenticated());
   ASSERT_FALSE(security_record_->RequiresMitmProtection());
 }
 
@@ -349,7 +382,7 @@ TEST_F(ClassicPairingHandlerTest, locally_initiatied_display_only_no_input_no_ou
   ReceiveLinkKeyNotification(device_, link_key, key_type);
   ASSERT_EQ(link_key, security_record_->GetLinkKey());
   ASSERT_EQ(key_type, security_record_->GetKeyType());
-  ASSERT_FALSE(security_record_->IsAuthenticated());
+  ASSERT_TRUE(security_record_->IsAuthenticated());
   ASSERT_FALSE(security_record_->RequiresMitmProtection());
 }
 

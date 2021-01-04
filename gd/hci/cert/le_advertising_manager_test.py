@@ -62,7 +62,7 @@ class LeAdvertisingManagerTest(GdBaseTestClass):
             scan_parameters.le_scan_interval = 40
             scan_parameters.le_scan_window = 20
             self.enqueue_hci_command(
-                hci_packets.LeSetExtendedScanParametersBuilder(hci_packets.AddressType.RANDOM_DEVICE_ADDRESS,
+                hci_packets.LeSetExtendedScanParametersBuilder(hci_packets.OwnAddressType.RANDOM_DEVICE_ADDRESS,
                                                                hci_packets.LeScanningFilterPolicy.ACCEPT_ALL, 1,
                                                                [scan_parameters]), True)
             self.enqueue_hci_command(
@@ -78,8 +78,8 @@ class LeAdvertisingManagerTest(GdBaseTestClass):
                 advertisement=[gap_data],
                 interval_min=512,
                 interval_max=768,
-                event_type=le_advertising_facade.AdvertisingEventType.ADV_IND,
-                address_type=common.RANDOM_DEVICE_ADDRESS,
+                advertising_type=le_advertising_facade.AdvertisingEventType.ADV_IND,
+                own_address_type=common.USE_RANDOM_DEVICE_ADDRESS,
                 channel_map=7,
                 filter_policy=le_advertising_facade.AdvertisingFilterPolicy.ALL_DEVICES)
             request = le_advertising_facade.CreateAdvertiserRequest(config=config)

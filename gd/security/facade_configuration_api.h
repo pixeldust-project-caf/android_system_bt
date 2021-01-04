@@ -38,6 +38,7 @@ class FacadeConfigurationApi {
   friend class internal::SecurityManagerImpl;
   friend class SecurityModule;
 
+  void SetDisconnectCallback(internal::SecurityManagerImpl::FacadeDisconnectCallback callback);
   void SetIoCapability(hci::IoCapability io_capability);
   void SetAuthenticationRequirements(hci::AuthenticationRequirements authentication_requirement);
   void SetOobDataPresent(hci::OobDataPresent oob_present);
@@ -48,6 +49,7 @@ class FacadeConfigurationApi {
 
   void SetLeIoCapability(security::IoCapability io_capability);
   void SetLeAuthRequirements(uint8_t auth_req);
+  void SetLeMaximumEncryptionKeySize(uint8_t maximum_encryption_key_size);
   void SetLeOobDataPresent(OobDataFlag oob_present);
   void GetOutOfBandData(std::array<uint8_t, 16>* le_sc_confirmation_value, std::array<uint8_t, 16>* le_sc_random_value);
   void SetOutOfBandData(

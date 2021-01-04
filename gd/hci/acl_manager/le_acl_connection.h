@@ -38,6 +38,10 @@ class LeAclConnection : public AclConnection {
     return local_address_;
   }
 
+  virtual void SetLocalAddress(AddressWithType local_address) {
+    local_address_ = local_address;
+  }
+
   virtual AddressWithType GetRemoteAddress() const {
     return remote_address_;
   }
@@ -51,6 +55,9 @@ class LeAclConnection : public AclConnection {
 
   virtual bool LeConnectionUpdate(uint16_t conn_interval_min, uint16_t conn_interval_max, uint16_t conn_latency,
                                   uint16_t supervision_timeout, uint16_t min_ce_length, uint16_t max_ce_length);
+
+  virtual bool ReadRemoteVersionInformation() override;
+
   // TODO implement LeRemoteConnectionParameterRequestReply, LeRemoteConnectionParameterRequestNegativeReply
 
   // Called once before passing the connection to the client

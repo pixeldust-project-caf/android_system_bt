@@ -24,6 +24,7 @@
 #include "hci/acl_manager.h"
 #include "hci/hci_layer.h"
 #include "l2cap/le/l2cap_le_module.h"
+#include "neighbor/name_db.h"
 #include "security/channel/security_manager_channel.h"
 #include "security/facade_configuration_api.h"
 #include "security/internal/security_manager_impl.h"
@@ -43,15 +44,19 @@ struct SecurityModule::impl {
       l2cap::classic::L2capClassicModule* l2cap_classic_module,
       hci::HciLayer* hci_layer,
       hci::AclManager* acl_manager,
-      storage::StorageModule* storage_module)
+      hci::Controller* controller,
+      storage::StorageModule* storage_module,
+      neighbor::NameDbModule* name_db_module)
       : security_handler_(security_handler),
         l2cap_classic_module_(l2cap_classic_module),
         l2cap_le_module_(l2cap_le_module),
         security_manager_channel_(new channel::SecurityManagerChannel(security_handler_, hci_layer)),
         hci_layer_(hci_layer),
         acl_manager_(acl_manager),
+        controller_(controller),
         storage_module_(storage_module),
-        l2cap_security_interface_(&security_manager_impl, security_handler) {
+        l2cap_security_interface_(&security_manager_impl, security_handler),
+        name_db_module_(name_db_module) {
     l2cap_classic_module->InjectSecurityEnforcementInterface(&l2cap_security_interface_);
     l2cap_le_module->InjectSecurityEnforcementInterface(&l2cap_security_interface_);
     security_manager_channel_->SetSecurityInterface(
@@ -64,11 +69,19 @@ struct SecurityModule::impl {
   channel::SecurityManagerChannel* security_manager_channel_;
   hci::HciLayer* hci_layer_;
   hci::AclManager* acl_manager_;
+  hci::Controller* controller_;
   storage::StorageModule* storage_module_;
   L2capSecurityModuleInterface l2cap_security_interface_;
+  neighbor::NameDbModule* name_db_module_;
 
-  internal::SecurityManagerImpl security_manager_impl{
-      security_handler_, l2cap_le_module_, security_manager_channel_, hci_layer_, acl_manager_, storage_module_};
+  internal::SecurityManagerImpl security_manager_impl{security_handler_,
+                                                      l2cap_le_module_,
+                                                      security_manager_channel_,
+                                                      hci_layer_,
+                                                      acl_manager_,
+                                                      controller_,
+                                                      storage_module_,
+                                                      name_db_module_};
 
   ~impl() {
     delete security_manager_channel_;
@@ -82,7 +95,9 @@ void SecurityModule::ListDependencies(ModuleList* list) {
   list->add<l2cap::classic::L2capClassicModule>();
   list->add<hci::HciLayer>();
   list->add<hci::AclManager>();
+  list->add<hci::Controller>();
   list->add<storage::StorageModule>();
+  list->add<neighbor::NameDbModule>();
 }
 
 void SecurityModule::Start() {
@@ -92,7 +107,9 @@ void SecurityModule::Start() {
       GetDependency<l2cap::classic::L2capClassicModule>(),
       GetDependency<hci::HciLayer>(),
       GetDependency<hci::AclManager>(),
-      GetDependency<storage::StorageModule>());
+      GetDependency<hci::Controller>(),
+      GetDependency<storage::StorageModule>(),
+      GetDependency<neighbor::NameDbModule>());
 
   GetDependency<hci::AclManager>()->SetSecurityModule(this);
 }

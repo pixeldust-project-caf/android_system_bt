@@ -22,10 +22,9 @@
 #include <sys/stat.h>
 
 #include "btif_bqr.h"
-#include "btif_dm.h"
+#include "btm_api.h"
 #include "common/leaky_bonded_queue.h"
 #include "osi/include/properties.h"
-#include "stack/btm/btm_int.h"
 
 namespace bluetooth {
 namespace bqr {
@@ -123,7 +122,8 @@ std::string BqrVseSubEvt::ToString() const {
   ss << QualityReportIdToString(bqr_link_quality_event_.quality_report_id)
      << ", Handle: " << loghex(bqr_link_quality_event_.connection_handle)
      << ", " << PacketTypeToString(bqr_link_quality_event_.packet_types) << ", "
-     << ((bqr_link_quality_event_.connection_role == 0) ? "Master" : "Slave ")
+     << ((bqr_link_quality_event_.connection_role == 0) ? "Central"
+                                                        : "Peripheral ")
      << ", PwLv: " << std::to_string(bqr_link_quality_event_.tx_power_level)
      << ", RSSI: " << std::to_string(bqr_link_quality_event_.rssi)
      << ", SNR: " << std::to_string(bqr_link_quality_event_.snr)
@@ -267,7 +267,8 @@ void ConfigureBqr(const BqrConfiguration& bqr_config) {
     return;
   }
 
-  LOG(INFO) << __func__ << ": Action: " << bqr_config.report_action
+  LOG(INFO) << __func__ << ": Action: "
+            << loghex(static_cast<uint8_t>(bqr_config.report_action))
             << ", Mask: " << loghex(bqr_config.quality_event_mask)
             << ", Interval: " << bqr_config.minimum_report_interval_ms;
 

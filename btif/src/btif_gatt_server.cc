@@ -48,6 +48,7 @@
 #include "btif_storage.h"
 #include "osi/include/log.h"
 #include "stack/include/btu.h"
+#include "types/bt_transport.h"
 
 using base::Bind;
 using base::Owned;
@@ -231,7 +232,7 @@ static void btapp_gatts_handle_cback(uint16_t event, char* p_param) {
     case BTA_GATTS_OPEN_EVT:
     case BTA_GATTS_CANCEL_OPEN_EVT:
     case BTA_GATTS_CLOSE_EVT:
-      LOG_DEBUG("%s: Empty event (%d)!", __func__, event);
+      LOG_INFO("%s: Empty event (%d)!", __func__, event);
       break;
 
     case BTA_GATTS_PHY_UPDATE_EVT:
@@ -270,7 +271,7 @@ static bt_status_t btif_gatts_register_app(const Uuid& bt_uuid) {
   CHECK_BTGATT_INIT();
 
   return do_in_jni_thread(
-      Bind(&BTA_GATTS_AppRegister, bt_uuid, &btapp_gatts_cback));
+      Bind(&BTA_GATTS_AppRegister, bt_uuid, &btapp_gatts_cback, false));
 }
 
 static bt_status_t btif_gatts_unregister_app(int server_if) {
@@ -281,9 +282,9 @@ static bt_status_t btif_gatts_unregister_app(int server_if) {
 static void btif_gatts_open_impl(int server_if, const RawAddress& address,
                                  bool is_direct, int transport_param) {
   // Ensure device is in inquiry database
-  int addr_type = 0;
+  tBLE_ADDR_TYPE addr_type = BLE_ADDR_PUBLIC;
   int device_type = 0;
-  tGATT_TRANSPORT transport = GATT_TRANSPORT_LE;
+  tBT_TRANSPORT transport = BT_TRANSPORT_LE;
 
   if (btif_get_address_type(address, &addr_type) &&
       btif_get_device_type(address, &device_type) &&
@@ -292,23 +293,23 @@ static void btif_gatts_open_impl(int server_if, const RawAddress& address,
   }
 
   // Determine transport
-  if (transport_param != GATT_TRANSPORT_AUTO) {
+  if (transport_param != BT_TRANSPORT_AUTO) {
     transport = transport_param;
   } else {
     switch (device_type) {
       case BT_DEVICE_TYPE_BREDR:
-        transport = GATT_TRANSPORT_BR_EDR;
+        transport = BT_TRANSPORT_BR_EDR;
         break;
 
       case BT_DEVICE_TYPE_BLE:
-        transport = GATT_TRANSPORT_LE;
+        transport = BT_TRANSPORT_LE;
         break;
 
       case BT_DEVICE_TYPE_DUMO:
-        if (transport_param == GATT_TRANSPORT_LE)
-          transport = GATT_TRANSPORT_LE;
+        if (transport_param == BT_TRANSPORT_LE)
+          transport = BT_TRANSPORT_LE;
         else
-          transport = GATT_TRANSPORT_BR_EDR;
+          transport = BT_TRANSPORT_BR_EDR;
         break;
     }
   }
@@ -343,7 +344,7 @@ static bt_status_t btif_gatts_close(int server_if, const RawAddress& bd_addr,
       Bind(&btif_gatts_close_impl, server_if, bd_addr, conn_id));
 }
 
-static void on_service_added_cb(uint8_t status, int server_if,
+static void on_service_added_cb(tGATT_STATUS status, int server_if,
                                 vector<btgatt_db_element_t> service) {
   HAL_CBACK(bt_gatt_callbacks, server->service_added_cb, status, server_if,
             std::move(service));
@@ -404,7 +405,8 @@ static void btif_gatts_send_response_impl(int conn_id, int trans_id, int status,
   tGATTS_RSP rsp_struct;
   btif_to_bta_response(&rsp_struct, &response);
 
-  BTA_GATTS_SendRsp(conn_id, trans_id, status, &rsp_struct);
+  BTA_GATTS_SendRsp(conn_id, trans_id, static_cast<tGATT_STATUS>(status),
+                    &rsp_struct);
 
   HAL_CBACK(bt_gatt_callbacks, server->response_confirmation_cb, 0,
             rsp_struct.attr_value.handle);

@@ -263,6 +263,7 @@ cc_test {
         host: {
             srcs: [
                 ":BluetoothHalTestSources_hci_rootcanal",
+                ":BluetoothOsTestSources_host",
             ],
         },
         android: {
@@ -285,6 +286,7 @@ cc_test {
         ":BluetoothCommonTestSources",
         ":BluetoothCryptoToolboxTestSources",
         ":BluetoothDumpsysTestSources",
+        ":BluetoothHalTestSources",
         ":BluetoothHciTestSources",
         ":BluetoothL2capTestSources",
         ":BluetoothNeighborTestSources",
@@ -326,6 +328,7 @@ cc_test {
     ],
     host_supported: true,
     srcs: [
+        ":BluetoothCommonSources",
         ":BluetoothPacketSources",
         ":BluetoothPacketParserTestPacketTestSources",
     ],
@@ -453,12 +456,16 @@ genrule {
     ],
     cmd: "$(location flatc) -I system/bt/gd -b --schema -o $(genDir) $(in) ",
     srcs: [
+        "common/init_flags.fbs",
         "dumpsys_data.fbs",
+        "l2cap/classic/l2cap_classic_module.fbs",
         "shim/dumpsys.fbs",
     ],
     out: [
-        "dumpsys_data.bfbs",
+        "init_flags.bfbs",
         "dumpsys.bfbs",
+        "dumpsys_data.bfbs",
+        "l2cap_classic_module.bfbs",
     ],
 }
 
@@ -469,12 +476,16 @@ genrule {
     ],
     cmd: "$(location flatc) -I system/bt/gd -o $(genDir) --cpp $(in) ",
     srcs: [
+        "common/init_flags.fbs",
         "dumpsys_data.fbs",
+        "l2cap/classic/l2cap_classic_module.fbs",
         "shim/dumpsys.fbs",
     ],
     out: [
         "dumpsys_data_generated.h",
         "dumpsys_generated.h",
+        "init_flags_generated.h",
+        "l2cap_classic_module_generated.h",
     ],
 }
 
@@ -750,4 +761,37 @@ cc_library_host_shared {
         "-fexceptions",
     ],
     rtti: true,
+}
+
+rust_grpcio {
+    name: "libbt_hci_proto",
+    crate_name: "bt_hci_proto",
+    proto: "hci/facade/facade.proto",
+    source_stem: "facade",
+    host_supported: true,
+}
+
+rust_grpcio {
+    name: "libbt_hal_proto",
+    crate_name: "bt_hal_proto",
+    proto: "hal/facade.proto",
+    source_stem: "facade",
+    host_supported: true,
+}
+
+rust_protobuf {
+    name: "libbt_facade_rootservice_proto",
+    crate_name: "bt_facade_rootservice_proto",
+    proto: "facade/rootservice.proto",
+    proto_flags: ["-Iexternal/protobuf/src/"],
+    source_stem: "rootservice",
+    host_supported: true,
+}
+
+rust_protobuf {
+    name: "libbt_facade_common_proto",
+    crate_name: "bt_facade_common_proto",
+    proto: "facade/common.proto",
+    source_stem: "common",
+    host_supported: true,
 }

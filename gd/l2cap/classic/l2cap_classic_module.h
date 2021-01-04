@@ -48,21 +48,6 @@ class L2capClassicModule : public bluetooth::Module {
   virtual std::unique_ptr<DynamicChannelManager> GetDynamicChannelManager();
 
   static const ModuleFactory Factory;
-
- protected:
-  void ListDependencies(ModuleList* list) override;
-
-  void Start() override;
-
-  void Stop() override;
-
-  std::string ToString() const override;
-
- private:
-  struct impl;
-  std::unique_ptr<impl> pimpl_;
-
-  friend security::SecurityModule;
   /**
    * Only for the classic security module to inject functionality to enforce security level for a connection. When
    * classic security module is stopping, inject nullptr. Note: We expect this only to be called during stack startup.
@@ -77,6 +62,23 @@ class L2capClassicModule : public bluetooth::Module {
    * used to access some link functionlities.
    */
   virtual SecurityInterface* GetSecurityInterface(os::Handler* handler, LinkSecurityInterfaceListener* listener);
+
+ protected:
+  void ListDependencies(ModuleList* list) override;
+
+  void Start() override;
+
+  void Stop() override;
+
+  std::string ToString() const override;
+
+  DumpsysDataFinisher GetDumpsysData(flatbuffers::FlatBufferBuilder* builder) const override;  // Module
+
+ private:
+  struct impl;
+  std::unique_ptr<impl> pimpl_;
+
+  friend security::SecurityModule;
 
   DISALLOW_COPY_AND_ASSIGN(L2capClassicModule);
 };

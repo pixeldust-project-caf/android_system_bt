@@ -333,16 +333,23 @@ TEST_F(HciTest, leMetaEvent) {
   // Send an LE event
   ErrorCode status = ErrorCode::SUCCESS;
   uint16_t handle = 0x123;
-  Role role = Role::MASTER;
+  Role role = Role::CENTRAL;
   AddressType peer_address_type = AddressType::PUBLIC_DEVICE_ADDRESS;
   Address peer_address = Address::kAny;
   uint16_t conn_interval = 0x0ABC;
   uint16_t conn_latency = 0x0123;
   uint16_t supervision_timeout = 0x0B05;
-  ClockAccuracy master_clock_accuracy = ClockAccuracy::PPM_50;
-  hal->callbacks->hciEventReceived(GetPacketBytes(
-      LeConnectionCompleteBuilder::Create(status, handle, role, peer_address_type, peer_address, conn_interval,
-                                          conn_latency, supervision_timeout, master_clock_accuracy)));
+  ClockAccuracy central_clock_accuracy = ClockAccuracy::PPM_50;
+  hal->callbacks->hciEventReceived(GetPacketBytes(LeConnectionCompleteBuilder::Create(
+      status,
+      handle,
+      role,
+      peer_address_type,
+      peer_address,
+      conn_interval,
+      conn_latency,
+      supervision_timeout,
+      central_clock_accuracy)));
 
   // Wait for the event
   auto event_status = event_future.wait_for(kTimeout);
@@ -682,11 +689,14 @@ TEST_F(HciTest, receiveMultipleAclPackets) {
   auto incoming_acl_future = upper->GetReceivedAclFuture();
   uint16_t received_packets = 0;
   while (received_packets < num_packets - 1) {
-    auto incoming_acl_status = incoming_acl_future.wait_for(kAclTimeout);
-    // Get the next future.
-    incoming_acl_future = upper->GetReceivedAclFuture();
-    ASSERT_EQ(incoming_acl_status, std::future_status::ready);
     size_t num_packets = upper->GetNumReceivedAclPackets();
+    if (num_packets == 0) {
+      auto incoming_acl_status = incoming_acl_future.wait_for(kAclTimeout);
+      // Get the next future.
+      ASSERT_EQ(incoming_acl_status, std::future_status::ready);
+      incoming_acl_future = upper->GetReceivedAclFuture();
+      num_packets = upper->GetNumReceivedAclPackets();
+    }
     for (size_t i = 0; i < num_packets; i++) {
       auto acl_view = upper->GetReceivedAcl();
       ASSERT_TRUE(acl_view.IsValid());

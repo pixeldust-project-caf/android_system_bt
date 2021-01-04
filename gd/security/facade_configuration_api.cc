@@ -24,6 +24,10 @@
 namespace bluetooth {
 namespace security {
 
+void FacadeConfigurationApi::SetDisconnectCallback(internal::SecurityManagerImpl::FacadeDisconnectCallback callback) {
+  security_handler_->CallOn(security_manager_impl_, &internal::SecurityManagerImpl::SetDisconnectCallback, callback);
+}
+
 void FacadeConfigurationApi::SetIoCapability(hci::IoCapability io_capability) {
   security_handler_->CallOn(security_manager_impl_, &internal::SecurityManagerImpl::SetIoCapability, io_capability);
 }
@@ -45,6 +49,13 @@ void FacadeConfigurationApi::SetLeIoCapability(security::IoCapability io_capabil
 
 void FacadeConfigurationApi::SetLeAuthRequirements(uint8_t auth_req) {
   security_handler_->CallOn(security_manager_impl_, &internal::SecurityManagerImpl::SetLeAuthRequirements, auth_req);
+}
+
+void FacadeConfigurationApi::SetLeMaximumEncryptionKeySize(uint8_t maximum_encryption_key_size) {
+  security_handler_->CallOn(
+      security_manager_impl_,
+      &internal::SecurityManagerImpl::SetLeMaximumEncryptionKeySize,
+      maximum_encryption_key_size);
 }
 
 void FacadeConfigurationApi::SetLeOobDataPresent(OobDataFlag oob_present) {

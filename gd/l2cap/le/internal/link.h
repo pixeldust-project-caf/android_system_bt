@@ -50,7 +50,7 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::LeConnectio
 
   ~Link() override = default;
 
-  inline hci::AddressWithType GetDevice() override {
+  inline hci::AddressWithType GetDevice() const override {
     return acl_connection_->GetRemoteAddress();
   }
 
@@ -77,6 +77,11 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::LeConnectio
 
   void OnConnectionUpdate(uint16_t connection_interval, uint16_t connection_latency,
                           uint16_t supervision_timeout) override;
+
+  void OnDataLengthChange(uint16_t tx_octets, uint16_t tx_time, uint16_t rx_octets, uint16_t rx_time) override;
+
+  void OnReadRemoteVersionInformationComplete(
+      uint8_t lmp_version, uint16_t manufacturer_name, uint16_t sub_version) override;
 
   virtual void Disconnect();
 
@@ -157,7 +162,7 @@ class Link : public l2cap::internal::ILink, public hci::acl_manager::LeConnectio
 
   // Received connection update complete from ACL manager. SignalId is bound to a valid number when we need to send a
   // response to remote. If SignalId is bound to an invalid number, we don't send a response to remote, because the
-  // connection update request is not from remote LL slave.
+  // connection update request is not from remote LL peripheral.
   void on_connection_update_complete(SignalId signal_id, hci::ErrorCode error_code);
 };
 

@@ -40,11 +40,10 @@
 #include "osi/include/log.h"
 #include "osi/include/osi.h"
 #include "osi/include/properties.h"
+#include "stack/include/acl_api.h"
 #include "utl.h"
 
-#if (BTA_AR_INCLUDED == TRUE)
 #include "bta_ar_api.h"
-#endif
 
 /*****************************************************************************
  *  Constants
@@ -306,8 +305,7 @@ static void bta_av_rc_msg_cback(uint8_t handle, uint8_t label, uint8_t opcode,
 uint8_t bta_av_rc_create(tBTA_AV_CB* p_cb, uint8_t role, uint8_t shdl,
                          uint8_t lidx) {
   if (is_new_avrcp_enabled()) {
-    APPL_TRACE_WARNING("%s: Skipping RC creation for the old AVRCP profile",
-                       __func__);
+    LOG_INFO("Skipping RC creation for the old AVRCP profile");
     return BTA_AV_RC_HANDLE_NONE;
   }
 
@@ -1097,11 +1095,9 @@ void bta_av_stream_chg(tBTA_AV_SCB* p_scb, bool started) {
                    logbool(started).c_str(), started_msk);
 
   if (started) {
-    bta_av_cb.audio_streams |= started_msk;
     /* Let L2CAP know this channel is processed with high priority */
     L2CA_SetAclPriority(p_scb->PeerAddress(), L2CAP_PRIORITY_HIGH);
   } else {
-    bta_av_cb.audio_streams &= ~started_msk;
     /* Let L2CAP know this channel is processed with low priority */
     L2CA_SetAclPriority(p_scb->PeerAddress(), L2CAP_PRIORITY_NORMAL);
   }
@@ -1270,8 +1266,7 @@ void bta_av_conn_chg(tBTA_AV_DATA* p_data) {
     if (p_cb->audio_open_cnt == 1) {
       /* one audio channel goes down and there's one audio channel remains open.
        * restore the switch role in default link policy */
-      bta_sys_set_default_policy(BTA_ID_AV, HCI_ENABLE_MASTER_SLAVE_SWITCH);
-      /* allow role switch, if this is the last connection */
+      BTM_default_unblock_role_switch();
       bta_av_restore_switch();
     }
     if (p_cb->audio_open_cnt) {
@@ -1283,9 +1278,6 @@ void bta_av_conn_chg(tBTA_AV_DATA* p_data) {
            */
           if (p_scbi->co_started != bta_av_cb.audio_open_cnt) {
             p_scbi->co_started = bta_av_cb.audio_open_cnt;
-            L2CA_SetFlushTimeout(
-                p_scbi->PeerAddress(),
-                p_bta_av_cfg->p_audio_flush_to[p_scbi->co_started - 1]);
           }
         }
       }
@@ -1475,11 +1467,9 @@ void bta_av_sig_chg(tBTA_AV_DATA* p_data) {
       }
     }
   }
-#if (BTA_AR_INCLUDED == TRUE)
   else if (event == BTA_AR_AVDT_CONN_EVT) {
     alarm_cancel(bta_av_cb.link_signalling_timer);
   }
-#endif
   else {
     /* disconnected. */
     APPL_TRACE_DEBUG("%s: bta_av_cb.conn_lcb=0x%x", __func__,
@@ -2272,9 +2262,7 @@ void bta_av_dereg_comp(tBTA_AV_DATA* p_data) {
 
     /* remove the A2DP SDP record, if no more audio stream is left */
     if (!p_cb->reg_audio) {
-#if (BTA_AR_INCLUDED == TRUE)
-      bta_ar_dereg_avrc(UUID_SERVCLASS_AV_REMOTE_CONTROL, BTA_ID_AV);
-#endif
+      bta_ar_dereg_avrc(UUID_SERVCLASS_AV_REMOTE_CONTROL);
       if (p_cb->sdp_a2dp_handle) {
         bta_av_del_sdp_rec(&p_cb->sdp_a2dp_handle);
         p_cb->sdp_a2dp_handle = 0;
@@ -2297,14 +2285,12 @@ void bta_av_dereg_comp(tBTA_AV_DATA* p_data) {
                    p_cb->disabling);
   /* if no stream control block is active */
   if (p_cb->reg_audio == 0) {
-#if (BTA_AR_INCLUDED == TRUE)
     /* deregister from AVDT */
-    bta_ar_dereg_avdt(BTA_ID_AV);
+    bta_ar_dereg_avdt();
 
     /* deregister from AVCT */
-    bta_ar_dereg_avrc(UUID_SERVCLASS_AV_REM_CTRL_TARGET, BTA_ID_AV);
-    bta_ar_dereg_avct(BTA_ID_AV);
-#endif
+    bta_ar_dereg_avrc(UUID_SERVCLASS_AV_REM_CTRL_TARGET);
+    bta_ar_dereg_avct();
 
     if (p_cb->disabling) {
       p_cb->disabling = false;

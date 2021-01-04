@@ -23,6 +23,7 @@
 #include "common/strings.h"
 #include "os/files.h"
 #include "os/log.h"
+#include "storage/device.h"
 
 namespace bluetooth {
 namespace storage {
@@ -39,7 +40,7 @@ std::optional<ConfigCache> LegacyConfigFile::Read(size_t temp_devices_capacity) 
     return std::nullopt;
   }
   int line_num = 0;
-  ConfigCache cache(temp_devices_capacity);
+  ConfigCache cache(temp_devices_capacity, Device::kLinkKeyProperties);
   std::string line;
   std::string section(ConfigCache::kDefaultSectionName);
   while (std::getline(config_file, line)) {
@@ -74,11 +75,11 @@ bool LegacyConfigFile::Write(const ConfigCache& cache) {
 }
 
 bool LegacyConfigFile::Delete() {
-  if (remove(path_.c_str()) != 0) {
-    LOG_WARN("unable to remove file '%s', error: %s", path_.c_str(), strerror(errno));
+  if (!os::FileExists(path_)) {
+    LOG_WARN("Config file at \"%s\" does not exist", path_.c_str());
     return false;
   }
-  return true;
+  return os::RemoveFile(path_);
 }
 
 }  // namespace storage

@@ -45,7 +45,7 @@ enum PacketBoundaryFlag : 2 {
 
 enum BroadcastFlag : 2 {
   POINT_TO_POINT = 0,
-  ACTIVE_SLAVE_BROADCAST = 1,
+  ACTIVE_PERIPHERAL_BROADCAST = 1,
 }
 
 packet AclPacket {
@@ -96,7 +96,7 @@ enum OpCode : 16 {
   AUTHENTICATION_REQUESTED = 0x0411,
   SET_CONNECTION_ENCRYPTION = 0x0413,
   CHANGE_CONNECTION_LINK_KEY = 0x0415,
-  MASTER_LINK_KEY = 0x0417,
+  CENTRAL_LINK_KEY = 0x0417,
   REMOTE_NAME_REQUEST = 0x0419,
   REMOTE_NAME_REQUEST_CANCEL = 0x041A,
   READ_REMOTE_SUPPORTED_FEATURES = 0x041B,
@@ -117,6 +117,7 @@ enum OpCode : 16 {
   IO_CAPABILITY_REQUEST_NEGATIVE_REPLY = 0x0434,
   ENHANCED_SETUP_SYNCHRONOUS_CONNECTION = 0x043D,
   ENHANCED_ACCEPT_SYNCHRONOUS_CONNECTION = 0x043E,
+  REMOTE_OOB_EXTENDED_DATA_REQUEST_REPLY = 0x0445,
 
   // LINK_POLICY
   HOLD_MODE = 0x0801,
@@ -195,6 +196,7 @@ enum OpCode : 16 {
   READ_LOCAL_OOB_DATA = 0x0C57,
   READ_INQUIRY_RESPONSE_TRANSMIT_POWER_LEVEL = 0x0C58,
   WRITE_INQUIRY_TRANSMIT_POWER_LEVEL = 0x0C59,
+  ENHANCED_FLUSH = 0x0C5F,
   SEND_KEYPRESS_NOTIFICATION = 0x0C60,
 
   READ_LE_HOST_SUPPORT = 0x0C6C,
@@ -376,7 +378,7 @@ enum OpCodeIndex : 16 {
   AUTHENTICATION_REQUESTED = 17,
   SET_CONNECTION_ENCRYPTION = 20,
   CHANGE_CONNECTION_LINK_KEY = 21,
-  MASTER_LINK_KEY = 22,
+  CENTRAL_LINK_KEY = 22,
   REMOTE_NAME_REQUEST = 23,
   REMOTE_NAME_REQUEST_CANCEL = 24,
   READ_REMOTE_SUPPORTED_FEATURES = 25,
@@ -481,6 +483,7 @@ enum OpCodeIndex : 16 {
   USER_PASSKEY_REQUEST_NEGATIVE_REPLY = 193,
   REMOTE_OOB_DATA_REQUEST_REPLY = 194,
   WRITE_SIMPLE_PAIRING_DEBUG_MODE = 195,
+  ENHANCED_FLUSH = 196,
   REMOTE_OOB_DATA_REQUEST_NEGATIVE_REPLY = 197,
   SEND_KEYPRESS_NOTIFICATION = 202,
   IO_CAPABILITY_REQUEST_NEGATIVE_REPLY = 203,
@@ -521,6 +524,7 @@ enum OpCodeIndex : 16 {
   ENHANCED_SETUP_SYNCHRONOUS_CONNECTION = 293,
   ENHANCED_ACCEPT_SYNCHRONOUS_CONNECTION = 294,
   READ_LOCAL_SUPPORTED_CODECS_V1 = 295,
+  REMOTE_OOB_EXTENDED_DATA_REQUEST_REPLY = 321,
   READ_SECURE_CONNECTIONS_HOST_SUPPORT = 322,
   WRITE_SECURE_CONNECTIONS_HOST_SUPPORT = 323,
   READ_LOCAL_OOB_EXTENDED_DATA = 326,
@@ -638,7 +642,7 @@ enum EventCode : 8 {
   REMOTE_NAME_REQUEST_COMPLETE = 0x07,
   ENCRYPTION_CHANGE = 0x08,
   CHANGE_CONNECTION_LINK_KEY_COMPLETE = 0x09,
-  MASTER_LINK_KEY_COMPLETE = 0x0A,
+  CENTRAL_LINK_KEY_COMPLETE = 0x0A,
   READ_REMOTE_SUPPORTED_FEATURES_COMPLETE = 0x0B,
   READ_REMOTE_VERSION_INFORMATION_COMPLETE = 0x0C,
   QOS_SETUP_COMPLETE = 0x0D,
@@ -857,7 +861,7 @@ enum ClockOffsetValid : 1 {
 }
 
 enum CreateConnectionRoleSwitch : 8 {
-  REMAIN_MASTER = 0x00,
+  REMAIN_CENTRAL = 0x00,
   ALLOW_ROLE_SWITCH = 0x01,
 }
 
@@ -903,8 +907,8 @@ packet CreateConnectionCancelComplete : CommandComplete (command_op_code = CREAT
 }
 
 enum AcceptConnectionRequestRole : 8 {
-  BECOME_MASTER = 0x00,
-  REMAIN_SLAVE = 0x01,
+  BECOME_CENTRAL = 0x00,
+  REMAIN_PERIPHERAL = 0x01,
 }
 
 packet AcceptConnectionRequest : ConnectionManagementCommand (op_code = ACCEPT_CONNECTION_REQUEST) {
@@ -1007,11 +1011,11 @@ enum KeyFlag : 8 {
   TEMPORARY = 0x01,
 }
 
-packet MasterLinkKey : ConnectionManagementCommand (op_code = MASTER_LINK_KEY) {
+packet CentralLinkKey : ConnectionManagementCommand (op_code = CENTRAL_LINK_KEY) {
   key_flag : KeyFlag,
 }
 
-packet MasterLinkKeyStatus : CommandStatus (command_op_code = MASTER_LINK_KEY) {
+packet CentralLinkKeyStatus : CommandStatus (command_op_code = CENTRAL_LINK_KEY) {
 }
 
 packet RemoteNameRequest : DiscoveryCommand (op_code = REMOTE_NAME_REQUEST) {
@@ -1202,6 +1206,19 @@ packet EnhancedAcceptSynchronousConnection : ScoConnectionCommand (op_code = ENH
   _payload_,  // placeholder (unimplemented)
 }
 
+packet RemoteOobExtendedDataRequestReply : SecurityCommand (op_code = REMOTE_OOB_EXTENDED_DATA_REQUEST_REPLY) {
+  bd_addr : Address,
+  c_192 : 8[16],
+  r_192 : 8[16],
+  c_256 : 8[16],
+  r_256 : 8[16],
+}
+
+packet RemoteOobExtendedDataRequestReplyComplete : CommandComplete (command_op_code = REMOTE_OOB_EXTENDED_DATA_REQUEST_REPLY) {
+  status : ErrorCode,
+  bd_addr : Address,
+}
+
 
   // LINK_POLICY
 packet HoldMode : ConnectionManagementCommand (op_code = HOLD_MODE) {
@@ -1262,8 +1279,8 @@ packet RoleDiscovery : ConnectionManagementCommand (op_code = ROLE_DISCOVERY) {
 }
 
 enum Role : 8 {
-  MASTER = 0x00,
-  SLAVE = 0x01,
+  CENTRAL = 0x00,
+  PERIPHERAL = 0x01,
 }
 
 packet RoleDiscoveryComplete : CommandComplete (command_op_code = ROLE_DISCOVERY) {
@@ -2461,11 +2478,18 @@ enum AddressType : 8 {
   RANDOM_IDENTITY_ADDRESS = 0x03,
 }
 
+enum OwnAddressType : 8 {
+  PUBLIC_DEVICE_ADDRESS = 0x00,
+  RANDOM_DEVICE_ADDRESS = 0x01,
+  RESOLVABLE_OR_PUBLIC_ADDRESS = 0x02,
+  RESOLVABLE_OR_RANDOM_ADDRESS = 0x03,
+}
+
 packet LeSetAdvertisingParameters : LeAdvertisingCommand (op_code = LE_SET_ADVERTISING_PARAMETERS) {
   interval_min : 16,
   interval_max : 16,
   type : AdvertisingType,
-  own_address_type : AddressType,
+  own_address_type : OwnAddressType,
   peer_address_type : PeerAddressType,
   peer_address : Address,
   channel_map : 8,
@@ -2529,7 +2553,7 @@ packet LeSetScanParameters : LeScanningCommand (op_code = LE_SET_SCAN_PARAMETERS
   le_scan_type : LeScanType,
   le_scan_interval : 16, // 0x0004-0x4000 Default 0x10 (10ms)
   le_scan_window : 16, // Default 0x10 (10ms)
-  own_address_type : AddressType,
+  own_address_type : OwnAddressType,
   scanning_filter_policy : LeScanningFilterPolicy,
 }
 
@@ -2549,13 +2573,6 @@ packet LeSetScanEnableComplete : CommandComplete (command_op_code = LE_SET_SCAN_
 enum InitiatorFilterPolicy : 8 {
   USE_PEER_ADDRESS = 0x00,
   USE_CONNECT_LIST = 0x01,
-}
-
-enum OwnAddressType : 8 {
-  PUBLIC_DEVICE_ADDRESS = 0x00,
-  RANDOM_DEVICE_ADDRESS = 0x01,
-  RESOLVABLE_OR_PUBLIC_ADDRESS = 0x02,
-  RESOLVABLE_OR_RANDOM_ADDRESS = 0x03,
 }
 
 packet LeCreateConnection : LeConnectionManagementCommand (op_code = LE_CREATE_CONNECTION) {
@@ -3128,7 +3145,7 @@ packet LeSetPeriodicAdvertisingData : LeAdvertisingCommand (op_code = LE_SET_PER
   operation : Operation,
   _reserved_ : 5,
   _size_(scan_response_data) : 8,
-  scan_response_data : 8[],
+  scan_response_data : GapData[],
 }
 
 packet LeSetPeriodicAdvertisingDataComplete : CommandComplete (command_op_code = LE_SET_PERIODIC_ADVERTISING_DATA) {
@@ -3136,8 +3153,8 @@ packet LeSetPeriodicAdvertisingDataComplete : CommandComplete (command_op_code =
 }
 
 packet LeSetPeriodicAdvertisingEnable : LeAdvertisingCommand (op_code = LE_SET_PERIODIC_ADVERTISING_ENABLE) {
-  advertising_handle : 8,
   enable : Enable,
+  advertising_handle : 8,
 }
 
 packet LeSetPeriodicAdvertisingEnableComplete : CommandComplete (command_op_code = LE_SET_PERIODIC_ADVERTISING_ENABLE) {
@@ -3151,7 +3168,7 @@ struct PhyScanParameters {
 }
 
 packet LeSetExtendedScanParameters : LeScanningCommand (op_code = LE_SET_EXTENDED_SCAN_PARAMETERS) {
-  own_address_type : AddressType,
+  own_address_type : OwnAddressType,
   scanning_filter_policy : LeScanningFilterPolicy,
   scanning_phys : 8,
   parameters : PhyScanParameters[],
@@ -3222,11 +3239,14 @@ packet LeRemoveDeviceFromPeriodicAdvertisingList : LeAdvertisingCommand (op_code
 }
 
 packet LeClearPeriodicAdvertisingList : LeAdvertisingCommand (op_code = LE_CLEAR_PERIODIC_ADVERTISING_LIST) {
-  _payload_,  // placeholder (unimplemented)
 }
 
-packet LeReadPeriodicAdvertisingListSize : LeAdvertisingCommand (op_code = LE_READ_PERIODIC_ADVERTISING_LIST_SIZE) {
-  _payload_,  // placeholder (unimplemented)
+packet LeReadPeriodicAdvertiserListSize : CommandPacket (op_code = LE_READ_PERIODIC_ADVERTISING_LIST_SIZE) {
+}
+
+packet LeReadPeriodicAdvertiserListSizeComplete : CommandComplete (command_op_code = LE_READ_PERIODIC_ADVERTISING_LIST_SIZE) {
+  status : ErrorCode,
+  periodic_advertiser_list_size : 8,
 }
 
 packet LeReadTransmitPower : LeAdvertisingCommand (op_code = LE_READ_TRANSMIT_POWER) {
@@ -3375,8 +3395,14 @@ struct CisParametersConfig {
   _reserved_ : 4,
   max_sdu_s_to_m : 12,
   _reserved_ : 4,
-  phy_m_to_s : SecondaryPhyType,
-  phy_s_to_m : SecondaryPhyType,
+  phy_m_to_s_1_m : 1,
+  phy_m_to_s_2_m : 1,
+  phy_m_to_s_coded : 1,
+  _reserved_ : 5,
+  phy_s_to_m_1_m : 1,
+  phy_s_to_m_2_m : 1,
+  phy_s_to_m_coded : 1,
+  _reserved_ : 5,
   rtn_m_to_s : 4,
   _reserved_ : 4,
   rtn_s_to_m : 4,
@@ -3403,7 +3429,7 @@ packet LeSetCigParameters : CommandPacket (op_code = LE_SET_CIG_PARAMETERS) {
   cig_id : 8,
   sdu_interval_m_to_s : 24,
   sdu_interval_s_to_m : 24,
-  slaves_clock_accuracy : ClockAccuracy,
+  peripherals_clock_accuracy : ClockAccuracy,
   packing : Packing,
   framing : Enable,
   max_transport_latency_m_to_s : 16,
@@ -3727,7 +3753,7 @@ packet LeMultiAdvtParam : LeMultiAdvt (sub_cmd = SET_PARAM) {
   interval_min : 16,
   interval_max : 16,
   type : AdvertisingType,
-  own_address_type : AddressType,
+  own_address_type : OwnAddressType,
   peer_address_type : PeerAddressType,
   peer_address : Address,
   channel_map : 8,
@@ -3813,7 +3839,7 @@ packet LeExtendedScanParams : LeScanningCommand (op_code = LE_EXTENDED_SCAN_PARA
   le_scan_type : LeScanType,
   le_scan_interval : 32, // 0x0004-0x4000 Default 0x10 (10ms)
   le_scan_window : 32, // Default 0x10 (10ms)
-  own_address_type : AddressType,
+  own_address_type : OwnAddressType,
   scanning_filter_policy : LeScanningFilterPolicy,
 }
 
@@ -3931,7 +3957,7 @@ packet ChangeConnectionLinkKeyComplete : EventPacket (event_code = CHANGE_CONNEC
   _reserved_ : 4,
 }
 
-packet MasterLinkKeyComplete : EventPacket (event_code = MASTER_LINK_KEY_COMPLETE){
+packet CentralLinkKeyComplete : EventPacket (event_code = CENTRAL_LINK_KEY_COMPLETE){
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4183,6 +4209,19 @@ packet LinkSupervisionTimeoutChanged : EventPacket (event_code = LINK_SUPERVISIO
   link_supervision_timeout : 16, // 0x001-0xFFFF (0.625ms-40.9s)
 }
 
+enum FlushablePacketType : 8 {
+  AUTOMATICALLY_FLUSHABLE_ONLY = 0,
+}
+
+packet EnhancedFlush : CommandPacket (op_code = ENHANCED_FLUSH){
+  connection_handle : 12,
+  _reserved_ : 4,
+  packet_type : FlushablePacketType,
+}
+
+packet EnhancedFlushStatus : CommandStatus (command_op_code = ENHANCED_FLUSH){
+}
+
 packet EnhancedFlushComplete : EventPacket (event_code = ENHANCED_FLUSH_COMPLETE){
   connection_handle : 12,
   _reserved_ : 4,
@@ -4224,7 +4263,7 @@ packet LeConnectionComplete : LeMetaEvent (subevent_code = CONNECTION_COMPLETE) 
   conn_interval : 16, // 0x006 - 0x0C80 (7.5ms - 4000ms)
   conn_latency : 16,  // Number of connection events
   supervision_timeout : 16,  // 0x000A to 0x0C80 (100ms to 32s)
-  master_clock_accuracy : ClockAccuracy,
+  central_clock_accuracy : ClockAccuracy,
 }
 
 enum AdvertisingEventType : 8 {
@@ -4266,10 +4305,9 @@ packet LeReadRemoteFeaturesComplete : LeMetaEvent (subevent_code = READ_REMOTE_F
 }
 
 packet LeLongTermKeyRequest : LeMetaEvent (subevent_code = LONG_TERM_KEY_REQUEST) {
-  status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
-  random_number : 64,
+  random_number : 8[8],
   encrypted_diversifier : 16,
 }
 
@@ -4313,7 +4351,7 @@ packet LeEnhancedConnectionComplete : LeMetaEvent (subevent_code = ENHANCED_CONN
   conn_interval : 16, // 0x006 - 0x0C80 (7.5ms - 4000ms)
   conn_latency : 16,  // Number of connection events
   supervision_timeout : 16,  // 0x000A to 0x0C80 (100ms to 32s)
-  master_clock_accuracy : ClockAccuracy,
+  central_clock_accuracy : ClockAccuracy,
 }
 
 enum DirectAdvertisingAddressType : 8 {
@@ -4363,8 +4401,9 @@ struct LeExtendedAdvertisingReport {
   scannable : 1,
   directed : 1,
   scan_response : 1,
+  legacy : 1,
   data_status : DataStatus,
-  _reserved_ : 10,
+  _reserved_ : 9,
   address_type : DirectAdvertisingAddressType,
   address : Address,
   primary_phy : PrimaryPhyType,
@@ -4689,4 +4728,51 @@ packet BqrBtSchedulingTraceEvent : BqrLogDumpEvent (quality_report_id = BT_SCHED
 
 packet BqrControllerDbgInfoEvent : BqrLogDumpEvent (quality_report_id = CONTROLLER_DBG_INFO) {
  _payload_, // vendor specific parameter
+}
+
+// Isochronous Adaptation Layer
+
+enum IsoPacketBoundaryFlag : 2 {
+  FIRST_FRAGMENT = 0,
+  CONTINUATION_FRAGMENT = 1,
+  COMPLETE_SDU = 2,
+  LAST_FRAGMENT = 3,
+}
+
+enum TimeStampFlag : 1 {
+  NOT_PRESENT = 0,
+  PRESENT = 1,
+}
+
+packet IsoPacket {
+  connection_handle : 12,
+  pb_flag : IsoPacketBoundaryFlag,
+  ts_flag : TimeStampFlag,
+  _reserved_ : 1,
+  _size_(_payload_) : 14,
+  _reserved_ : 2,
+  _payload_,
+}
+
+enum IsoPacketStatusFlag : 2 {
+  VALID = 0,
+  POSSIBLY_INVALID = 1,
+  LOST_DATA = 2,
+}
+
+packet IsoPacketWithTimestamp : IsoPacket (ts_flag = PRESENT) {
+  time_stamp : 32,
+  packet_sequence_number : 16,
+  _size_(_payload_) : 12, // iso_sdu_length
+  _reserved_ : 2,
+  packet_status_flag : IsoPacketStatusFlag,
+  _payload_,
+}
+
+packet IsoPacketWithoutTimestamp : IsoPacket (ts_flag = NOT_PRESENT) {
+  packet_sequence_number : 16,
+  _size_(_payload_) : 12, // iso_sdu_length
+  _reserved_ : 2,
+  packet_status_flag : IsoPacketStatusFlag,
+  _payload_,
 }

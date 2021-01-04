@@ -30,12 +30,15 @@
 #include "module.h"
 #include "os/files.h"
 #include "storage/config_cache.h"
+#include "storage/device.h"
 #include "storage/legacy_config_file.h"
 
 namespace testing {
 
 using bluetooth::TestModuleRegistry;
+using bluetooth::hci::Address;
 using bluetooth::storage::ConfigCache;
+using bluetooth::storage::Device;
 using bluetooth::storage::LegacyConfigFile;
 using bluetooth::storage::StorageModule;
 
@@ -88,6 +91,10 @@ class TestStorageModule : public StorageModule {
 
   ConfigCache* GetConfigCachePublic() {
     return StorageModule::GetConfigCache();
+  }
+
+  ConfigCache* GetMemoryOnlyConfigCachePublic() {
+    return StorageModule::GetMemoryOnlyConfigCache();
   }
 
   void SaveImmediatelyPublic() {
@@ -209,7 +216,7 @@ TEST_F(StorageModuleTest, read_existing_config_test) {
   // Test
   ASSERT_NE(storage->GetConfigCachePublic(), nullptr);
   ASSERT_TRUE(storage->GetConfigCachePublic()->HasSection("Metrics"));
-  ASSERT_THAT(storage->GetConfigCachePublic()->GetPersistentDevices(), ElementsAre("01:02:03:ab:cd:ea"));
+  ASSERT_THAT(storage->GetConfigCachePublic()->GetPersistentSections(), ElementsAre("01:02:03:ab:cd:ea"));
   ASSERT_THAT(
       storage->GetConfigCachePublic()->GetProperty(StorageModule::kAdapterSection, "Address"),
       Optional(StrEq("01:02:03:ab:cd:ef")));
@@ -274,6 +281,41 @@ TEST_F(StorageModuleTest, save_config_test) {
 
   // Verify states after test
   ASSERT_TRUE(std::filesystem::exists(temp_config_));
+}
+
+TEST_F(StorageModuleTest, get_bonded_devices_test) {
+  // Prepare config file
+  ASSERT_TRUE(bluetooth::os::WriteToFile(temp_config_.string(), kReadTestConfig));
+
+  // Set up
+  auto* storage = new TestStorageModule(temp_config_.string(), kTestConfigSaveDelay, 10, false, false);
+  TestModuleRegistry test_registry;
+  test_registry.InjectTestModule(&StorageModule::Factory, storage);
+
+  ASSERT_THAT(
+      storage->GetBondedDevices(),
+      ElementsAre(
+          Device(storage->GetConfigCachePublic(), storage->GetMemoryOnlyConfigCachePublic(), "01:02:03:ab:cd:ea")));
+
+  // Tear down
+  test_registry.StopAll();
+}
+
+TEST_F(StorageModuleTest, get_adapter_config_test) {
+  // Prepare config file
+  ASSERT_TRUE(bluetooth::os::WriteToFile(temp_config_.string(), kReadTestConfig));
+
+  // Set up
+  auto* storage = new TestStorageModule(temp_config_.string(), kTestConfigSaveDelay, 10, false, false);
+  TestModuleRegistry test_registry;
+  test_registry.InjectTestModule(&StorageModule::Factory, storage);
+
+  auto address = Address::FromString("01:02:03:ab:cd:ef");
+  ASSERT_TRUE(address);
+  ASSERT_THAT(storage->GetAdapterConfig().GetAddress(), Optional(Eq(address)));
+
+  // Tear down
+  test_registry.StopAll();
 }
 
 }  // namespace testing
