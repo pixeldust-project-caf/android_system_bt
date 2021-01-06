@@ -25,40 +25,27 @@
 
 #define LOG_TAG "bt_bta_dm"
 
-#include <base/bind.h>
-#include <base/callback.h>
-#include <base/logging.h>
-#include <string.h>
+#include <cstdint>
 
-#include "bt_common.h"
-#include "bt_target.h"
-#include "bt_types.h"
-#include "bta_api.h"
-#include "bta_dm_api.h"
-#include "bta_dm_ci.h"
-#include "bta_dm_co.h"
-#include "bta_dm_int.h"
-#include "bta_sys.h"
-#include "btif_dm.h"
-#include "btif_storage.h"
-#include "btm_api.h"
-#include "btm_int.h"
-#include "btu.h"
+#include "bta/dm/bta_dm_int.h"
+#include "bta/gatt/bta_gattc_int.h"
+#include "bta/include/bta_dm_ci.h"
+#include "btif/include/btif_dm.h"
+#include "btif/include/btif_storage.h"
+#include "btif/include/stack_manager.h"
 #include "device/include/controller.h"
 #include "device/include/interop.h"
-#include "gap_api.h" /* For GAP_BleReadPeerPrefConnParams */
-#include "l2c_api.h"
 #include "main/shim/btm_api.h"
+#include "main/shim/dumpsys.h"
 #include "main/shim/shim.h"
 #include "osi/include/log.h"
 #include "osi/include/osi.h"
-#include "sdp_api.h"
-#include "stack/btm/btm_sec.h"
+#include "stack/btm/neighbor_inquiry.h"
 #include "stack/gatt/connection_manager.h"
 #include "stack/include/acl_api.h"
-#include "stack/include/gatt_api.h"
-#include "stack_manager.h"
-#include "utl.h"
+#include "stack/include/bt_types.h"
+#include "stack/include/btu.h"
+#include "types/raw_address.h"
 
 #if (GAP_INCLUDED == TRUE)
 #include "gap_api.h"
@@ -66,8 +53,9 @@
 
 using bluetooth::Uuid;
 
-void BTIF_dm_enable();
 void BTIF_dm_disable();
+void BTIF_dm_enable();
+void btm_ble_adv_init(void);
 
 static void bta_dm_inq_results_cb(tBTM_INQ_RESULTS* p_inq, uint8_t* p_eir,
                                   uint16_t eir_len);
@@ -100,8 +88,8 @@ static void bta_dm_set_eir(char* local_name);
 
 static void bta_dm_search_timer_cback(void* data);
 static void bta_dm_disable_conn_down_timer_cback(void* data);
-static void bta_dm_rm_cback(tBTA_SYS_CONN_STATUS status, uint8_t id,
-                            uint8_t app_id, const RawAddress& peer_addr);
+void bta_dm_rm_cback(tBTA_SYS_CONN_STATUS status, uint8_t id, uint8_t app_id,
+                     const RawAddress& peer_addr);
 static void bta_dm_adjust_roles(bool delay_role_switch);
 static char* bta_dm_get_remname(void);
 static void bta_dm_bond_cancel_complete_cback(tBTM_STATUS result);
@@ -2148,11 +2136,22 @@ static void bta_dm_local_name_cback(UNUSED_ATTR void* p_name) {
 static void handle_role_change(const RawAddress& bd_addr, uint8_t new_role,
                                uint8_t hci_status) {
   tBTA_DM_PEER_DEVICE* p_dev = bta_dm_find_peer_device(bd_addr);
-  if (!p_dev) return;
-  LOG_INFO("%s: peer %s info:0x%x new_role:0x%x dev count:%d hci_status=%d",
-           __func__, bd_addr.ToString().c_str(), p_dev->info, new_role,
-           bta_dm_cb.device_list.count, hci_status);
-  if (p_dev->info & BTA_DM_DI_AV_ACTIVE) {
+  if (!p_dev) {
+    LOG_WARN(
+        "Unable to find device for role change peer:%s new_role:%s "
+        "hci_status:%s",
+        PRIVATE_ADDRESS(bd_addr), RoleText(new_role).c_str(),
+        hci_error_code_text(hci_status).c_str());
+    return;
+  }
+
+  LOG_INFO(
+      "Role change callback peer:%s info:0x%x new_role:%s dev count:%d "
+      "hci_status:%s",
+      PRIVATE_ADDRESS(bd_addr), p_dev->Info(), RoleText(new_role).c_str(),
+      bta_dm_cb.device_list.count, hci_error_code_text(hci_status).c_str());
+
+  if (p_dev->Info() & BTA_DM_DI_AV_ACTIVE) {
     bool need_policy_change = false;
 
     /* there's AV activity on this link */
@@ -2187,6 +2186,29 @@ void BTA_dm_report_role_change(const RawAddress bd_addr, uint8_t new_role,
       FROM_HERE, base::Bind(handle_role_change, bd_addr, new_role, hci_status));
 }
 
+void handle_remote_features_complete(const RawAddress& bd_addr) {
+  tBTA_DM_PEER_DEVICE* p_dev = bta_dm_find_peer_device(bd_addr);
+  if (!p_dev) {
+    LOG_WARN("Unable to find device peer:%s", PRIVATE_ADDRESS(bd_addr));
+    return;
+  }
+
+  if (controller_get_interface()->supports_sniff_subrating() &&
+      acl_peer_supports_sniff_subrating(bd_addr)) {
+    LOG_DEBUG("Device supports sniff subrating peer:%s",
+              PRIVATE_ADDRESS(bd_addr));
+    p_dev->info = BTA_DM_DI_USE_SSR;
+  } else {
+    LOG_DEBUG("Device does NOT support sniff subrating peer:%s",
+              PRIVATE_ADDRESS(bd_addr));
+  }
+}
+
+void BTA_dm_notify_remote_features_complete(const RawAddress bd_addr) {
+  do_in_main_thread(FROM_HERE,
+                    base::Bind(handle_remote_features_complete, bd_addr));
+}
+
 static tBTA_DM_PEER_DEVICE* allocate_device_for(const RawAddress& bd_addr,
                                                 tBT_TRANSPORT transport) {
   for (uint8_t i = 0; i < bta_dm_cb.device_list.count; i++) {
@@ -2209,7 +2231,7 @@ static tBTA_DM_PEER_DEVICE* allocate_device_for(const RawAddress& bd_addr,
   return nullptr;
 }
 
-static void bta_dm_acl_up(const RawAddress& bd_addr, tBT_TRANSPORT transport) {
+void bta_dm_acl_up(const RawAddress& bd_addr, tBT_TRANSPORT transport) {
   auto device = allocate_device_for(bd_addr, transport);
   if (device == nullptr) {
     LOG_WARN("Unable to allocate device resources for new connection");
@@ -2222,6 +2244,12 @@ static void bta_dm_acl_up(const RawAddress& bd_addr, tBT_TRANSPORT transport) {
 
   if (controller_get_interface()->supports_sniff_subrating() &&
       acl_peer_supports_sniff_subrating(bd_addr)) {
+    // NOTE: This callback assumes upon ACL connection that
+    // the read remote features has completed and is valid.
+    // The only guaranteed contract for valid read remote features
+    // data is when the BTA_dm_notify_remote_features_complete()
+    // callback has completed.  The below assignment is kept for
+    // transitional informational purposes only.
     device->info = BTA_DM_DI_USE_SSR;
   }
 
@@ -2344,9 +2372,9 @@ static void bta_dm_check_av() {
     for (i = 0; i < bta_dm_cb.device_list.count; i++) {
       p_dev = &bta_dm_cb.device_list.peer_device[i];
       APPL_TRACE_WARNING("[%d]: state:%d, info:x%x", i, p_dev->conn_state,
-                         p_dev->info);
+                         p_dev->Info());
       if ((p_dev->conn_state == BTA_DM_CONNECTED) &&
-          (p_dev->info & BTA_DM_DI_AV_ACTIVE)) {
+          (p_dev->Info() & BTA_DM_DI_AV_ACTIVE)) {
         /* make central and take away the role switch policy */
         BTM_SwitchRoleToCentral(p_dev->peer_bdaddr);
         /* else either already central or can not switch for some reasons */
@@ -2385,11 +2413,15 @@ static void bta_dm_disable_conn_down_timer_cback(UNUSED_ATTR void* data) {
  * Returns          void
  *
  ******************************************************************************/
-static void bta_dm_rm_cback(tBTA_SYS_CONN_STATUS status, uint8_t id,
-                            uint8_t app_id, const RawAddress& peer_addr) {
+void bta_dm_rm_cback(tBTA_SYS_CONN_STATUS status, uint8_t id, uint8_t app_id,
+                     const RawAddress& peer_addr) {
   uint8_t j;
   tBTA_PREF_ROLES role;
   tBTA_DM_PEER_DEVICE* p_dev;
+
+  LOG_DEBUG("BTA Role management callback count:%d status:%s peer:%s",
+            bta_dm_cb.cur_av_count, bta_sys_conn_status_text(status).c_str(),
+            PRIVATE_ADDRESS(peer_addr));
 
   p_dev = bta_dm_find_peer_device(peer_addr);
   if (status == BTA_SYS_CONN_OPEN) {
@@ -2427,8 +2459,6 @@ static void bta_dm_rm_cback(tBTA_SYS_CONN_STATUS status, uint8_t id,
       /* get cur_av_count from connected services */
       if (BTA_ID_AV == id) bta_dm_cb.cur_av_count = bta_dm_get_av_count();
     }
-    APPL_TRACE_WARNING("bta_dm_rm_cback:%d, status:%d", bta_dm_cb.cur_av_count,
-                       status);
   }
 
   /* Don't adjust roles for each busy/idle state transition to avoid

@@ -49,7 +49,7 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
     acl_manager_->RegisterCallbacks(this, facade_handler_);
   }
 
-  ~AclManagerFacadeService() override {
+  ~AclManagerFacadeService() {
     std::unique_lock<std::mutex> lock(acl_connections_mutex_);
     for (auto& connection : acl_connections_) {
       connection.second.connection_->GetAclQueueEnd()->UnregisterDequeue();
@@ -114,8 +114,8 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
       ::grpc::ServerContext* context,
       const ConnectionCommandMsg* request,
       ::google::protobuf::Empty* response) override {
-    auto command_view = ConnectionManagementCommandView::Create(
-        AclCommandView::Create(CommandPacketView::Create(PacketView<kLittleEndian>(
+    auto command_view =
+        ConnectionManagementCommandView::Create(AclCommandView::Create(CommandView::Create(PacketView<kLittleEndian>(
             std::make_shared<std::vector<uint8_t>>(request->packet().begin(), request->packet().end())))));
     if (!command_view.IsValid()) {
       return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid command packet");
@@ -191,7 +191,7 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
       case OpCode::READ_TRANSMIT_POWER_LEVEL: {
         auto view = ReadTransmitPowerLevelView::Create(command_view);
         GET_CONNECTION(view);
-        connection->second.connection_->ReadTransmitPowerLevel(view.GetType());
+        connection->second.connection_->ReadTransmitPowerLevel(view.GetTransmitPowerLevelType());
         return ::grpc::Status::OK;
       }
       case OpCode::READ_LINK_SUPERVISION_TIMEOUT: {

@@ -7,27 +7,25 @@ extern crate lazy_static;
 
 pub mod facade;
 pub mod rootcanal_hal;
-#[cfg(not(target_os = "android"))]
-use rootcanal_hal::rootcanal_hal_module;
+pub mod snoop;
 
 #[cfg(target_os = "android")]
 mod hidl_hal;
-#[cfg(target_os = "android")]
-use hidl_hal::hidl_hal_module;
 
-use bt_packet::{HciCommand, HciEvent, RawPacket};
-use facade::hal_facade_module;
-use gddi::module;
+use bt_packets::hci::{AclPacket, CommandPacket, EventPacket};
+use gddi::{module, Stoppable};
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::Mutex;
 
 #[cfg(target_os = "android")]
 module! {
     hal_module,
     submodules {
-        hal_facade_module,
-        hidl_hal_module
+        facade::hal_facade_module,
+        hidl_hal::hidl_hal_module,
+        snoop::snoop_module,
     },
 }
 
@@ -35,8 +33,9 @@ module! {
 module! {
     hal_module,
     submodules {
-        hal_facade_module,
-        rootcanal_hal_module
+        facade::hal_facade_module,
+        rootcanal_hal::rootcanal_hal_module,
+        snoop::snoop_module,
     },
 }
 /// H4 packet header size
@@ -45,52 +44,61 @@ const H4_HEADER_SIZE: usize = 1;
 /// HAL interface
 /// This is used by the HCI module to send commands to the
 /// HAL and receive events from the HAL
-#[derive(Clone)]
+#[derive(Clone, Stoppable)]
 pub struct HalExports {
     /// Transmit end of a channel used to send HCI commands
-    pub cmd_tx: mpsc::UnboundedSender<HciCommand>,
+    pub cmd_tx: Sender<CommandPacket>,
     /// Receive end of a channel used to receive HCI events
-    pub evt_rx: Arc<Mutex<mpsc::UnboundedReceiver<HciEvent>>>,
+    pub evt_rx: Arc<Mutex<Receiver<EventPacket>>>,
     /// Transmit end of a channel used to send ACL data
-    pub acl_tx: mpsc::UnboundedSender<RawPacket>,
+    pub acl_tx: Sender<AclPacket>,
     /// Receive end of a channel used to receive ACL data
-    pub acl_rx: Arc<Mutex<mpsc::UnboundedReceiver<RawPacket>>>,
+    pub acl_rx: Arc<Mutex<Receiver<AclPacket>>>,
 }
 
-/// HCI HAL
-/// Receive HCI commands, send HCI events
-pub struct Hal {
-    /// Receive end of a channel used to receive HCI commands
-    pub cmd_rx: mpsc::UnboundedReceiver<HciCommand>,
-    /// Transmit end of a channel used to send HCI events
-    pub evt_tx: mpsc::UnboundedSender<HciEvent>,
-    /// Receive end of a channel used to send ACL data
-    pub acl_rx: mpsc::UnboundedReceiver<RawPacket>,
-    /// Transmit end of a channel used to receive ACL data
-    pub acl_tx: mpsc::UnboundedSender<RawPacket>,
-}
+mod internal {
+    use bt_packets::hci::{AclPacket, CommandPacket, EventPacket};
+    use gddi::Stoppable;
+    use std::sync::Arc;
+    use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+    use tokio::sync::Mutex;
 
-impl Hal {
-    /// Create a new Hal instance
-    pub fn new() -> (HalExports, Self) {
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-        let (evt_tx, evt_rx) = mpsc::unbounded_channel();
-        let (acl_down_tx, acl_down_rx) = mpsc::unbounded_channel();
-        let (acl_up_tx, acl_up_rx) = mpsc::unbounded_channel();
-        (
-            HalExports {
-                cmd_tx,
-                evt_rx: Arc::new(Mutex::new(evt_rx)),
-                acl_tx: acl_down_tx,
-                acl_rx: Arc::new(Mutex::new(acl_up_rx)),
-            },
-            Self {
-                cmd_rx,
-                evt_tx,
-                acl_rx: acl_down_rx,
-                acl_tx: acl_up_tx,
-            },
-        )
+    #[derive(Clone, Stoppable)]
+    pub struct RawHalExports {
+        pub cmd_tx: UnboundedSender<CommandPacket>,
+        pub evt_rx: Arc<Mutex<UnboundedReceiver<EventPacket>>>,
+        pub acl_tx: UnboundedSender<AclPacket>,
+        pub acl_rx: Arc<Mutex<UnboundedReceiver<AclPacket>>>,
+    }
+
+    pub struct Hal {
+        pub cmd_rx: UnboundedReceiver<CommandPacket>,
+        pub evt_tx: UnboundedSender<EventPacket>,
+        pub acl_rx: UnboundedReceiver<AclPacket>,
+        pub acl_tx: UnboundedSender<AclPacket>,
+    }
+
+    impl Hal {
+        pub fn new() -> (RawHalExports, Self) {
+            let (cmd_tx, cmd_rx) = unbounded_channel();
+            let (evt_tx, evt_rx) = unbounded_channel();
+            let (acl_down_tx, acl_down_rx) = unbounded_channel();
+            let (acl_up_tx, acl_up_rx) = unbounded_channel();
+            (
+                RawHalExports {
+                    cmd_tx,
+                    evt_rx: Arc::new(Mutex::new(evt_rx)),
+                    acl_tx: acl_down_tx,
+                    acl_rx: Arc::new(Mutex::new(acl_up_rx)),
+                },
+                Self {
+                    cmd_rx,
+                    evt_tx,
+                    acl_rx: acl_down_rx,
+                    acl_tx: acl_up_tx,
+                },
+            )
+        }
     }
 }
 

@@ -2118,7 +2118,7 @@ bool is_state_getting_name(void* data, void* context) {
  *
  ******************************************************************************/
 void btm_sec_rmt_name_request_complete(const RawAddress* p_bd_addr,
-                                       uint8_t* p_bd_name, uint8_t status) {
+                                       uint8_t* p_bd_name, tHCI_STATUS status) {
   tBTM_SEC_DEV_REC* p_dev_rec;
   int i;
   DEV_CLASS dev_class;
@@ -2339,10 +2339,10 @@ void btm_sec_rmt_name_request_complete(const RawAddress* p_bd_addr,
   }
 
   /* Remote Name succeeded, execute the next security procedure, if any */
-  status = (uint8_t)btm_sec_execute_procedure(p_dev_rec);
+  tBTM_STATUS btm_status = btm_sec_execute_procedure(p_dev_rec);
 
   /* If result is pending reply from the user or from the device is pending */
-  if (status == BTM_CMD_STARTED) return;
+  if (btm_status == BTM_CMD_STARTED) return;
 
   /* There is no next procedure or start of procedure failed, notify the waiting
    * layer */
@@ -3148,7 +3148,7 @@ void btm_sec_auth_complete(uint16_t handle, tHCI_STATUS status) {
  * Returns          void
  *
  ******************************************************************************/
-void btm_sec_encrypt_change(uint16_t handle, uint8_t status,
+void btm_sec_encrypt_change(uint16_t handle, tHCI_STATUS status,
                             uint8_t encr_enable) {
   tBTM_SEC_DEV_REC* p_dev_rec = btm_find_dev_by_handle(handle);
   BTM_TRACE_EVENT(
@@ -3280,11 +3280,11 @@ void btm_sec_encrypt_change(uint16_t handle, uint8_t status,
   }
 
   /* Encryption setup succeeded, execute the next security procedure, if any */
-  status = (uint8_t)btm_sec_execute_procedure(p_dev_rec);
+  tBTM_STATUS btm_status = btm_sec_execute_procedure(p_dev_rec);
   /* If there is no next procedure, or procedure failed to start, notify the
    * caller */
   if (status != BTM_CMD_STARTED)
-    btm_sec_dev_rec_cback_event(p_dev_rec, status, false);
+    btm_sec_dev_rec_cback_event(p_dev_rec, btm_status, false);
 }
 
 /*******************************************************************************
@@ -3326,8 +3326,8 @@ static void btm_sec_connect_after_reject_timeout(UNUSED_ATTR void* data) {
  * Returns          void
  *
  ******************************************************************************/
-void btm_sec_connected(const RawAddress& bda, uint16_t handle, uint8_t status,
-                       uint8_t enc_mode) {
+void btm_sec_connected(const RawAddress& bda, uint16_t handle,
+                       tHCI_STATUS status, uint8_t enc_mode) {
   tBTM_SEC_DEV_REC* p_dev_rec = btm_find_dev(bda);
   uint8_t res;
   bool is_pairing_device = false;
@@ -3339,13 +3339,15 @@ void btm_sec_connected(const RawAddress& bda, uint16_t handle, uint8_t status,
   if (p_dev_rec) {
     VLOG(2) << __func__ << ": Security Manager: in state: "
             << btm_pair_state_descr(btm_cb.pairing_state)
-            << " handle:" << handle << " status:" << loghex(status)
+            << " handle:" << handle
+            << " status:" << loghex(static_cast<uint16_t>(status))
             << " enc_mode:" << loghex(enc_mode) << " bda:" << bda
             << " RName:" << p_dev_rec->sec_bd_name;
   } else {
     VLOG(2) << __func__ << ": Security Manager: in state: "
             << btm_pair_state_descr(btm_cb.pairing_state)
-            << " handle:" << handle << " status:" << loghex(status)
+            << " handle:" << handle
+            << " status:" << loghex(static_cast<uint16_t>(status))
             << " enc_mode:" << loghex(enc_mode) << " bda:" << bda;
   }
 
@@ -3559,6 +3561,7 @@ void btm_sec_connected(const RawAddress& bda, uint16_t handle, uint8_t status,
   }
 
   p_dev_rec->hci_handle = handle;
+  btm_acl_created(bda, handle, HCI_ROLE_PERIPHERAL, BT_TRANSPORT_BR_EDR);
 
   /* role may not be correct here, it will be updated by l2cap, but we need to
    */
@@ -3571,8 +3574,6 @@ void btm_sec_connected(const RawAddress& bda, uint16_t handle, uint8_t status,
   /* Set the packet types to the default allowed by the device */
   btm_set_packet_types_from_address(bda, BT_TRANSPORT_BR_EDR,
                                     acl_get_supported_packet_types());
-
-  btm_acl_created(bda, handle, HCI_ROLE_PERIPHERAL, BT_TRANSPORT_BR_EDR);
 
   /* Initialize security flags.  We need to do that because some            */
   /* authorization complete could have come after the connection is dropped */
@@ -3594,7 +3595,8 @@ void btm_sec_connected(const RawAddress& bda, uint16_t handle, uint8_t status,
   /* After connection is established we perform security if we do not know */
   /* the name, or if we are originator because some procedure can have */
   /* been scheduled while connection was down */
-  BTM_TRACE_DEBUG("is_originator:%d ", p_dev_rec->is_originator);
+  LOG_DEBUG("Is connection locally initiated:%s",
+            logbool(p_dev_rec->is_originator).c_str());
   if (!(p_dev_rec->sec_flags & BTM_SEC_NAME_KNOWN) ||
       p_dev_rec->is_originator) {
     res = btm_sec_execute_procedure(p_dev_rec);
@@ -3609,7 +3611,7 @@ tBTM_STATUS btm_sec_disconnect(uint16_t handle, tHCI_STATUS reason) {
 
   /* In some weird race condition we may not have a record */
   if (!p_dev_rec) {
-    btsnd_hcic_disconnect(handle, reason);
+    acl_disconnect_from_handle(handle, reason);
     return (BTM_SUCCESS);
   }
 
@@ -3629,7 +3631,7 @@ tBTM_STATUS btm_sec_disconnect(uint16_t handle, tHCI_STATUS reason) {
 void btm_sec_disconnected(uint16_t handle, tHCI_STATUS reason) {
   tBTM_SEC_DEV_REC* p_dev_rec = btm_find_dev_by_handle(handle);
   uint8_t old_pairing_flags = btm_cb.pairing_flags;
-  int result = HCI_ERR_AUTH_FAILURE;
+  tHCI_STATUS result = HCI_ERR_AUTH_FAILURE;
   tBTM_SEC_CALLBACK* p_callback = NULL;
   tBT_TRANSPORT transport = BT_TRANSPORT_BR_EDR;
 
@@ -4031,6 +4033,13 @@ void btm_sec_pin_code_request(uint8_t* p_event) {
 
   VLOG(2) << __func__ << " BDA: " << p_bda
           << " state: " << btm_pair_state_descr(btm_cb.pairing_state);
+
+  RawAddress local_bd_addr = *controller_get_interface()->get_address();
+  if (p_bda == local_bd_addr) {
+    android_errorWriteLog(0x534e4554, "174626251");
+    btsnd_hcic_pin_code_neg_reply(p_bda);
+    return;
+  }
 
   if (btm_cb.pairing_state != BTM_PAIR_STATE_IDLE) {
     if ((p_bda == btm_cb.pairing_bda) &&

@@ -1,25 +1,24 @@
 //! Implementation of the HAl that talks to BT controller over Android's HIDL
-use crate::{Hal, HalExports};
-use bt_packet::{HciCommand, HciEvent, RawPacket};
-use bytes::Bytes;
+use crate::internal::{Hal, RawHalExports};
+use bt_packets::hci::{AclPacket, CommandPacket, EventPacket};
 use gddi::{module, provides};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::runtime::Runtime;
 use tokio::select;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 module! {
     hidl_hal_module,
     providers {
-        HalExports => provide_hidl_hal,
+        RawHalExports => provide_hidl_hal,
     }
 }
 
 #[provides]
-async fn provide_hidl_hal(rt: Arc<Runtime>) -> HalExports {
+async fn provide_hidl_hal(rt: Arc<Runtime>) -> RawHalExports {
     let (hal_exports, hal) = Hal::new();
-    let (init_tx, mut init_rx) = mpsc::unbounded_channel();
+    let (init_tx, mut init_rx) = unbounded_channel();
     *CALLBACKS.lock().unwrap() = Some(Callbacks {
         init_tx,
         evt_tx: hal.evt_tx,
@@ -36,7 +35,7 @@ async fn provide_hidl_hal(rt: Arc<Runtime>) -> HalExports {
 #[cxx::bridge(namespace = bluetooth::hal)]
 mod ffi {
     extern "C" {
-        include!("src/hidl/interop.h");
+        include!("src/ffi/hidl.h");
         fn start_hal();
         fn stop_hal();
         fn send_command(data: &[u8]);
@@ -53,9 +52,9 @@ mod ffi {
 }
 
 struct Callbacks {
-    init_tx: mpsc::UnboundedSender<()>,
-    evt_tx: mpsc::UnboundedSender<HciEvent>,
-    acl_tx: mpsc::UnboundedSender<RawPacket>,
+    init_tx: UnboundedSender<()>,
+    evt_tx: UnboundedSender<EventPacket>,
+    acl_tx: UnboundedSender<AclPacket>,
 }
 
 lazy_static! {
@@ -73,7 +72,7 @@ fn on_event(data: &[u8]) {
         .as_ref()
         .unwrap()
         .evt_tx
-        .send(Bytes::copy_from_slice(data))
+        .send(EventPacket::parse(data).unwrap())
         .unwrap();
 }
 
@@ -83,20 +82,20 @@ fn on_acl(data: &[u8]) {
         .as_ref()
         .unwrap()
         .acl_tx
-        .send(Bytes::copy_from_slice(data))
+        .send(AclPacket::parse(data).unwrap())
         .unwrap();
 }
 
 fn on_sco(_data: &[u8]) {}
 
 async fn dispatch_outgoing(
-    mut cmd_rx: mpsc::UnboundedReceiver<HciCommand>,
-    mut acl_rx: mpsc::UnboundedReceiver<RawPacket>,
+    mut cmd_rx: UnboundedReceiver<CommandPacket>,
+    mut acl_rx: UnboundedReceiver<AclPacket>,
 ) {
     loop {
         select! {
-            Some(cmd) = cmd_rx.recv() => ffi::send_command(&cmd),
-            Some(acl) = acl_rx.recv() => ffi::send_acl(&acl),
+            Some(cmd) = cmd_rx.recv() => ffi::send_command(&cmd.to_bytes()),
+            Some(acl) = acl_rx.recv() => ffi::send_acl(&acl.to_bytes()),
             else => break,
         }
     }

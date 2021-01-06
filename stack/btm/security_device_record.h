@@ -18,9 +18,12 @@
 
 #pragma once
 
+#include <base/strings/stringprintf.h>
 #include <cstdint>
+#include <string>
 
 #include "gd/crypto_toolbox/crypto_toolbox.h"
+#include "main/shim/dumpsys.h"
 #include "osi/include/alarm.h"
 #include "stack/include/btm_api_types.h"
 #include "types/raw_address.h"
@@ -180,8 +183,8 @@ typedef struct {
                                uint8_t pin_len, uint8_t* p_pin);
   friend void btm_sec_auth_complete(uint16_t handle, tHCI_STATUS status);
   friend void btm_sec_connected(const RawAddress& bda, uint16_t handle,
-                                uint8_t status, uint8_t enc_mode);
-  friend void btm_sec_encrypt_change(uint16_t handle, uint8_t status,
+                                tHCI_STATUS status, uint8_t enc_mode);
+  friend void btm_sec_encrypt_change(uint16_t handle, tHCI_STATUS status,
                                      uint8_t encr_enable);
   friend void btm_sec_link_key_notification(const RawAddress& p_bda,
                                             const Octet16& link_key,
@@ -354,5 +357,12 @@ typedef struct {
 
   tBTM_SEC_BLE ble;
   tBTM_LE_CONN_PRAMS conn_params;
+
+  std::string ToString() const {
+    return base::StringPrintf(
+        "%s %6s name:\"%s\" supports_SC:%s", PRIVATE_ADDRESS(bd_addr),
+        DeviceTypeText(device_type).c_str(), sec_bd_name,
+        logbool(remote_supports_secure_connections).c_str());
+  }
 
 } tBTM_SEC_DEV_REC;
