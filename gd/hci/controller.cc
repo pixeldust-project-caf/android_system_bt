@@ -35,15 +35,18 @@ struct Controller::impl {
   void Start(hci::HciLayer* hci) {
     hci_ = hci;
     Handler* handler = module_.GetHandler();
-    if (common::InitFlags::GdAclEnabled() || common::InitFlags::GdL2capEnabled()) {
+    if (common::init_flags::gd_acl_is_enabled() || common::init_flags::gd_l2cap_is_enabled()) {
       hci_->RegisterEventHandler(
           EventCode::NUMBER_OF_COMPLETED_PACKETS, handler->BindOn(this, &Controller::impl::NumberOfCompletedPackets));
     }
 
     le_set_event_mask(kDefaultLeEventMask);
     set_event_mask(kDefaultEventMask);
-    write_simple_pairing_mode(Enable::ENABLED);
     write_le_host_support(Enable::ENABLED);
+    // SSP is managed by security layer once enabled
+    if (!common::init_flags::gd_security_is_enabled()) {
+      write_simple_pairing_mode(Enable::ENABLED);
+    }
     hci_->EnqueueCommand(ReadLocalNameBuilder::Create(),
                          handler->BindOnceOn(this, &Controller::impl::read_local_name_complete_handler));
     hci_->EnqueueCommand(ReadLocalVersionInformationBuilder::Create(),
@@ -133,13 +136,13 @@ struct Controller::impl {
   }
 
   void Stop() {
-    if (bluetooth::common::InitFlags::GdCoreEnabled()) {
+    if (bluetooth::common::init_flags::gd_core_is_enabled()) {
       hci_->UnregisterEventHandler(EventCode::NUMBER_OF_COMPLETED_PACKETS);
     }
     hci_ = nullptr;
   }
 
-  void NumberOfCompletedPackets(EventPacketView event) {
+  void NumberOfCompletedPackets(EventView event) {
     if (acl_credits_callback_.IsEmpty()) {
       LOG_WARN("Received event when AclManager is not listening");
       return;
@@ -442,18 +445,18 @@ struct Controller::impl {
                                                 this, &Controller::impl::check_status<SetEventMaskCompleteView>));
   }
 
-  void write_simple_pairing_mode(Enable enable) {
-    std::unique_ptr<WriteSimplePairingModeBuilder> packet = WriteSimplePairingModeBuilder::Create(enable);
-    hci_->EnqueueCommand(
-        std::move(packet),
-        module_.GetHandler()->BindOnceOn(this, &Controller::impl::check_status<WriteSimplePairingModeCompleteView>));
-  }
-
   void write_le_host_support(Enable enable) {
     std::unique_ptr<WriteLeHostSupportBuilder> packet = WriteLeHostSupportBuilder::Create(enable);
     hci_->EnqueueCommand(
         std::move(packet),
         module_.GetHandler()->BindOnceOn(this, &Controller::impl::check_status<WriteLeHostSupportCompleteView>));
+  }
+
+  void write_simple_pairing_mode(Enable enable) {
+    std::unique_ptr<WriteSimplePairingModeBuilder> packet = WriteSimplePairingModeBuilder::Create(enable);
+    hci_->EnqueueCommand(
+        std::move(packet),
+        module_.GetHandler()->BindOnceOn(this, &Controller::impl::check_status<WriteSimplePairingModeCompleteView>));
   }
 
   void reset() {

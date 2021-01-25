@@ -25,6 +25,14 @@
 namespace bluetooth {
 namespace hci {
 
+class PeriodicAdvertisingParameters {
+ public:
+  uint16_t min_interval;
+  uint16_t max_interval;
+  uint16_t properties;
+  enum AdvertisingProperty { INCLUDE_TX_POWER = 0x06 };
+};
+
 class AdvertisingConfig {
  public:
   std::vector<GapData> advertisement;
@@ -54,17 +62,10 @@ class ExtendedAdvertisingConfig : public AdvertisingConfig {
   SecondaryPhyType secondary_advertising_phy;
   uint8_t sid = 0x00;
   Enable enable_scan_request_notifications = Enable::DISABLED;
+  std::vector<GapData> periodic_data;
+  PeriodicAdvertisingParameters periodic_advertising_parameters;
   ExtendedAdvertisingConfig() = default;
   ExtendedAdvertisingConfig(const AdvertisingConfig& config);
-};
-
-class PeriodicAdvertisingParameters {
- public:
-  uint16_t min_interval;
-  uint16_t max_interval;
-  uint16_t properties;
-
-  enum AdvertisingProperty { INCLUDE_TX_POWER = 0x06 };
 };
 
 using AdvertiserId = uint8_t;
@@ -108,13 +109,16 @@ class LeAdvertisingManager : public bluetooth::Module {
       const ExtendedAdvertisingConfig config,
       const common::Callback<void(Address, AddressType)>& scan_callback,
       const common::Callback<void(ErrorCode, uint8_t, uint8_t)>& set_terminated_callback,
+      uint16_t duration,
+      uint8_t max_extended_advertising_events,
       os::Handler* handler);
 
   void SetParameters(AdvertiserId advertiser_id, ExtendedAdvertisingConfig config);
 
   void SetData(AdvertiserId advertiser_id, bool set_scan_rsp, std::vector<GapData> data);
 
-  void EnableAdvertiser(AdvertiserId advertiser_id, bool enable, uint16_t duration, uint8_t maxExtAdvEvents);
+  void EnableAdvertiser(
+      AdvertiserId advertiser_id, bool enable, uint16_t duration, uint8_t max_extended_advertising_events);
 
   void SetPeriodicParameters(AdvertiserId advertiser_id, PeriodicAdvertisingParameters periodic_advertising_parameters);
 

@@ -49,7 +49,7 @@ class LeAclManagerFacadeService : public LeAclManagerFacade::Service, public LeC
     acl_manager_->RegisterLeCallbacks(this, facade_handler_);
   }
 
-  ~LeAclManagerFacadeService() override {
+  ~LeAclManagerFacadeService() {
     std::unique_lock<std::mutex> lock(acl_connections_mutex_);
     for (auto& conn : acl_connections_) {
       if (conn.second.connection_ != nullptr) {
@@ -120,8 +120,8 @@ class LeAclManagerFacadeService : public LeAclManagerFacade::Service, public LeC
       ::grpc::ServerContext* context,
       const LeConnectionCommandMsg* request,
       ::google::protobuf::Empty* response) override {
-    auto command_view = ConnectionManagementCommandView::Create(
-        AclCommandView::Create(CommandPacketView::Create(PacketView<kLittleEndian>(
+    auto command_view =
+        ConnectionManagementCommandView::Create(AclCommandView::Create(CommandView::Create(PacketView<kLittleEndian>(
             std::make_shared<std::vector<uint8_t>>(request->packet().begin(), request->packet().end())))));
     if (!command_view.IsValid()) {
       return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid command packet");

@@ -1,12 +1,13 @@
 rust_library {
     name: "libbt_hci",
+    defaults: ["gd_rust_defaults"],
     crate_name: "bt_hci",
     srcs: ["src/lib.rs"],
     edition: "2018",
     rustlibs: [
         "libbt_hal",
-        "libbt_hci_proto",
-        "libbt_packet",
+        "libbt_facade_proto",
+        "libbt_packets",
         "libbytes",
         "libfutures",
         "libgrpcio",
@@ -16,9 +17,9 @@ rust_library {
         "libprotobuf",
         "libgddi",
         "liblog_rust",
+        "libbt_common",
     ],
     proc_macros: [
         "libnum_derive",
     ],
-    host_supported: true,
 }
