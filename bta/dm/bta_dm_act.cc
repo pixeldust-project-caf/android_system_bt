@@ -44,6 +44,7 @@
 #include "stack/gatt/connection_manager.h"
 #include "stack/include/acl_api.h"
 #include "stack/include/bt_types.h"
+#include "stack/include/btm_client_interface.h"
 #include "stack/include/btu.h"
 #include "types/raw_address.h"
 
@@ -310,21 +311,21 @@ void BTA_dm_on_hw_on() {
   btif_dm_get_ble_local_keys(&key_mask, &er, &id_key);
 
   if (key_mask & BTA_BLE_LOCAL_KEY_TYPE_ER) {
-    BTM_BleLoadLocalKeys(BTA_BLE_LOCAL_KEY_TYPE_ER, (tBTM_BLE_LOCAL_KEYS*)&er);
+    get_btm_client_interface().ble.BTM_BleLoadLocalKeys(
+        BTA_BLE_LOCAL_KEY_TYPE_ER, (tBTM_BLE_LOCAL_KEYS*)&er);
   }
   if (key_mask & BTA_BLE_LOCAL_KEY_TYPE_ID) {
-    BTM_BleLoadLocalKeys(BTA_BLE_LOCAL_KEY_TYPE_ID,
-                         (tBTM_BLE_LOCAL_KEYS*)&id_key);
+    get_btm_client_interface().ble.BTM_BleLoadLocalKeys(
+        BTA_BLE_LOCAL_KEY_TYPE_ID, (tBTM_BLE_LOCAL_KEYS*)&id_key);
   }
   bta_dm_search_cb.conn_id = GATT_INVALID_CONN_ID;
 
   if (bluetooth::shim::is_gd_security_enabled()) {
     bluetooth::shim::BTM_SecRegister(&bta_security);
   } else {
-    BTM_SecRegister(&bta_security);
+    get_btm_client_interface().security.BTM_SecRegister(&bta_security);
   }
 
-  BTM_SetDefaultLinkSuperTout(p_bta_dm_cfg->link_timeout);
   BTM_WritePageTimeout(p_bta_dm_cfg->page_timeout);
 
 #if (BLE_VND_INCLUDED == TRUE)
@@ -999,8 +1000,6 @@ void bta_dm_sdp_result(tBTA_DM_MSG* p_data) {
   uint16_t service = 0xFFFF;
   tSDP_PROTOCOL_ELEM pe;
 
-  tBTA_DM_SEARCH result;
-
   std::vector<Uuid> uuid_list;
 
   if ((p_data->sdp_event.sdp_result == SDP_SUCCESS) ||
@@ -1025,6 +1024,9 @@ void bta_dm_sdp_result(tBTA_DM_MSG* p_data) {
        * service UUID */
       if (bta_dm_search_cb.service_index == BTA_MAX_SERVICE_ID) {
         /* all GATT based services */
+
+        std::vector<Uuid> gatt_uuids;
+
         do {
           /* find a service record, report it */
           p_sdp_rec =
@@ -1032,16 +1034,23 @@ void bta_dm_sdp_result(tBTA_DM_MSG* p_data) {
           if (p_sdp_rec) {
             Uuid service_uuid;
             if (SDP_FindServiceUUIDInRec(p_sdp_rec, &service_uuid)) {
-              /* send result back to app now, one by one */
-              result.disc_ble_res.bd_addr = bta_dm_search_cb.peer_bdaddr;
-              strlcpy((char*)result.disc_ble_res.bd_name, bta_dm_get_remname(),
-                      BD_NAME_LEN + 1);
-
-              result.disc_ble_res.service = service_uuid;
-              bta_dm_search_cb.p_search_cback(BTA_DM_DISC_BLE_RES_EVT, &result);
+              gatt_uuids.push_back(service_uuid);
             }
           }
         } while (p_sdp_rec);
+
+        if (!gatt_uuids.empty()) {
+          LOG_INFO("GATT services discovered using SDP");
+
+          // send all result back to app
+          tBTA_DM_SEARCH result;
+          result.disc_ble_res.bd_addr = bta_dm_search_cb.peer_bdaddr;
+          strlcpy((char*)result.disc_ble_res.bd_name, bta_dm_get_remname(),
+                  BD_NAME_LEN + 1);
+
+          result.disc_ble_res.services = &gatt_uuids;
+          bta_dm_search_cb.p_search_cback(BTA_DM_DISC_BLE_RES_EVT, &result);
+        }
       } else {
         /* SDP_DB_FULL means some records with the
            required attributes were received */
@@ -1194,7 +1203,46 @@ void bta_dm_sdp_result(tBTA_DM_MSG* p_data) {
  ******************************************************************************/
 void bta_dm_search_cmpl() {
   bta_dm_search_set_state(BTA_DM_SEARCH_IDLE);
-  bta_dm_search_cb.p_search_cback(BTA_DM_DISC_CMPL_EVT, NULL);
+
+  uint16_t conn_id = bta_dm_search_cb.conn_id;
+
+  /* no BLE connection, i.e. Classic service discovery end */
+  if (conn_id == GATT_INVALID_CONN_ID) {
+    bta_dm_search_cb.p_search_cback(BTA_DM_DISC_CMPL_EVT, nullptr);
+    return;
+  }
+
+  btgatt_db_element_t* db = NULL;
+  int count = 0;
+  BTA_GATTC_GetGattDb(conn_id, 0x0000, 0xFFFF, &db, &count);
+
+  if (count == 0) {
+    LOG_INFO("Empty GATT database - no BLE services discovered");
+    bta_dm_search_cb.p_search_cback(BTA_DM_DISC_CMPL_EVT, nullptr);
+    return;
+  }
+
+  std::vector<Uuid> gatt_services;
+
+  for (int i = 0; i < count; i++) {
+    // we process service entries only
+    if (db[i].type == BTGATT_DB_PRIMARY_SERVICE) {
+      gatt_services.push_back(db[i].uuid);
+    }
+  }
+  osi_free(db);
+
+  tBTA_DM_SEARCH result;
+  result.disc_ble_res.services = &gatt_services;
+  result.disc_ble_res.bd_addr = bta_dm_search_cb.peer_bdaddr;
+  strlcpy((char*)result.disc_ble_res.bd_name, (char*)bta_dm_search_cb.peer_name,
+          BD_NAME_LEN + 1);
+
+  LOG_INFO("GATT services discovered using LE Transport");
+  // send all result back to app
+  bta_dm_search_cb.p_search_cback(BTA_DM_DISC_BLE_RES_EVT, &result);
+
+  bta_dm_search_cb.p_search_cback(BTA_DM_DISC_CMPL_EVT, nullptr);
 }
 
 /*******************************************************************************
@@ -2134,7 +2182,7 @@ static void bta_dm_local_name_cback(UNUSED_ATTR void* p_name) {
 }
 
 static void handle_role_change(const RawAddress& bd_addr, uint8_t new_role,
-                               uint8_t hci_status) {
+                               tHCI_STATUS hci_status) {
   tBTA_DM_PEER_DEVICE* p_dev = bta_dm_find_peer_device(bd_addr);
   if (!p_dev) {
     LOG_WARN(
@@ -2181,7 +2229,7 @@ static void handle_role_change(const RawAddress& bd_addr, uint8_t new_role,
 }
 
 void BTA_dm_report_role_change(const RawAddress bd_addr, uint8_t new_role,
-                               uint8_t hci_status) {
+                               tHCI_STATUS hci_status) {
   do_in_main_thread(
       FROM_HERE, base::Bind(handle_role_change, bd_addr, new_role, hci_status));
 }
@@ -3520,10 +3568,12 @@ void bta_dm_ble_observe(bool start, uint8_t duration,
 }
 
 /** This function set the maximum transmission packet size */
-void bta_dm_ble_set_data_length(const RawAddress& bd_addr,
-                                uint16_t tx_data_length) {
-  if (BTM_SetBleDataLength(bd_addr, tx_data_length) != BTM_SUCCESS) {
-    LOG_INFO("Unable to set ble data length:%hu", tx_data_length);
+void bta_dm_ble_set_data_length(const RawAddress& bd_addr) {
+  const controller_t* controller = controller_get_interface();
+  uint16_t max_len = controller->get_ble_maximum_tx_data_length();
+
+  if (BTM_SetBleDataLength(bd_addr, max_len) != BTM_SUCCESS) {
+    LOG_INFO("Unable to set ble data length:%hu", max_len);
   }
 }
 
@@ -3585,37 +3635,6 @@ static void bta_dm_gattc_register(void) {
                               bta_dm_search_cb.client_if = BTA_GATTS_INVALID_IF;
 
                           }), false);
-  }
-}
-
-/*******************************************************************************
- *
- * Function         bta_dm_gatt_disc_result
- *
- * Description      This function process the GATT service search result.
- *
- * Parameters:
- *
- ******************************************************************************/
-static void bta_dm_gatt_disc_result(tBTA_GATT_ID service_id) {
-  tBTA_DM_SEARCH result;
-
-  /*
-   * This logic will not work for gatt case.  We are checking against the
-   * bluetooth profiles here
-   * just copy the GATTID in raw data field and send it across.
-   */
-
-  LOG_INFO("%s service_id_uuid_len=%zu", __func__,
-           service_id.uuid.GetShortestRepresentationSize());
-  if (bta_dm_search_cb.state != BTA_DM_SEARCH_IDLE) {
-    /* send result back to app now, one by one */
-    result.disc_ble_res.bd_addr = bta_dm_search_cb.peer_bdaddr;
-    strlcpy((char*)result.disc_ble_res.bd_name, bta_dm_get_remname(),
-            BD_NAME_LEN + 1);
-    result.disc_ble_res.service = service_id.uuid;
-
-    bta_dm_search_cb.p_search_cback(BTA_DM_DISC_BLE_RES_EVT, &result);
   }
 }
 
@@ -3698,11 +3717,9 @@ void btm_dm_start_gatt_discovery(const RawAddress& bd_addr) {
     BTA_GATTC_ServiceSearchRequest(bta_dm_search_cb.conn_id, nullptr);
   } else {
     if (BTM_IsAclConnectionUp(bd_addr, BT_TRANSPORT_LE)) {
-      BTA_GATTC_Open(bta_dm_search_cb.client_if, bd_addr, true, BT_TRANSPORT_LE,
-                     true);
+      BTA_GATTC_Open(bta_dm_search_cb.client_if, bd_addr, true, true);
     } else {
-      BTA_GATTC_Open(bta_dm_search_cb.client_if, bd_addr, true, BT_TRANSPORT_LE,
-                     false);
+      BTA_GATTC_Open(bta_dm_search_cb.client_if, bd_addr, true, false);
     }
   }
 }
@@ -3768,7 +3785,6 @@ static void bta_dm_gattc_callback(tBTA_GATTC_EVT event, tBTA_GATTC* p_data) {
       break;
 
     case BTA_GATTC_SEARCH_RES_EVT:
-      bta_dm_gatt_disc_result(p_data->srvc_res.service_uuid);
       break;
 
     case BTA_GATTC_SEARCH_CMPL_EVT:

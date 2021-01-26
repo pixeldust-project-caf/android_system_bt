@@ -30,7 +30,6 @@
 #include "btm_iso_api.h"
 #include "common/message_loop_thread.h"
 #include "osi/include/osi.h"
-#include "stack/btm/btm_int.h"
 #include "stack/include/acl_hci_link_interface.h"
 #include "stack/include/btu.h"
 
@@ -47,7 +46,7 @@ void btm_route_sco_data(BT_HDR* p_msg);
 /* Define BTU storage area */
 uint8_t btu_trace_level = HCI_INITIAL_TRACE_LEVEL;
 
-static MessageLoopThread main_thread("bt_main_thread");
+static MessageLoopThread main_thread("bt_main_thread", true);
 
 void btu_hci_msg_process(BT_HDR* p_msg) {
   /* Determine the input message type. */
@@ -88,10 +87,6 @@ void btu_hci_msg_process(BT_HDR* p_msg) {
 
 bluetooth::common::MessageLoopThread* get_main_thread() { return &main_thread; }
 
-base::MessageLoop* get_main_message_loop() {
-  return main_thread.message_loop();
-}
-
 bt_status_t do_in_main_thread(const base::Location& from_here,
                               base::OnceClosure task) {
   if (!main_thread.DoInThread(from_here, std::move(task))) {
@@ -104,8 +99,7 @@ bt_status_t do_in_main_thread(const base::Location& from_here,
 bt_status_t do_in_main_thread_delayed(const base::Location& from_here,
                                       base::OnceClosure task,
                                       const base::TimeDelta& delay) {
-  if (!get_main_message_loop()->task_runner()->PostDelayedTask(
-          from_here, std::move(task), delay)) {
+  if (!main_thread.DoInThreadDelayed(from_here, std::move(task), delay)) {
     LOG(ERROR) << __func__ << ": failed from " << from_here.ToString();
     return BT_STATUS_FAIL;
   }

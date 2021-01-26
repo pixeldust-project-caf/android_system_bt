@@ -29,7 +29,6 @@ extern std::map<std::string, int> mock_function_count_map;
 #include <string.h>
 #include "bt_common.h"
 #include "bt_target.h"
-#include "btm_int.h"
 #include "btu.h"
 #include "hcidefs.h"
 #include "hcimsgs.h"
@@ -296,6 +295,7 @@ void btsnd_hcic_write_voice_settings(uint16_t flags) {
 
 bluetooth::legacy::hci::Interface interface_ = {
     .Disconnect = btsnd_hcic_disconnect,
+    .StartRoleSwitch = btsnd_hcic_switch_role,
 };
 
 const bluetooth::legacy::hci::Interface&

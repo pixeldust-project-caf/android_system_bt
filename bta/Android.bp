@@ -21,6 +21,7 @@ cc_defaults {
         "system/bt/udrv/include",
         "system/bt/vnd/include",
         "system/bt/utils/include",
+        "system/bt/gd/rust/shim",
     ],
     shared_libs: [
         "libcutils",
@@ -121,6 +122,7 @@ cc_test {
     srcs: [
         "test/bta_hf_client_test.cc",
         "test/bta_dm_cust_uuid_test.cc",
+        "test/bta_dip_test.cc",
         "test/gatt/database_builder_test.cc",
         "test/gatt/database_builder_sample_device_test.cc",
         "test/gatt/database_test.cc",
