@@ -14,21 +14,23 @@
  * limitations under the License.
  */
 
-#pragma once
+/*
+ * Generated mock file from original source file
+ *   Functions generated:5
+ */
 
-#include "hci/hci_packets.h"
+#include <map>
+#include <string>
 
-namespace bluetooth {
-namespace hci {
-namespace acl_manager {
+extern std::map<std::string, int> mock_function_count_map;
 
-class DisconnectorForLe {
- public:
-  DisconnectorForLe() = default;
-  virtual ~DisconnectorForLe() = default;
-  virtual void handle_disconnect(uint16_t handle, DisconnectReason reason) = 0;
-};
+#include "main/shim/controller.h"
 
-}  // namespace acl_manager
-}  // namespace hci
-}  // namespace bluetooth
+#ifndef UNUSED_ATTR
+#define UNUSED_ATTR
+#endif
+
+const controller_t* bluetooth::shim::controller_get_interface() {
+  mock_function_count_map[__func__]++;
+  return nullptr;
+}

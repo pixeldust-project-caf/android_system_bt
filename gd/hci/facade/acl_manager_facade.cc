@@ -114,8 +114,9 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
       ::grpc::ServerContext* context,
       const ConnectionCommandMsg* request,
       ::google::protobuf::Empty* response) override {
-    auto command_view = ConnectionManagementCommandView::Create(CommandPacketView::Create(PacketView<kLittleEndian>(
-        std::make_shared<std::vector<uint8_t>>(request->packet().begin(), request->packet().end()))));
+    auto command_view = ConnectionManagementCommandView::Create(
+        AclCommandView::Create(CommandPacketView::Create(PacketView<kLittleEndian>(
+            std::make_shared<std::vector<uint8_t>>(request->packet().begin(), request->packet().end())))));
     if (!command_view.IsValid()) {
       return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid command packet");
     }
@@ -352,7 +353,7 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
     std::unique_ptr<BasePacketBuilder> builder =
         ConnectionCompleteBuilder::Create(ErrorCode::SUCCESS, handle, addr, LinkType::ACL, Enable::DISABLED);
     ConnectionEvent success;
-    success.set_event(builder_to_string(std::move(builder)));
+    success.set_payload(builder_to_string(std::move(builder)));
     per_connection_events_[current_connection_request_]->OnIncomingEvent(success);
     current_connection_request_++;
   }
@@ -361,7 +362,7 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
     std::unique_ptr<BasePacketBuilder> builder =
         ConnectionCompleteBuilder::Create(reason, 0, address, LinkType::ACL, Enable::DISABLED);
     ConnectionEvent fail;
-    fail.set_event(builder_to_string(std::move(builder)));
+    fail.set_payload(builder_to_string(std::move(builder)));
     per_connection_events_[current_connection_request_]->OnIncomingEvent(fail);
     current_connection_request_++;
   }
@@ -492,7 +493,7 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
       std::unique_ptr<BasePacketBuilder> builder =
           DisconnectionCompleteBuilder::Create(ErrorCode::SUCCESS, handle_, reason);
       ConnectionEvent disconnection;
-      disconnection.set_event(builder_to_string(std::move(builder)));
+      disconnection.set_payload(builder_to_string(std::move(builder)));
       event_stream_->OnIncomingEvent(disconnection);
     }
     void OnReadRemoteVersionInformationComplete(

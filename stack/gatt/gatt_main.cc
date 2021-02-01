@@ -32,11 +32,11 @@
 #include "connection_manager.h"
 #include "device/include/interop.h"
 #include "eatt.h"
-#include "gatt_int.h"
 #include "l2c_api.h"
 #include "osi/include/osi.h"
 #include "stack/btm/btm_dev.h"
 #include "stack/btm/btm_sec.h"
+#include "stack/gatt/gatt_int.h"
 #include "stack/include/l2cap_acl_interface.h"
 
 using base::StringPrintf;
@@ -969,7 +969,7 @@ void gatt_set_ch_state(tGATT_TCB* p_tcb, tGATT_CH_STATE ch_state) {
   if (!p_tcb) return;
 
   VLOG(1) << __func__ << ": old=" << +p_tcb->ch_state
-          << " new=" << loghex(ch_state);
+          << " new=" << loghex(static_cast<uint8_t>(ch_state));
   p_tcb->ch_state = ch_state;
 }
 

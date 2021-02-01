@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 
+#include "common/init_flags.h"
 #include "os/log.h"
 #include "packet/raw_builder.h"
 
@@ -271,6 +272,7 @@ TEST_F(LeAddressManagerTest, DISABLED_rotator_address_for_multiple_clients) {
 class LeAddressManagerWithSingleClientTest : public LeAddressManagerTest {
  public:
   void SetUp() override {
+    bluetooth::common::InitFlags::SetAllForTesting();
     thread_ = new Thread("thread", Thread::Priority::NORMAL);
     handler_ = new Handler(thread_);
     test_hci_layer_ = new TestHciLayer;
@@ -324,7 +326,8 @@ TEST_F(LeAddressManagerWithSingleClientTest, add_device_to_connect_list) {
   test_hci_layer_->SetCommandFuture();
   le_address_manager_->AddDeviceToConnectList(ConnectListAddressType::RANDOM, address);
   auto packet = test_hci_layer_->GetCommandPacket(OpCode::LE_ADD_DEVICE_TO_CONNECT_LIST);
-  auto packet_view = LeAddDeviceToConnectListView::Create(LeConnectionManagementCommandView::Create(packet));
+  auto packet_view =
+      LeAddDeviceToConnectListView::Create(LeConnectionManagementCommandView::Create(AclCommandView::Create(packet)));
   ASSERT_TRUE(packet_view.IsValid());
   ASSERT_EQ(ConnectListAddressType::RANDOM, packet_view.GetAddressType());
   ASSERT_EQ(address, packet_view.GetAddress());
@@ -344,7 +347,8 @@ TEST_F(LeAddressManagerWithSingleClientTest, remove_device_from_connect_list) {
   test_hci_layer_->SetCommandFuture();
   le_address_manager_->RemoveDeviceFromConnectList(ConnectListAddressType::RANDOM, address);
   auto packet = test_hci_layer_->GetCommandPacket(OpCode::LE_REMOVE_DEVICE_FROM_CONNECT_LIST);
-  auto packet_view = LeRemoveDeviceFromConnectListView::Create(LeConnectionManagementCommandView::Create(packet));
+  auto packet_view = LeRemoveDeviceFromConnectListView::Create(
+      LeConnectionManagementCommandView::Create(AclCommandView::Create(packet)));
   ASSERT_TRUE(packet_view.IsValid());
   ASSERT_EQ(ConnectListAddressType::RANDOM, packet_view.GetAddressType());
   ASSERT_EQ(address, packet_view.GetAddress());
@@ -435,7 +439,8 @@ TEST_F(LeAddressManagerWithSingleClientTest, register_during_command_complete) {
   test_hci_layer_->SetCommandFuture();
   le_address_manager_->AddDeviceToConnectList(ConnectListAddressType::RANDOM, address);
   auto packet = test_hci_layer_->GetCommandPacket(OpCode::LE_ADD_DEVICE_TO_CONNECT_LIST);
-  auto packet_view = LeAddDeviceToConnectListView::Create(LeConnectionManagementCommandView::Create(packet));
+  auto packet_view =
+      LeAddDeviceToConnectListView::Create(LeConnectionManagementCommandView::Create(AclCommandView::Create(packet)));
   ASSERT_TRUE(packet_view.IsValid());
   ASSERT_EQ(ConnectListAddressType::RANDOM, packet_view.GetAddressType());
   ASSERT_EQ(address, packet_view.GetAddress());

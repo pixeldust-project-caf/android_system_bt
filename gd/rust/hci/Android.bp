@@ -14,6 +14,8 @@ rust_library {
         "libthiserror",
         "libtokio",
         "libprotobuf",
+        "libgddi",
+        "liblog_rust",
     ],
     proc_macros: [
         "libnum_derive",

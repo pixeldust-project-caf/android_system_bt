@@ -18,7 +18,6 @@
 
 #include "common/bind.h"
 #include "hci/acl_manager/assembler.h"
-#include "hci/acl_manager/disconnector_for_le.h"
 #include "hci/acl_manager/event_checkers.h"
 #include "hci/acl_manager/round_robin_scheduler.h"
 #include "hci/controller.h"
@@ -38,7 +37,7 @@ struct acl_connection {
   ConnectionManagementCallbacks* connection_management_callbacks_ = nullptr;
 };
 
-struct classic_impl : public DisconnectorForLe, public security::ISecurityManagerListener {
+struct classic_impl : public security::ISecurityManagerListener {
   classic_impl(HciLayer* hci_layer, Controller* controller, os::Handler* handler,
                RoundRobinScheduler* round_robin_scheduler)
       : hci_layer_(hci_layer), controller_(controller), round_robin_scheduler_(round_robin_scheduler) {
@@ -191,9 +190,11 @@ struct classic_impl : public DisconnectorForLe, public security::ISecurityManage
     auto status = connection_complete.GetStatus();
     auto address = connection_complete.GetBdAddr();
     Role current_role = Role::CENTRAL;
+    bool locally_initiated = true;
     if (outgoing_connecting_address_ == address) {
       outgoing_connecting_address_ = Address::kEmpty;
     } else {
+      locally_initiated = false;
       ASSERT_LOG(incoming_connecting_address_ == address, "No prior connection request for %s",
                  address.ToString().c_str());
       incoming_connecting_address_ = Address::kEmpty;
@@ -213,6 +214,7 @@ struct classic_impl : public DisconnectorForLe, public security::ISecurityManage
     round_robin_scheduler_->Register(RoundRobinScheduler::ConnectionType::CLASSIC, handle, queue);
     std::unique_ptr<ClassicAclConnection> connection(
         new ClassicAclConnection(std::move(queue), acl_connection_interface_, handle, address));
+    connection->locally_initiated_ = locally_initiated;
     auto& connection_proxy = check_and_get_connection(handle);
     connection_proxy.connection_management_callbacks_ = connection->GetEventCallbacks();
     connection_proxy.connection_management_callbacks_->OnRoleChange(current_role);
@@ -244,10 +246,7 @@ struct classic_impl : public DisconnectorForLe, public security::ISecurityManage
       LOG_ERROR("Received on_connection_packet_type_changed with error code %s", error_code.c_str());
       return;
     }
-    uint16_t handle = packet_type_changed.GetConnectionHandle();
-    auto& acl_connection = acl_connections_.find(handle)->second;
-    uint16_t packet_type = packet_type_changed.GetPacketType();
-    acl_connection.connection_management_callbacks_->OnConnectionPacketTypeChanged(packet_type);
+    // We don't handle this event; we didn't do this in legacy stack either.
   }
 
   void on_central_link_key_complete(EventPacketView packet) {

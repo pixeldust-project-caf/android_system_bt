@@ -41,7 +41,8 @@ namespace shim {
  ******************************************************************************/
 uint16_t L2CA_Register(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info,
                        bool enable_snoop, tL2CAP_ERTM_INFO* p_ertm_info,
-                       uint16_t my_mtu, uint16_t required_remote_mtu);
+                       uint16_t my_mtu, uint16_t required_remote_mtu,
+                       uint16_t sec_level);
 
 /*******************************************************************************
  *
@@ -54,18 +55,6 @@ uint16_t L2CA_Register(uint16_t psm, const tL2CAP_APPL_INFO& p_cb_info,
  *
  ******************************************************************************/
 void L2CA_Deregister(uint16_t psm);
-
-/*******************************************************************************
- *
- * Function         L2CA_AllocatePSM
- *
- * Description      Other layers call this function to find an unused PSM for
- *                  L2CAP services.
- *
- * Returns          PSM to use.
- *
- ******************************************************************************/
-uint16_t L2CA_AllocatePSM(void);
 
 /*******************************************************************************
  *
@@ -371,8 +360,6 @@ bool L2CA_RegisterFixedChannel(uint16_t fixed_cid,
  *
  ******************************************************************************/
 bool L2CA_ConnectFixedChnl(uint16_t fixed_cid, const RawAddress& bd_addr);
-bool L2CA_ConnectFixedChnl(uint16_t fixed_cid, const RawAddress& bd_addr,
-                           uint8_t initiating_phys);
 
 /*******************************************************************************
  *
@@ -514,6 +501,15 @@ void L2CA_SetBondingState(const RawAddress& p_bd_addr, bool is_bonding);
 
 // Indicated by shim stack manager that GD L2cap is enabled but Security is not
 void L2CA_UseLegacySecurityModule();
+
+void L2CA_SwitchRoleToCentral(const RawAddress& addr);
+
+bool L2CA_ReadRemoteVersion(const RawAddress& addr, uint8_t* lmp_version,
+                            uint16_t* manufacturer, uint16_t* lmp_sub_version);
+
+void L2CA_DisconnectLink(const RawAddress& remote);
+
+uint16_t L2CA_GetNumLinks();
 
 }  // namespace shim
 }  // namespace bluetooth

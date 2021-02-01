@@ -448,6 +448,28 @@ genrule {
     ],
 }
 
+genrule {
+    name: "BluetoothGeneratedPackets_rust",
+    tools: [
+        "bluetooth_packetgen",
+    ],
+    cmd: "$(location bluetooth_packetgen) --include=system/bt/gd --out=$(genDir) $(in) --rust",
+    srcs: [
+        "hci/hci_packets.pdl",
+    ],
+    out: [
+        "hci/hci_packets.rs",
+    ],
+}
+
+rust_library {
+    name: "libbt_packets",
+    crate_name: "bt_packets",
+    srcs: ["rust/packets/lib.rs", ":BluetoothGeneratedPackets_rust"],
+    edition: "2018",
+    host_supported: true,
+}
+
 // Generates binary schema data to be bundled and source file generated
 genrule {
     name: "BluetoothGeneratedDumpsysBinarySchema_bfbs",
@@ -458,6 +480,7 @@ genrule {
     srcs: [
         "common/init_flags.fbs",
         "dumpsys_data.fbs",
+        "hci/hci_acl_manager.fbs",
         "l2cap/classic/l2cap_classic_module.fbs",
         "shim/dumpsys.fbs",
     ],
@@ -465,6 +488,7 @@ genrule {
         "init_flags.bfbs",
         "dumpsys.bfbs",
         "dumpsys_data.bfbs",
+        "hci_acl_manager.bfbs",
         "l2cap_classic_module.bfbs",
     ],
 }
@@ -478,12 +502,14 @@ genrule {
     srcs: [
         "common/init_flags.fbs",
         "dumpsys_data.fbs",
+        "hci/hci_acl_manager.fbs",
         "l2cap/classic/l2cap_classic_module.fbs",
         "shim/dumpsys.fbs",
     ],
     out: [
         "dumpsys_data_generated.h",
         "dumpsys_generated.h",
+        "hci_acl_manager_generated.h",
         "init_flags_generated.h",
         "l2cap_classic_module_generated.h",
     ],
@@ -766,7 +792,7 @@ cc_library_host_shared {
 rust_grpcio {
     name: "libbt_hci_proto",
     crate_name: "bt_hci_proto",
-    proto: "hci/facade/facade.proto",
+    protos: ["hci/facade/facade.proto"],
     source_stem: "facade",
     host_supported: true,
 }
@@ -774,7 +800,7 @@ rust_grpcio {
 rust_grpcio {
     name: "libbt_hal_proto",
     crate_name: "bt_hal_proto",
-    proto: "hal/facade.proto",
+    protos: ["hal/facade.proto"],
     source_stem: "facade",
     host_supported: true,
 }
@@ -782,16 +808,16 @@ rust_grpcio {
 rust_protobuf {
     name: "libbt_facade_rootservice_proto",
     crate_name: "bt_facade_rootservice_proto",
-    proto: "facade/rootservice.proto",
-    proto_flags: ["-Iexternal/protobuf/src/"],
+    protos: ["facade/rootservice.proto"],
     source_stem: "rootservice",
+    header_libs: ["libprotobuf-cpp-full"],
     host_supported: true,
 }
 
 rust_protobuf {
     name: "libbt_facade_common_proto",
     crate_name: "bt_facade_common_proto",
-    proto: "facade/common.proto",
+    protos: ["facade/common.proto"],
     source_stem: "common",
     host_supported: true,
 }

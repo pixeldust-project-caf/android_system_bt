@@ -334,6 +334,9 @@ class DualModeController : public Device {
   // 7.3.61
   void ReadInquiryResponseTransmitPowerLevel(CommandPacketView args);
 
+  // 7.3.63
+  void SendKeypressNotification(CommandPacketView args);
+
   // 7.3.79
   void WriteLeHostSupport(CommandPacketView args);
 
@@ -399,6 +402,9 @@ class DualModeController : public Device {
 
   // 7.8.5
   void LeSetAdvertisingParameters(CommandPacketView args);
+
+  // 7.8.6
+  void LeReadAdvertisingPhysicalChannelTxPower(CommandPacketView args);
 
   // 7.8.7
   void LeSetAdvertisingData(CommandPacketView args);

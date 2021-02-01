@@ -44,6 +44,7 @@
 #include "include/l2cap_hci_link_interface.h"
 #include "main/shim/acl_api.h"
 #include "main/shim/btm_api.h"
+#include "main/shim/l2c_api.h"
 #include "main/shim/shim.h"
 #include "osi/include/log.h"
 #include "stack/acl/acl.h"
@@ -468,6 +469,10 @@ tBTM_STATUS BTM_GetRole(const RawAddress& remote_bd_addr, uint8_t* p_role) {
  *
  ******************************************************************************/
 tBTM_STATUS BTM_SwitchRoleToCentral(const RawAddress& remote_bd_addr) {
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    bluetooth::shim::L2CA_SwitchRoleToCentral(remote_bd_addr);
+    return BTM_SUCCESS;
+  }
   if (!controller_get_interface()->supports_central_peripheral_role_switch()) {
     LOG_INFO("Local controller does not support role switching");
     return BTM_MODE_UNSUPPORTED;
@@ -624,6 +629,10 @@ static void check_link_policy(uint16_t* settings) {
 static void btm_set_link_policy(tACL_CONN* conn, uint16_t policy) {
   conn->link_policy = policy;
   check_link_policy(&conn->link_policy);
+  if ((conn->link_policy & HCI_ENABLE_CENTRAL_PERIPHERAL_SWITCH) &&
+      interop_match_addr(INTEROP_DISABLE_SNIFF, &(conn->remote_addr))) {
+    conn->link_policy &= (~HCI_ENABLE_SNIFF_MODE);
+  }
   btsnd_hcic_write_policy_set(conn->hci_handle, conn->link_policy);
 }
 
@@ -1117,11 +1126,19 @@ tBTM_STATUS BTM_SetLinkSuperTout(const RawAddress& remote_bda,
 
 bool BTM_IsAclConnectionUp(const RawAddress& remote_bda,
                            tBT_TRANSPORT transport) {
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    return bluetooth::shim::L2CA_IsLinkEstablished(remote_bda, transport);
+  }
+
   return internal_.btm_bda_to_acl(remote_bda, transport) != nullptr;
 }
 
 bool BTM_IsAclConnectionUpAndHandleValid(const RawAddress& remote_bda,
                                          tBT_TRANSPORT transport) {
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    return bluetooth::shim::L2CA_IsLinkEstablished(remote_bda, transport);
+  }
+
   tACL_CONN* p_acl = internal_.btm_bda_to_acl(remote_bda, transport);
   if (p_acl == nullptr) {
     LOG_WARN("Unable to find active acl");
@@ -1145,6 +1162,9 @@ bool BTM_IsAclConnectionUpFromHandle(uint16_t hci_handle) {
  *
  ******************************************************************************/
 uint16_t BTM_GetNumAclLinks(void) {
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    return bluetooth::shim::L2CA_GetNumLinks();
+  }
   uint16_t num_acl = 0;
 
   for (uint16_t i = 0; i < MAX_L2CAP_LINKS; ++i) {
@@ -1192,6 +1212,27 @@ uint16_t BTM_GetHCIConnHandle(const RawAddress& remote_bda,
 
   /* If here, no BD Addr found */
   return HCI_INVALID_HANDLE;
+}
+
+/*******************************************************************************
+ *
+ * Function         BTM_IsPhy2mSupported
+ *
+ * Description      This function is called to check PHY 2M support
+ *                  from peer device
+ * Returns          True when PHY 2M supported false otherwise
+ *
+ ******************************************************************************/
+bool BTM_IsPhy2mSupported(const RawAddress& remote_bda, tBT_TRANSPORT transport) {
+  tACL_CONN* p;
+  BTM_TRACE_DEBUG("BTM_IsPhy2mSupported");
+  p = internal_.btm_bda_to_acl(remote_bda, transport);
+  if (p == (tACL_CONN*)NULL) {
+    BTM_TRACE_DEBUG("BTM_IsPhy2mSupported: no connection");
+    return false;
+  }
+
+  return HCI_LE_2M_PHY_SUPPORTED(p->peer_le_features);
 }
 
 /*******************************************************************************
@@ -1489,8 +1530,20 @@ uint16_t BTM_GetMaxPacketSize(const RawAddress& addr) {
   return (pkt_size);
 }
 
+/*******************************************************************************
+ *
+ * Function         BTM_ReadRemoteVersion
+ *
+ * Returns          If connected report peer device info
+ *
+ ******************************************************************************/
 bool BTM_ReadRemoteVersion(const RawAddress& addr, uint8_t* lmp_version,
                            uint16_t* manufacturer, uint16_t* lmp_sub_version) {
+  if (!bluetooth::shim::is_gd_l2cap_enabled()) {
+    return bluetooth::shim::L2CA_ReadRemoteVersion(
+        addr, lmp_version, manufacturer, lmp_sub_version);
+  }
+
   const tACL_CONN* p_acl = internal_.btm_bda_to_acl(addr, BT_TRANSPORT_BR_EDR);
   if (p_acl == nullptr) {
     p_acl = internal_.btm_bda_to_acl(addr, BT_TRANSPORT_LE);
@@ -2039,6 +2092,13 @@ void btm_read_link_quality_complete(uint8_t* p) {
  *
  ******************************************************************************/
 tBTM_STATUS btm_remove_acl(const RawAddress& bd_addr, tBT_TRANSPORT transport) {
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    if (transport == BT_TRANSPORT_LE) {
+      LOG(ERROR) << __func__ << ": Unsupported";
+    }
+    bluetooth::shim::L2CA_DisconnectLink(bd_addr);
+    return BTM_SUCCESS;
+  }
   uint16_t hci_handle = BTM_GetHCIConnHandle(bd_addr, transport);
   tBTM_STATUS status = BTM_SUCCESS;
   tACL_CONN* p_acl = internal_.btm_bda_to_acl(bd_addr, transport);
@@ -2595,6 +2655,22 @@ void btm_acl_connected(const RawAddress& bda, uint16_t handle,
   btm_sec_connected(bda, handle, status, enc_mode);
   btm_acl_set_paging(false);
   l2c_link_hci_conn_comp(status, handle, bda);
+
+  /*
+   * The legacy code path informs the upper layer via the BTA
+   * layer after all relevant read_remote_ commands are complete.
+   * The GD code path has ownership of the read_remote_ commands
+   * and thus may inform the upper layers about the connection.
+   */
+  if (bluetooth::shim::is_gd_acl_enabled()) {
+    tACL_CONN* p_acl = internal_.acl_get_connection_from_handle(handle);
+    if (p_acl != nullptr) {
+      p_acl->link_up_issued = true;
+      BTA_dm_acl_up(p_acl->remote_addr, p_acl->transport);
+    } else {
+      LOG_WARN("Unable to find active acl");
+    }
+  }
 }
 
 void btm_acl_disconnected(tHCI_STATUS status, uint16_t handle,
@@ -2682,6 +2758,10 @@ void acl_disconnect(const RawAddress& bd_addr, tBT_TRANSPORT transport,
 
 void acl_disconnect_after_role_switch(uint16_t conn_handle, uint16_t reason) {
   tACL_CONN* p_acl = internal_.acl_get_connection_from_handle(conn_handle);
+  if (p_acl == nullptr) {
+    LOG_WARN("Unable to find active acl");
+    return;
+  }
 
   /* If a role switch is in progress, delay the HCI Disconnect to avoid
    * controller problem */

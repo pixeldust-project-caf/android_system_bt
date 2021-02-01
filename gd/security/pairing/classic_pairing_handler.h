@@ -59,8 +59,12 @@ class ClassicPairingHandler : public PairingHandler {
 
   ~ClassicPairingHandler() override = default;
 
-  void Initiate(bool locally_initiated, hci::IoCapability io_capability, hci::OobDataPresent oob_present,
-                hci::AuthenticationRequirements auth_requirements) override;
+  void Initiate(
+      bool locally_initiated,
+      hci::IoCapability io_capability,
+      hci::AuthenticationRequirements auth_requirements,
+      OobData remote_p192_oob_data,
+      OobData remote_p256_oob_data) override;
   void Cancel() override;
 
   void OnReceive(hci::ChangeConnectionLinkKeyCompleteView packet) override;
@@ -83,6 +87,7 @@ class ClassicPairingHandler : public PairingHandler {
   void OnPairingPromptAccepted(const bluetooth::hci::AddressWithType& address, bool confirmed) override;
   void OnConfirmYesNo(const bluetooth::hci::AddressWithType& address, bool confirmed) override;
   void OnPasskeyEntry(const bluetooth::hci::AddressWithType& address, uint32_t passkey) override;
+  void OnPinEntry(const bluetooth::hci::AddressWithType& address, std::vector<uint8_t> pin) override;
 
   void OnNameRequestComplete(hci::Address address, bool success);
 
@@ -104,6 +109,8 @@ class ClassicPairingHandler : public PairingHandler {
   hci::IoCapability local_io_capability_;
   hci::OobDataPresent local_oob_present_ __attribute__((unused));
   hci::AuthenticationRequirements local_authentication_requirements_ __attribute__((unused));
+  OobData remote_p192_oob_data_;
+  OobData remote_p256_oob_data_;
   common::OnceCallback<void(hci::Address, PairingResultOrFailure)> complete_callback_;
   UI* user_interface_;
   os::Handler* user_interface_handler_;
@@ -118,6 +125,7 @@ class ClassicPairingHandler : public PairingHandler {
   bool locally_initiated_ = false;
   uint32_t passkey_ = 0;
   bool already_link_key_replied_ = false;
+  bool secure_connections_enabled_ = true;
 };
 
 }  // namespace pairing

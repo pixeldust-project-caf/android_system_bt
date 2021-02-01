@@ -14,12 +14,28 @@
  * limitations under the License.
  */
 
-#include <hardware/bt_activity_attribution.h>
+/*
+ * Generated mock file from original source file
+ *   Functions generated:3
+ */
 
-namespace bluetooth {
-namespace activity_attribution {
+#include <map>
+#include <string>
 
-ActivityAttributionInterface* getActivityAttributionInterface();
+extern std::map<std::string, int> mock_function_count_map;
 
-}  // namespace activity_attribution
-}  // namespace bluetooth
+#include "hci/include/hci_packet_parser.h"
+
+#ifndef UNUSED_ATTR
+#define UNUSED_ATTR
+#endif
+
+const hci_packet_parser_t* hci_packet_parser_get_interface() {
+  mock_function_count_map[__func__]++;
+  return nullptr;
+}
+const hci_packet_parser_t* hci_packet_parser_get_test_interface(
+    allocator_t* buffer_allocator_interface) {
+  mock_function_count_map[__func__]++;
+  return nullptr;
+}
