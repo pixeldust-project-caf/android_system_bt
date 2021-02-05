@@ -33,6 +33,8 @@
 #include "stack/btm/btm_dev.h"
 #include "vendor_hcidefs.h"
 
+extern tBTM_CB btm_cb;
+
 /* RPA offload VSC specifics */
 #define BTM_BLE_META_IRK_ENABLE 0x01
 #define BTM_BLE_META_ADD_IRK_ENTRY 0x02
@@ -338,8 +340,6 @@ void btm_ble_remove_resolving_list_entry_complete(uint8_t* p,
  ******************************************************************************/
 void btm_ble_read_resolving_list_entry_complete(uint8_t* p, uint16_t evt_len) {
   uint8_t status;
-  tBTM_SEC_BLE::tADDRESS_TYPE rra_type =
-      tBTM_SEC_BLE::tADDRESS_TYPE::BTM_BLE_ADDR_PSEUDO;
   RawAddress rra, pseudo_bda;
 
   STREAM_TO_UINT8(status, p);
@@ -362,7 +362,8 @@ void btm_ble_read_resolving_list_entry_complete(uint8_t* p, uint16_t evt_len) {
     } else {
       STREAM_TO_BDADDR(rra, p);
     }
-    btm_ble_refresh_peer_resolvable_private_addr(pseudo_bda, rra, rra_type);
+    btm_ble_refresh_peer_resolvable_private_addr(
+        pseudo_bda, rra, tBTM_SEC_BLE::tADDRESS_TYPE::BTM_BLE_ADDR_PSEUDO);
   }
 }
 /*******************************************************************************

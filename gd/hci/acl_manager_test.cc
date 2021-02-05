@@ -486,6 +486,13 @@ class AclManagerWithConnectionTest : public AclManagerTest {
     MOCK_METHOD0(OnChangeConnectionLinkKeyComplete, void());
     MOCK_METHOD1(OnReadClockOffsetComplete, void(uint16_t clock_offse));
     MOCK_METHOD2(OnModeChange, void(Mode current_mode, uint16_t interval));
+    MOCK_METHOD4(
+        OnSniffSubrating,
+        void(
+            uint16_t maximum_transmit_latency,
+            uint16_t maximum_receive_latency,
+            uint16_t minimum_remote_timeout,
+            uint16_t minimum_local_timeout));
     MOCK_METHOD5(OnQosSetupComplete, void(ServiceType service_type, uint32_t token_rate, uint32_t peak_bandwidth,
                                           uint32_t latency, uint32_t delay_variation));
     MOCK_METHOD6(OnFlowSpecificationComplete,
@@ -650,6 +657,8 @@ class AclManagerWithLeConnectionTest : public AclManagerTest {
     MOCK_METHOD3(
         OnReadRemoteVersionInformationComplete,
         void(uint8_t version, uint16_t manufacturer_name, uint16_t sub_version));
+    MOCK_METHOD2(OnPhyUpdate, void(uint8_t tx_phy, uint8_t rx_phy));
+    MOCK_METHOD1(OnLocalAddressUpdate, void(AddressWithType address_with_type));
   } mock_le_connection_management_callbacks_;
 };
 

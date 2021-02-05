@@ -17,7 +17,10 @@
 #include "main/shim/acl_legacy_interface.h"
 #include "stack/include/acl_hci_link_interface.h"
 #include "stack/include/ble_acl_interface.h"
+#include "stack/include/sco_hci_link_interface.h"
 #include "stack/include/sec_hci_link_interface.h"
+
+struct tBTM_ESCO_DATA;
 
 namespace bluetooth {
 namespace shim {
@@ -28,8 +31,8 @@ const acl_interface_t GetAclInterface() {
       .on_send_data_upwards = acl_rcv_acl_data,
       .on_packets_completed = acl_packets_completed,
 
-      .connection.classic.on_connected = btm_acl_connected,
-      .connection.classic.on_failed = btm_acl_connected,
+      .connection.classic.on_connected = on_acl_br_edr_connected,
+      .connection.classic.on_failed = on_acl_br_edr_failed,
       .connection.classic.on_disconnected = btm_acl_disconnected,
 
       .connection.le.on_connected =
@@ -37,17 +40,20 @@ const acl_interface_t GetAclInterface() {
       .connection.le.on_failed = acl_ble_connection_fail,
       .connection.le.on_disconnected = btm_acl_disconnected,
 
+      .connection.sco.on_disconnected = btm_sco_on_disconnected,
+
       .link.classic.on_authentication_complete = btm_sec_auth_complete,
+      .link.classic.on_central_link_key_complete = nullptr,
       .link.classic.on_change_connection_link_key_complete = nullptr,
       .link.classic.on_encryption_change = nullptr,
       .link.classic.on_flow_specification_complete = nullptr,
       .link.classic.on_flush_occurred = nullptr,
-      .link.classic.on_central_link_key_complete = nullptr,
       .link.classic.on_mode_change = btm_pm_on_mode_change,
       .link.classic.on_packet_type_changed = nullptr,
       .link.classic.on_qos_setup_complete = nullptr,
       .link.classic.on_read_afh_channel_map_complete = nullptr,
       .link.classic.on_read_automatic_flush_timeout_complete = nullptr,
+      .link.classic.on_sniff_subrating = btm_pm_on_sniff_subrating,
       .link.classic.on_read_clock_complete = nullptr,
       .link.classic.on_read_clock_offset_complete = nullptr,
       .link.classic.on_read_failed_contact_counter_complete = nullptr,

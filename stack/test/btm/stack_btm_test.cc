@@ -24,12 +24,12 @@
 #include "hci/include/hci_packet_factory.h"
 #include "internal_include/stack_config.h"
 #include "osi/include/osi.h"
-#include "stack/btm/btm_int.h"
 #include "stack/btm/btm_int_types.h"
 #include "stack/include/acl_hci_link_interface.h"
+#include "stack/include/btm_client_interface.h"
 #include "types/raw_address.h"
 
-base::MessageLoop* get_main_message_loop() { return nullptr; }
+bluetooth::common::MessageLoopThread* get_main_thread() { return nullptr; }
 
 const hci_packet_factory_t* hci_packet_factory_get_interface() {
   return nullptr;
@@ -87,13 +87,13 @@ using testing::Test;
 class StackBtmTest : public Test {
  public:
  protected:
-  void SetUp() override {}
+  void SetUp() override { mock_function_count_map.clear(); }
   void TearDown() override {}
 };
 
 TEST_F(StackBtmTest, GlobalLifecycle) {
-  btm_init();
-  btm_free();
+  get_btm_client_interface().lifecycle.btm_init();
+  get_btm_client_interface().lifecycle.btm_free();
 }
 
 TEST_F(StackBtmTest, DynamicLifecycle) {
@@ -101,10 +101,10 @@ TEST_F(StackBtmTest, DynamicLifecycle) {
   delete btm;
 }
 
-TEST_F(StackBtmTest, InformBtmOnConnection) {
+TEST_F(StackBtmTest, InformClientOnConnectionSuccess) {
   MOCK_bluetooth_shim_is_gd_acl_enabled_ = true;
 
-  btm_init();
+  get_btm_client_interface().lifecycle.btm_init();
 
   RawAddress bda({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
 
@@ -112,7 +112,21 @@ TEST_F(StackBtmTest, InformBtmOnConnection) {
   ASSERT_EQ(static_cast<size_t>(1),
             mock_function_count_map.count("BTA_dm_acl_up"));
 
-  btm_free();
+  get_btm_client_interface().lifecycle.btm_free();
+}
+
+TEST_F(StackBtmTest, NoInformClientOnConnectionFail) {
+  MOCK_bluetooth_shim_is_gd_acl_enabled_ = true;
+
+  get_btm_client_interface().lifecycle.btm_init();
+
+  RawAddress bda({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+
+  btm_acl_connected(bda, 2, HCI_ERR_NO_CONNECTION, false);
+  ASSERT_EQ(static_cast<size_t>(0),
+            mock_function_count_map.count("BTA_dm_acl_up"));
+
+  get_btm_client_interface().lifecycle.btm_free();
 }
 
 }  // namespace

@@ -23,7 +23,9 @@
  *
  ******************************************************************************/
 
+#include <base/strings/stringprintf.h>
 #include <cstdint>
+#include <string>
 
 #include "device/include/controller.h"
 #include "device/include/esco_parameters.h"
@@ -34,8 +36,19 @@
 #include "stack/include/acl_api.h"
 #include "stack/include/btm_api.h"
 #include "stack/include/btm_api_types.h"
+#include "stack/include/hci_error_code.h"
+#include "stack/include/hcimsgs.h"
 
 extern tBTM_CB btm_cb;
+
+namespace {
+constexpr char kBtmLogTag[] = "SCO";
+
+const bluetooth::legacy::hci::Interface& GetLegacyHciInterface() {
+  return bluetooth::legacy::hci::GetInterface();
+}
+
+};  // namespace
 
 /******************************************************************************/
 /*               L O C A L    D A T A    D E F I N I T I O N S                */
@@ -95,10 +108,14 @@ static void btm_sco_flush_sco_data(UNUSED_ATTR uint16_t sco_inx) {}
  ******************************************************************************/
 void btm_sco_init(void) {
   /* Initialize nonzero defaults */
-  btm_cb.sco_cb.sco_disc_reason = BTM_INVALID_SCO_DISC_REASON;
   btm_cb.sco_cb.def_esco_parms = esco_parameters_for_codec(ESCO_CODEC_CVSD);
   btm_cb.sco_cb.def_esco_parms.max_latency_ms = 12;
   btm_cb.sco_cb.sco_route = ESCO_DATA_PATH_PCM;
+
+  btm_cb.btm_sco_pkt_types_supported =
+      ESCO_PKT_TYPES_MASK_HV1 + ESCO_PKT_TYPES_MASK_HV2 +
+      ESCO_PKT_TYPES_MASK_HV3 + ESCO_PKT_TYPES_MASK_EV3 +
+      ESCO_PKT_TYPES_MASK_EV4 + ESCO_PKT_TYPES_MASK_EV5;
 }
 
 /*******************************************************************************
@@ -324,7 +341,7 @@ tBTM_STATUS BTM_CreateSco(const RawAddress* remote_bda, bool is_orig,
   enh_esco_params_t* p_setup;
   tSCO_CONN* p = &btm_cb.sco_cb.sco_db[0];
   uint16_t xx;
-  uint16_t acl_handle = 0;
+  uint16_t acl_handle = HCI_INVALID_HANDLE;
   *p_sco_inx = BTM_INVALID_SCO_INDEX;
 
   if (BTM_MAX_SCO_LINKS == 0) {
@@ -451,7 +468,12 @@ tBTM_STATUS BTM_CreateSco(const RawAddress* remote_bda, bool is_orig,
       }
 
       *p_sco_inx = xx;
-      BTM_TRACE_API("%s: BTM_CreateSco succeeded", __func__);
+      LOG_DEBUG("SCO connection successfully requested");
+      if (p->state == SCO_ST_CONNECTING) {
+        BTM_LogHistory(
+            kBtmLogTag, *remote_bda, "Connecting",
+            base::StringPrintf("local initiated acl:0x%04x", acl_handle));
+      }
       return BTM_CMD_STARTED;
     }
   }
@@ -540,8 +562,10 @@ void btm_sco_chk_pend_rolechange(uint16_t hci_handle) {
 void btm_sco_disc_chk_pend_for_modechange(uint16_t hci_handle) {
   tSCO_CONN* p = &btm_cb.sco_cb.sco_db[0];
 
-  BTM_TRACE_DEBUG("%s: hci_handle 0x%04x, p->state 0x%02x", __func__,
-                  hci_handle, p->state);
+  LOG_DEBUG(
+      "Checking for SCO pending mode change events hci_handle:0x%04x "
+      "p->state:%s",
+      hci_handle, sco_state_text(p->state).c_str());
 
   for (uint16_t xx = 0; xx < BTM_MAX_SCO_LINKS; xx++, p++) {
     if ((p->state == SCO_ST_PEND_MODECHANGE) &&
@@ -549,7 +573,7 @@ void btm_sco_disc_chk_pend_for_modechange(uint16_t hci_handle) {
             hci_handle)
 
     {
-      BTM_TRACE_DEBUG("%s: SCO Link handle 0x%04x", __func__, p->hci_handle);
+      LOG_DEBUG("Removing SCO Link handle 0x%04x", p->hci_handle);
       BTM_RemoveSco(xx);
     }
   }
@@ -666,8 +690,6 @@ void btm_sco_connected(uint8_t hci_status, const RawAddress* bda,
   bool spt = false;
   tBTM_CHG_ESCO_PARAMS parms = {};
 
-  btm_cb.sco_cb.sco_disc_reason = hci_status;
-
   for (xx = 0; xx < BTM_MAX_SCO_LINKS; xx++, p++) {
     if (((p->state == SCO_ST_CONNECTING) || (p->state == SCO_ST_LISTENING) ||
          (p->state == SCO_ST_W4_CONN_RSP)) &&
@@ -704,6 +726,21 @@ void btm_sco_connected(uint8_t hci_status, const RawAddress* bda,
       p->state = SCO_ST_CONNECTED;
       p->hci_handle = hci_handle;
 
+      RawAddress bd_addr(*bda);
+
+      if (hci_status == HCI_SUCCESS) {
+        BTM_LogHistory(kBtmLogTag, bd_addr, "Connection success",
+                       base::StringPrintf("handle:0x%04x %s", hci_handle,
+                                          (spt) ? "listener" : "initiator"));
+      } else {
+        BTM_LogHistory(
+            kBtmLogTag, bd_addr, "Connection failed",
+            base::StringPrintf(
+                "reason:%s",
+                hci_reason_code_text(static_cast<tHCI_REASON>(hci_status))
+                    .c_str()));
+      }
+
       if (!btm_cb.sco_cb.esco_supported) {
         p->esco.data.link_type = BTM_LINK_TYPE_SCO;
         if (spt) {
@@ -736,7 +773,6 @@ void btm_sco_connected(uint8_t hci_status, const RawAddress* bda,
  ******************************************************************************/
 tBTM_STATUS BTM_RemoveSco(uint16_t sco_inx) {
   tSCO_CONN* p = &btm_cb.sco_cb.sco_db[sco_inx];
-  uint16_t tempstate;
   tBTM_PM_STATE state = BTM_PM_ST_INVALID;
 
   BTM_TRACE_DEBUG("%s", __func__);
@@ -765,11 +801,17 @@ tBTM_STATUS BTM_RemoveSco(uint16_t sco_inx) {
     return (BTM_CMD_STARTED);
   }
 
-  tempstate = p->state;
+  tSCO_STATE old_state = p->state;
   p->state = SCO_ST_DISCONNECTING;
 
-  acl_disconnect_from_handle(p->hci_handle, HCI_ERR_PEER_USER);
+  GetLegacyHciInterface().Disconnect(p->Handle(), HCI_ERR_PEER_USER);
 
+  LOG_DEBUG("Disconnecting link sco_handle:0x%04x peer:%s", p->Handle(),
+            PRIVATE_ADDRESS(p->esco.data.bd_addr));
+  BTM_LogHistory(
+      kBtmLogTag, p->esco.data.bd_addr, "Disconnecting",
+      base::StringPrintf("local initiated handle:0x%04x previous_state:%s",
+                         p->Handle(), sco_state_text(old_state).c_str()));
   return (BTM_CMD_STARTED);
 }
 
@@ -788,13 +830,13 @@ void BTM_RemoveSco(const RawAddress& bda) {
  *
  * Function         btm_sco_removed
  *
- * Description      This function is called by BTIF when an SCO connection
- *                  is removed.
+ * Description      This function is called by lower layers when an
+ *                  disconnect is received.
  *
  * Returns          true if the link is known about, else false
  *
  ******************************************************************************/
-bool btm_sco_removed(uint16_t hci_handle, uint8_t reason) {
+bool btm_sco_removed(uint16_t hci_handle, tHCI_REASON reason) {
   tSCO_CONN* p = &btm_cb.sco_cb.sco_db[0];
   uint16_t xx;
 
@@ -808,13 +850,41 @@ bool btm_sco_removed(uint16_t hci_handle, uint8_t reason) {
       p->hci_handle = HCI_INVALID_HANDLE;
       p->rem_bd_known = false;
       p->esco.p_esco_cback = NULL; /* Deregister eSCO callback */
-      btm_cb.sco_cb.sco_disc_reason = reason;
       (*p->p_disc_cb)(xx);
-
+      LOG_DEBUG("Disconnected SCO link handle:%hu reason:%s", hci_handle,
+                hci_reason_code_text(reason).c_str());
       return true;
     }
   }
   return false;
+}
+
+void btm_sco_on_disconnected(uint16_t hci_handle, tHCI_REASON reason) {
+  tSCO_CONN* p_sco = btm_cb.sco_cb.get_sco_connection_from_handle(hci_handle);
+  if (p_sco == nullptr) {
+    LOG_ERROR("Unable to find sco connection");
+    return;
+  }
+
+  if (!p_sco->is_active()) {
+    LOG_ERROR("Connection is not active handle:0x%04x reason:%s", hci_handle,
+              hci_reason_code_text(reason).c_str());
+    return;
+  }
+
+  if (p_sco->state == SCO_ST_LISTENING) {
+    LOG_ERROR("Connection is in listening state handle:0x%04x reason:%s",
+              hci_handle, hci_reason_code_text(reason).c_str());
+    return;
+  }
+
+  p_sco->state = SCO_ST_UNUSED;
+  p_sco->hci_handle = HCI_INVALID_HANDLE;
+  p_sco->rem_bd_known = false;
+  p_sco->esco.p_esco_cback = NULL; /* Deregister eSCO callback */
+  (*p_sco->p_disc_cb)(btm_cb.sco_cb.get_index(p_sco));
+  LOG_DEBUG("Disconnected SCO link handle:%hu reason:%s", hci_handle,
+            hci_reason_code_text(reason).c_str());
 }
 
 /*******************************************************************************

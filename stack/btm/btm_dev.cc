@@ -30,7 +30,6 @@
 #include "bt_common.h"
 #include "bt_types.h"
 #include "btm_api.h"
-#include "btm_int.h"
 #include "btu.h"
 #include "device/include/controller.h"
 #include "hcidefs.h"
@@ -40,6 +39,8 @@
 #include "main/shim/shim.h"
 #include "stack/btm/btm_dev.h"
 #include "stack/include/acl_api.h"
+
+extern tBTM_CB btm_cb;
 
 /*******************************************************************************
  *
@@ -215,8 +216,7 @@ tBTM_SEC_DEV_REC* btm_sec_alloc_dev(const RawAddress& bd_addr) {
 
   tBTM_SEC_DEV_REC* p_dev_rec = btm_sec_allocate_dev_rec();
 
-  BTM_TRACE_EVENT("%s: allocated p_dev_rec=%p, bd_addr=%s", __func__, p_dev_rec,
-                  bd_addr.ToString().c_str());
+  LOG_DEBUG("Allocated device record bd_addr:%s", PRIVATE_ADDRESS(bd_addr));
 
   /* Check with the BT manager if details about remote device are known */
   /* outgoing connection */
