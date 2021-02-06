@@ -72,7 +72,6 @@
 #include "osi/include/osi.h"
 #include "osi/include/properties.h"
 #include "stack/btm/btm_dev.h"
-#include "stack/btm/btm_int.h"
 #include "stack/btm/btm_sec.h"
 #include "stack_config.h"
 
@@ -1236,6 +1235,11 @@ static void btif_dm_search_devices_evt(tBTA_DM_SEARCH_EVT event,
   }
 }
 
+/* Returns true if |uuid| should be passed as device property */
+static bool btif_is_interesting_le_service(bluetooth::Uuid uuid) {
+  return uuid.As16Bit() == UUID_SERVCLASS_LE_HID || uuid == UUID_HEARING_AID;
+}
+
 /*******************************************************************************
  *
  * Function         btif_dm_search_services_evt
@@ -1334,45 +1338,52 @@ static void btif_dm_search_services_evt(tBTA_DM_SEARCH_EVT event,
       break;
 
     case BTA_DM_DISC_BLE_RES_EVT: {
-      LOG_VERBOSE("service %s",
-                  p_data->disc_ble_res.service.ToString().c_str());
       int num_properties = 0;
-      if (p_data->disc_ble_res.service.As16Bit() == UUID_SERVCLASS_LE_HID ||
-          p_data->disc_ble_res.service == UUID_HEARING_AID) {
-        LOG_INFO("Found HOGP or HEARING AID UUID");
-        bt_property_t prop[2];
-        bt_status_t ret;
+      bt_property_t prop[2];
+      std::vector<uint8_t> property_value;
+      int num_uuids = 0;
 
-        const auto& arr = p_data->disc_ble_res.service.To128BitBE();
-
-        RawAddress& bd_addr = p_data->disc_ble_res.bd_addr;
-        prop[0].type = BT_PROPERTY_UUIDS;
-        prop[0].val = (void*)arr.data();
-        prop[0].len = Uuid::kNumBytes128;
-
-        /* Also write this to the NVRAM */
-        ret = btif_storage_set_remote_device_property(&bd_addr, &prop[0]);
-        ASSERTC(ret == BT_STATUS_SUCCESS, "storing remote services failed",
-                ret);
-        num_properties++;
-
-        /* Remote name update */
-        if (strnlen((const char*)p_data->disc_ble_res.bd_name, BD_NAME_LEN)) {
-          prop[1].type = BT_PROPERTY_BDNAME;
-          prop[1].val = p_data->disc_ble_res.bd_name;
-          prop[1].len =
-              strnlen((char*)p_data->disc_ble_res.bd_name, BD_NAME_LEN);
-
-          ret = btif_storage_set_remote_device_property(&bd_addr, &prop[1]);
-          ASSERTC(ret == BT_STATUS_SUCCESS,
-                  "failed to save remote device property", ret);
-          num_properties++;
+      for (Uuid uuid : *p_data->disc_ble_res.services) {
+        LOG_VERBOSE("service %s", uuid.ToString().c_str());
+        if (btif_is_interesting_le_service(uuid)) {
+          num_uuids++;
+          auto valAsBe = uuid.To128BitBE();
+          property_value.insert(property_value.end(), valAsBe.begin(),
+                                valAsBe.end());
         }
-
-        /* Send the event to the BTIF */
-        invoke_remote_device_properties_cb(BT_STATUS_SUCCESS, bd_addr,
-                                           num_properties, prop);
       }
+
+      if (num_uuids == 0) {
+        LOG_INFO("No well known BLE services discovered");
+        return;
+      }
+
+      RawAddress& bd_addr = p_data->disc_ble_res.bd_addr;
+      prop[0].type = BT_PROPERTY_UUIDS;
+      prop[0].val = (void*)property_value.data();
+      prop[0].len = Uuid::kNumBytes128 * num_uuids;
+
+      /* Also write this to the NVRAM */
+      bt_status_t ret =
+          btif_storage_set_remote_device_property(&bd_addr, &prop[0]);
+      ASSERTC(ret == BT_STATUS_SUCCESS, "storing remote services failed", ret);
+      num_properties++;
+
+      /* Remote name update */
+      if (strnlen((const char*)p_data->disc_ble_res.bd_name, BD_NAME_LEN)) {
+        prop[1].type = BT_PROPERTY_BDNAME;
+        prop[1].val = p_data->disc_ble_res.bd_name;
+        prop[1].len = strnlen((char*)p_data->disc_ble_res.bd_name, BD_NAME_LEN);
+
+        ret = btif_storage_set_remote_device_property(&bd_addr, &prop[1]);
+        ASSERTC(ret == BT_STATUS_SUCCESS,
+                "failed to save remote device property", ret);
+        num_properties++;
+      }
+
+      /* Send the event to the BTIF */
+      invoke_remote_device_properties_cb(BT_STATUS_SUCCESS, bd_addr,
+                                         num_properties, prop);
     } break;
 
     default: { ASSERTC(0, "unhandled search services event", event); } break;
@@ -1694,6 +1705,9 @@ static void btif_dm_upstreams_evt(uint16_t event, char* p_param) {
           controller->supports_ble_periodic_advertising();
       local_le_features.le_maximum_advertising_data_length =
           controller->get_ble_maxium_advertising_data_length();
+
+      local_le_features.dynamic_audio_buffer_supported =
+          cmn_vsc_cb.dynamic_audio_buffer_support;
 
       invoke_adapter_properties_cb(BT_STATUS_SUCCESS, 1, &prop);
       break;
@@ -2251,7 +2265,7 @@ void btif_dm_proc_loc_oob(bool valid, const Octet16& c, const Octet16& r) {
 bool btif_dm_get_smp_config(tBTE_APPL_CFG* p_cfg) {
   const std::string* recv = stack_config_get_interface()->get_pts_smp_options();
   if (!recv) {
-    BTIF_TRACE_DEBUG("%s: SMP options not found in configuration", __func__);
+    LOG_DEBUG("SMP pairing options not found in stack configuration");
     return false;
   }
 
@@ -2751,6 +2765,34 @@ void btif_dm_on_disable() {
  *
  ******************************************************************************/
 void btif_dm_read_energy_info() { BTA_DmBleGetEnergyInfo(bta_energy_info_cb); }
+
+/*******************************************************************************
+ *
+ * Function        btif_dm_add_uuid_to_eir
+ *
+ * Description     Add a service class uuid to the local device's EIR data
+ *
+ * Returns         void
+ *
+ ******************************************************************************/
+void btif_dm_add_uuid_to_eir(uint16_t uuid16) {
+  BTIF_TRACE_DEBUG("%s: %d", __func__, uuid16);
+  BTA_AddEirUuid(uuid16);
+}
+
+/*******************************************************************************
+ *
+ * Function        btif_dm_remove_uuid_from_eir
+ *
+ * Description     Remove a service class uuid from the local device's EIR data
+ *
+ * Returns         void
+ *
+ ******************************************************************************/
+void btif_dm_remove_uuid_from_eir(uint16_t uuid16) {
+  BTIF_TRACE_DEBUG("%s: %d", __func__, uuid16);
+  BTA_RemoveEirUuid(uuid16);
+}
 
 static char* btif_get_default_local_name() {
   if (btif_default_local_name[0] == '\0') {

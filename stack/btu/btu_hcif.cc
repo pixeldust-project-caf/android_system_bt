@@ -35,7 +35,6 @@
 #include "common/metrics.h"
 #include "device/include/controller.h"
 #include "osi/include/log.h"
-#include "stack/btm/btm_int.h"
 #include "stack/include/acl_hci_link_interface.h"
 #include "stack/include/ble_acl_interface.h"
 #include "stack/include/ble_hci_link_interface.h"
@@ -91,9 +90,7 @@ static void btu_ble_ll_conn_param_upd_evt(uint8_t* p, uint16_t evt_len);
 static void btu_ble_proc_ltk_req(uint8_t* p);
 static void btu_hcif_encryption_key_refresh_cmpl_evt(uint8_t* p);
 static void btu_ble_data_length_change_evt(uint8_t* p, uint16_t evt_len);
-#if (BLE_LLT_INCLUDED == TRUE)
 static void btu_ble_rc_param_req_evt(uint8_t* p);
-#endif
 
 /**
  * Log HCI event metrics that are not handled in special functions
@@ -350,11 +347,9 @@ void btu_hcif_process_event(UNUSED_ATTR uint8_t controller_id, BT_HDR* p_msg) {
     case HCI_ESCO_CONNECTION_CHANGED_EVT:
       btu_hcif_esco_connection_chg_evt(p);
       break;
-#if (BTM_SSR_INCLUDED == TRUE)
     case HCI_SNIFF_SUB_RATE_EVT:
       btm_pm_proc_ssr_evt(p, hci_evt_len);
       break;
-#endif /* BTM_SSR_INCLUDED == TRUE */
     case HCI_RMT_HOST_SUP_FEAT_NOTIFY_EVT:
       btm_sec_rmt_host_support_feat_evt(p);
       break;
@@ -403,11 +398,9 @@ void btu_hcif_process_event(UNUSED_ATTR uint8_t controller_id, BT_HDR* p_msg) {
         case HCI_BLE_ENHANCED_CONN_COMPLETE_EVT:
           btm_ble_conn_complete(p, hci_evt_len, true);
           break;
-#if (BLE_LLT_INCLUDED == TRUE)
         case HCI_BLE_RC_PARAM_REQ_EVT:
           btu_ble_rc_param_req_evt(p);
           break;
-#endif
         case HCI_BLE_DATA_LENGTH_CHANGE_EVT:
           btu_ble_data_length_change_evt(p, hci_evt_len);
           break;
@@ -1635,7 +1628,6 @@ static void btu_hcif_read_clock_off_comp_evt(uint8_t* p) {
 
   handle = HCID_GET_HANDLE(handle);
 
-  btm_process_clk_off_comp_evt(handle, clock_offset);
   btm_sec_update_clock_offset(handle, clock_offset);
 }
 
@@ -1709,7 +1701,7 @@ static void btu_hcif_encryption_key_refresh_cmpl_evt(uint8_t* p) {
  * BLE Events
  **********************************************/
 
-extern void gatt_notify_conn_update(uint16_t handle, uint16_t interval,
+extern void gatt_notify_conn_update(const RawAddress& remote, uint16_t interval,
                                     uint16_t latency, uint16_t timeout,
                                     tHCI_STATUS status);
 
@@ -1765,7 +1757,6 @@ static void btu_ble_data_length_change_evt(uint8_t* p, uint16_t evt_len) {
 /**********************************************
  * End of BLE Events Handler
  **********************************************/
-#if (BLE_LLT_INCLUDED == TRUE)
 static void btu_ble_rc_param_req_evt(uint8_t* p) {
   uint16_t handle;
   uint16_t int_min, int_max, latency, timeout;
@@ -1779,4 +1770,3 @@ static void btu_ble_rc_param_req_evt(uint8_t* p) {
   l2cble_process_rc_param_request_evt(handle, int_min, int_max, latency,
                                       timeout);
 }
-#endif /* BLE_LLT_INCLUDED */

@@ -453,6 +453,11 @@
 /* Bluetooth Quality Report opcode */
 #define HCI_CONTROLLER_BQR (0x015E | HCI_GRP_VENDOR_SPECIFIC)
 
+/* Bluetooth Dynamic Audio Buffer opcode */
+#define HCI_CONTROLLER_DAB (0x015F | HCI_GRP_VENDOR_SPECIFIC)
+#define HCI_CONTROLLER_DAB_GET_BUFFER_TIME 0x01
+#define HCI_CONTROLLER_DAB_SET_BUFFER_TIME 0x02
+
 /* subcode for multi adv feature */
 #define BTM_BLE_MULTI_ADV_SET_PARAM 0x01
 #define BTM_BLE_MULTI_ADV_WRITE_ADV_DATA 0x02
@@ -721,6 +726,21 @@ typedef enum : uint8_t {
   HCI_MODE_PARK = 0x03,
 } tHCI_MODE;
 
+inline std::string hci_mode_text(const tHCI_MODE& mode) {
+  switch (mode) {
+    case HCI_MODE_ACTIVE:
+      return std::string("active");
+    case HCI_MODE_HOLD:
+      return std::string("hold");
+    case HCI_MODE_SNIFF:
+      return std::string("sniff");
+    case HCI_MODE_PARK:
+      return std::string("park");
+    default:
+      return std::string("UNKNOWN");
+  }
+}
+
 /* Page scan period modes */
 #define HCI_PAGE_SCAN_REP_MODE_R1 0x01
 
@@ -792,7 +812,11 @@ typedef enum : uint8_t {
 #define HCI_DEF_INQUIRYSCAN_WINDOW 0x12   /* 11.25 ms */
 
 /* Encryption modes */
-#define HCI_ENCRYPT_MODE_DISABLED 0x00
+typedef enum : uint8_t {
+  HCI_ENCRYPT_MODE_DISABLED = 0x00,
+  HCI_ENCRYPT_MODE_ON = 0x01,
+  HCI_ENCRYPT_MODE_ON_BR_EDR_AES_CCM = 0x02,
+} tHCI_ENCRYPT_MODE;
 
 /* Voice settings */
 #define HCI_INP_CODING_LINEAR 0x0000 /* 0000000000 */

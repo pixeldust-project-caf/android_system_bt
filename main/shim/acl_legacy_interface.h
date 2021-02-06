@@ -29,9 +29,8 @@ namespace legacy {
 
 typedef struct {
   void (*on_connected)(const RawAddress& bda, uint16_t handle,
-                       tHCI_STATUS status, uint8_t enc_mode);
-  void (*on_failed)(const RawAddress& bda, uint16_t handle, tHCI_STATUS status,
-                    uint8_t enc_mode);
+                       uint8_t enc_mode);
+  void (*on_failed)(const RawAddress& bda, tHCI_STATUS status);
   void (*on_disconnected)(tHCI_STATUS status, uint16_t handle,
                           tHCI_STATUS reason);
 } acl_classic_connection_interface_t;
@@ -49,6 +48,10 @@ typedef struct {
 } acl_le_connection_interface_t;
 
 typedef struct {
+  void (*on_disconnected)(uint16_t handle, tHCI_REASON reason);
+} acl_sco_connection_interface_t;
+
+typedef struct {
   void (*on_authentication_complete)(uint16_t handle, tHCI_STATUS status);
   void (*on_change_connection_link_key_complete)();
   void (*on_encryption_change)(bool enabled);
@@ -62,6 +65,11 @@ typedef struct {
   void (*on_central_link_key_complete)(uint8_t key_flag);
   void (*on_mode_change)(tHCI_STATUS status, uint16_t handle,
                          tHCI_MODE current_mode, uint16_t interval);
+  void (*on_sniff_subrating)(tHCI_STATUS status, uint16_t handle,
+                             uint16_t maximum_transmit_latency,
+                             uint16_t maximum_receive_latency,
+                             uint16_t minimum_remote_timeout,
+                             uint16_t minimum_local_timeout);
   void (*on_packet_type_changed)(uint16_t packet_type);
   void (*on_qos_setup_complete)(uint16_t service_type, uint32_t token_rate,
                                 uint32_t peak_bandwidth, uint32_t latency,
@@ -101,11 +109,14 @@ typedef struct {
   void (*on_read_remote_version_information_complete)(
       tHCI_STATUS status, uint16_t handle, uint8_t lmp_version,
       uint16_t manufacturer_name, uint16_t sub_version);
+  void (*on_phy_update)(tHCI_STATUS status, uint16_t handle, uint8_t tx_phy,
+                        uint8_t rx_phy);
 } acl_le_link_interface_t;
 
 typedef struct {
   acl_classic_connection_interface_t classic;
   acl_le_connection_interface_t le;
+  acl_sco_connection_interface_t sco;
 } acl_connection_interface_t;
 
 typedef struct {

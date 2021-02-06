@@ -96,6 +96,9 @@ struct classic_impl : public security::ISecurityManagerListener {
       case EventCode::MODE_CHANGE:
         on_mode_change(event_packet);
         break;
+      case EventCode::SNIFF_SUBRATING:
+        on_sniff_subrating(event_packet);
+        break;
       case EventCode::QOS_SETUP_COMPLETE:
         on_qos_setup_complete(event_packet);
         break;
@@ -131,6 +134,11 @@ struct classic_impl : public security::ISecurityManagerListener {
       round_robin_scheduler_->Unregister(handle);
       callbacks->OnDisconnection(reason);
       acl_connections_.erase(handle);
+    } else {
+      // This handle is probably for SCO, so we use the callback workaround.
+      if (sco_disconnect_callback_ != nullptr) {
+        sco_disconnect_callback_(handle, static_cast<uint8_t>(reason));
+      }
     }
   }
 
@@ -399,13 +407,14 @@ struct classic_impl : public security::ISecurityManagerListener {
     if (!mode_change_view.IsValid()) {
       LOG_ERROR("Received on_mode_change with invalid packet");
       return;
-    } else if (mode_change_view.GetStatus() != ErrorCode::SUCCESS) {
-      auto status = mode_change_view.GetStatus();
+    }
+    auto status = mode_change_view.GetStatus();
+    uint16_t handle = mode_change_view.GetConnectionHandle();
+    if (status != ErrorCode::SUCCESS) {
       std::string error_code = ErrorCodeText(status);
-      LOG_ERROR("Received on_mode_change with error code %s", error_code.c_str());
+      LOG_ERROR("Received on_mode_change on handle 0x0%04hx with error code %s", handle, error_code.c_str());
       return;
     }
-    uint16_t handle = mode_change_view.GetConnectionHandle();
     auto callbacks = get_callbacks(handle);
     if (callbacks == nullptr) {
       LOG_WARN("Unknown connection handle 0x%04hx", handle);
@@ -415,6 +424,31 @@ struct classic_impl : public security::ISecurityManagerListener {
     Mode current_mode = mode_change_view.GetCurrentMode();
     uint16_t interval = mode_change_view.GetInterval();
     callbacks->OnModeChange(current_mode, interval);
+  }
+
+  void on_sniff_subrating(EventView packet) {
+    SniffSubratingEventView sniff_subrating_view = SniffSubratingEventView::Create(packet);
+    if (!sniff_subrating_view.IsValid()) {
+      LOG_ERROR("Received on_sniff_subrating with invalid packet");
+      return;
+    } else if (sniff_subrating_view.GetStatus() != ErrorCode::SUCCESS) {
+      auto status = sniff_subrating_view.GetStatus();
+      std::string error_code = ErrorCodeText(status);
+      LOG_ERROR("Received on_sniff_subrating with error code %s", error_code.c_str());
+      return;
+    }
+    uint16_t handle = sniff_subrating_view.GetConnectionHandle();
+    auto callbacks = get_callbacks(handle);
+    if (callbacks == nullptr) {
+      LOG_WARN("Unknown connection handle 0x%04hx", handle);
+      ASSERT(!crash_on_unknown_handle_);
+      return;
+    }
+    uint16_t max_tx_lat = sniff_subrating_view.GetMaximumTransmitLatency();
+    uint16_t max_rx_lat = sniff_subrating_view.GetMaximumReceiveLatency();
+    uint16_t min_remote_timeout = sniff_subrating_view.GetMinimumRemoteTimeout();
+    uint16_t min_local_timeout = sniff_subrating_view.GetMinimumLocalTimeout();
+    callbacks->OnSniffSubrating(max_tx_lat, max_rx_lat, min_remote_timeout, min_local_timeout);
   }
 
   void on_qos_setup_complete(EventView packet) {
@@ -603,6 +637,10 @@ struct classic_impl : public security::ISecurityManagerListener {
     return 0xFFFF;
   }
 
+  void HACK_SetScoDisconnectCallback(std::function<void(uint16_t, uint8_t)> callback) {
+    sco_disconnect_callback_ = callback;
+  }
+
   HciLayer* hci_layer_ = nullptr;
   Controller* controller_ = nullptr;
   RoundRobinScheduler* round_robin_scheduler_ = nullptr;
@@ -618,6 +656,8 @@ struct classic_impl : public security::ISecurityManagerListener {
 
   std::unique_ptr<security::SecurityManager> security_manager_;
   bool crash_on_unknown_handle_ = false;
+
+  std::function<void(uint16_t, uint8_t)> sco_disconnect_callback_;
 };
 
 }  // namespace acl_manager

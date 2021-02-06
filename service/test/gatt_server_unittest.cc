@@ -32,7 +32,8 @@ class MockGattHandler
   MockGattHandler() = default;
   ~MockGattHandler() override = default;
 
-  MOCK_METHOD2(RegisterServer, bt_status_t(const bluetooth::Uuid&, bool));
+  MOCK_METHOD2(RegisterServer,
+               bt_status_t(const bluetooth::Uuid&, bool eatt_support));
   MOCK_METHOD1(UnregisterServer, bt_status_t(int));
   MOCK_METHOD2(AddService, bt_status_t(int, std::vector<btgatt_db_element_t>));
   MOCK_METHOD5(AddCharacteristic,

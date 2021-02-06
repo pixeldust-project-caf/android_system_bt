@@ -43,9 +43,9 @@
 #include "main/shim/helpers.h"
 #include "main/shim/l2c_api.h"
 #include "main/shim/le_advertising_manager.h"
+#include "main/shim/le_scanning_manager.h"
 #include "main/shim/shim.h"
 #include "main/shim/stack.h"
-#include "src/stack.rs.h"
 
 namespace bluetooth {
 namespace shim {
@@ -70,9 +70,17 @@ void Stack::StartIdleMode() {
 void Stack::StartEverything() {
   if (common::init_flags::gd_rust_is_enabled()) {
     if (rust_stack_ == nullptr) {
-      rust_stack_ = new ::rust::Box<rust::stack::Stack>(rust::stack::create());
+      rust_stack_ = new ::rust::Box<rust::Stack>(rust::stack_create());
     }
-    rust::stack::start(**rust_stack_);
+    rust::stack_start(**rust_stack_);
+
+    if (common::init_flags::gd_hci_is_enabled()) {
+      rust_hci_ = new ::rust::Box<rust::Hci>(rust::get_hci(**rust_stack_));
+    }
+    if (common::init_flags::gd_controller_is_enabled()) {
+      rust_controller_ = new ::rust::Box<rust::Controller>(
+          rust::get_controller(**rust_stack_));
+    }
     return;
   }
 
@@ -137,6 +145,9 @@ void Stack::StartEverything() {
   if (common::init_flags::gd_advertising_is_enabled()) {
     bluetooth::shim::init_advertising_manager();
   }
+  if (common::init_flags::gd_scanning_is_enabled()) {
+    bluetooth::shim::init_scanning_manager();
+  }
   if (common::init_flags::gd_l2cap_is_enabled() &&
       !common::init_flags::gd_core_is_enabled()) {
     L2CA_UseLegacySecurityModule();
@@ -159,7 +170,7 @@ void Stack::Start(ModuleList* modules) {
 void Stack::Stop() {
   if (common::init_flags::gd_rust_is_enabled()) {
     if (rust_stack_ != nullptr) {
-      rust::stack::stop(**rust_stack_);
+      rust::stack_stop(**rust_stack_);
     }
     return;
   }
@@ -203,6 +214,13 @@ StackManager* Stack::GetStackManager() {
 }
 
 legacy::Acl* Stack::GetAcl() {
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  ASSERT(is_running_);
+  ASSERT_LOG(acl_ != nullptr, "Acl shim layer has not been created");
+  return acl_;
+}
+
+LinkPolicyInterface* Stack::LinkPolicy() {
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   ASSERT(is_running_);
   ASSERT_LOG(acl_ != nullptr, "Acl shim layer has not been created");

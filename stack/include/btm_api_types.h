@@ -19,6 +19,7 @@
 #ifndef BTM_API_TYPES_H
 #define BTM_API_TYPES_H
 
+#include <base/strings/stringprintf.h>
 #include <cstdint>
 #include <string>
 
@@ -420,7 +421,7 @@ typedef struct {
 } tBTM_CHG_ESCO_PARAMS;
 
 /* Returned by BTM_ReadEScoLinkParms() */
-typedef struct {
+struct tBTM_ESCO_DATA {
   uint16_t rx_pkt_len;
   uint16_t tx_pkt_len;
   RawAddress bd_addr;
@@ -428,7 +429,7 @@ typedef struct {
   uint8_t tx_interval;
   uint8_t retrans_window;
   uint8_t air_mode;
-} tBTM_ESCO_DATA;
+};
 
 typedef struct {
   uint16_t sco_inx;
@@ -609,42 +610,62 @@ enum {
 };
 typedef uint8_t tBTM_SP_EVT;
 
-#define BTM_IO_CAP_OUT 0    /* DisplayOnly */
-#define BTM_IO_CAP_IO 1     /* DisplayYesNo */
-#define BTM_IO_CAP_IN 2     /* KeyboardOnly */
-#define BTM_IO_CAP_NONE 3   /* NoInputNoOutput */
-#define BTM_IO_CAP_KBDISP 4 /* Keyboard display */
-#define BTM_IO_CAP_MAX 5
-#define BTM_IO_CAP_UNKNOWN 0xFF /* Unknown value */
-
+enum : uint8_t {
+  BTM_IO_CAP_OUT = 0,    /* DisplayOnly */
+  BTM_IO_CAP_IO = 1,     /* DisplayYesNo */
+  BTM_IO_CAP_IN = 2,     /* KeyboardOnly */
+  BTM_IO_CAP_NONE = 3,   /* NoInputNoOutput */
+  BTM_IO_CAP_KBDISP = 4, /* Keyboard display */
+  BTM_IO_CAP_MAX = 5,
+  BTM_IO_CAP_UNKNOWN = 0xFF /* Unknown value */
+};
 typedef uint8_t tBTM_IO_CAP;
+
+inline std::string io_capabilities_text(const tBTM_IO_CAP& io_caps) {
+  switch (io_caps) {
+    case BTM_IO_CAP_OUT:
+      return std::string("Display only");
+    case BTM_IO_CAP_IO:
+      return std::string("Display yes-no");
+    case BTM_IO_CAP_IN:
+      return std::string("Keyboard Only");
+    case BTM_IO_CAP_NONE:
+      return std::string("No input or output");
+    case BTM_IO_CAP_KBDISP:
+      return std::string("Keyboard-Display");
+    default:
+      return base::StringPrintf("UNKNOWN[%hhu]", io_caps);
+  }
+}
 
 #define BTM_MAX_PASSKEY_VAL (999999)
 
-/* MITM Protection Not Required - Single Profile/non-bonding Numeric comparison
- * with automatic accept allowed */
-// NO_BONDING
-#define BTM_AUTH_SP_NO 0
-/* MITM Protection Required - Single Profile/non-bonding. Use IO Capabilities to
- * determine authentication procedure */
-// NO_BONDING_MITM_PROTECTION
-#define BTM_AUTH_SP_YES 1
-/* MITM Protection Not Required - All Profiles/dedicated bonding Numeric
- * comparison with automatic accept allowed */
-// DEDICATED_BONDING
-#define BTM_AUTH_AP_NO 2
-/* MITM Protection Required - All Profiles/dedicated bonding Use IO Capabilities
- * to determine authentication procedure */
-// DEDICATED_BONDING_MITM_PROTECTION
-#define BTM_AUTH_AP_YES 3
-/* MITM Protection Not Required - Single Profiles/general bonding Numeric
- * comparison with automatic accept allowed */
-// GENERAL_BONDING
-#define BTM_AUTH_SPGB_NO 4
-/* MITM Protection Required - Single Profiles/general bonding Use IO
- * Capabilities to determine authentication procedure */
-// GENERAL_BONDING_MITM_PROTECTION
-#define BTM_AUTH_SPGB_YES 5
+typedef enum : uint8_t {
+  /* MITM Protection Not Required - Single Profile/non-bonding Numeric
+   * comparison with automatic accept allowed */
+  // NO_BONDING
+  BTM_AUTH_SP_NO = 0,
+  /* MITM Protection Required - Single Profile/non-bonding. Use IO Capabilities
+   * to determine authentication procedure */
+  // NO_BONDING_MITM_PROTECTION
+  BTM_AUTH_SP_YES = 1,
+  /* MITM Protection Not Required - All Profiles/dedicated bonding Numeric
+   * comparison with automatic accept allowed */
+  // DEDICATED_BONDING
+  BTM_AUTH_AP_NO = 2,
+  /* MITM Protection Required - All Profiles/dedicated bonding Use IO
+   * Capabilities to determine authentication procedure */
+  // DEDICATED_BONDING_MITM_PROTECTION
+  BTM_AUTH_AP_YES = 3,
+  /* MITM Protection Not Required - Single Profiles/general bonding Numeric
+   * comparison with automatic accept allowed */
+  // GENERAL_BONDING
+  BTM_AUTH_SPGB_NO = 4,
+  /* MITM Protection Required - Single Profiles/general bonding Use IO
+   * Capabilities to determine authentication procedure */
+  // GENERAL_BONDING_MITM_PROTECTION
+  BTM_AUTH_SPGB_YES = 5,
+} tBTM_AUTH;
 
 /* this bit is ORed with BTM_AUTH_SP_* when IO exchange for dedicated bonding */
 #define BTM_AUTH_DD_BOND 2
@@ -787,21 +808,22 @@ typedef void(tBTM_BOND_CANCEL_CMPL_CALLBACK)(tBTM_STATUS result);
 #define BTM_LE_CONSENT_REQ_EVT SMP_CONSENT_REQ_EVT
 typedef uint8_t tBTM_LE_EVT;
 
-#define BTM_LE_KEY_NONE 0
-/* encryption information of peer device */
-#define BTM_LE_KEY_PENC SMP_SEC_KEY_TYPE_ENC
-/* identity key of the peer device */
-#define BTM_LE_KEY_PID SMP_SEC_KEY_TYPE_ID
-/* peer SRK */
-#define BTM_LE_KEY_PCSRK SMP_SEC_KEY_TYPE_CSRK
-#define BTM_LE_KEY_PLK SMP_SEC_KEY_TYPE_LK
-#define BTM_LE_KEY_LLK (SMP_SEC_KEY_TYPE_LK << 4)
-/* central role security information:div */
-#define BTM_LE_KEY_LENC (SMP_SEC_KEY_TYPE_ENC << 4)
-/* central device ID key */
-#define BTM_LE_KEY_LID (SMP_SEC_KEY_TYPE_ID << 4)
-/* local CSRK has been deliver to peer */
-#define BTM_LE_KEY_LCSRK (SMP_SEC_KEY_TYPE_CSRK << 4)
+enum : uint8_t {
+  BTM_LE_KEY_NONE = 0,
+  BTM_LE_KEY_PENC = SMP_SEC_KEY_TYPE_ENC,
+  /* identity key of the peer device */
+  BTM_LE_KEY_PID = SMP_SEC_KEY_TYPE_ID,
+  /* peer SRK */
+  BTM_LE_KEY_PCSRK = SMP_SEC_KEY_TYPE_CSRK,
+  BTM_LE_KEY_PLK = SMP_SEC_KEY_TYPE_LK,
+  BTM_LE_KEY_LLK = (SMP_SEC_KEY_TYPE_LK << 4),
+  /* master role security information:div */
+  BTM_LE_KEY_LENC = (SMP_SEC_KEY_TYPE_ENC << 4),
+  /* master device ID key */
+  BTM_LE_KEY_LID = (SMP_SEC_KEY_TYPE_ID << 4),
+  /* local CSRK has been deliver to peer */
+  BTM_LE_KEY_LCSRK = (SMP_SEC_KEY_TYPE_CSRK << 4),
+};
 typedef uint8_t tBTM_LE_KEY_TYPE;
 
 #define BTM_LE_AUTH_REQ_NO_BOND SMP_AUTH_NO_BOND /* 0 */

@@ -30,6 +30,7 @@
 
 #include "bt_types.h"
 #include "bta/dm/bta_dm_int.h"
+#include "bta/sys/bta_sys.h"
 #include "btcore/include/module.h"
 #include "btm_int.h"
 #include "btu.h"
@@ -37,15 +38,16 @@
 #include "device/include/controller.h"
 #include "hci/include/hci_layer.h"
 #include "hcimsgs.h"
+#include "main/shim/btm_api.h"
+#include "main/shim/controller.h"
+#include "main/shim/shim.h"
 #include "osi/include/osi.h"
+#include "stack/btm/btm_ble_int.h"
 #include "stack/gatt/connection_manager.h"
 #include "stack/include/acl_api.h"
 #include "stack/include/l2cap_controller_interface.h"
 
-#include "bta/sys/bta_sys.h"
-#include "main/shim/btm_api.h"
-#include "main/shim/controller.h"
-#include "main/shim/shim.h"
+extern tBTM_CB btm_cb;
 
 extern void btm_inq_db_reset(void);
 extern void btm_pm_reset(void);
@@ -93,11 +95,6 @@ void btm_dev_init() {
   btm_cb.devcb.read_link_quality_timer =
       alarm_new("btm.read_link_quality_timer");
   btm_cb.devcb.read_tx_power_timer = alarm_new("btm.read_tx_power_timer");
-
-  btm_cb.btm_sco_pkt_types_supported =
-      ESCO_PKT_TYPES_MASK_HV1 + ESCO_PKT_TYPES_MASK_HV2 +
-      ESCO_PKT_TYPES_MASK_HV3 + ESCO_PKT_TYPES_MASK_EV3 +
-      ESCO_PKT_TYPES_MASK_EV4 + ESCO_PKT_TYPES_MASK_EV5;
 }
 
 void btm_dev_free() {
@@ -292,7 +289,7 @@ static void decode_controller_support() {
   BTM_TRACE_DEBUG("Local supported SCO packet types: 0x%04x",
                   btm_cb.btm_sco_pkt_types_supported);
 
-  BTM_acl_after_controller_started();
+  BTM_acl_after_controller_started(controller_get_interface());
   btm_sec_dev_reset();
 
   if (controller->supports_rssi_with_inquiry_results()) {
