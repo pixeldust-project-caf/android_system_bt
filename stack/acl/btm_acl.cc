@@ -59,6 +59,7 @@
 #include "stack/include/btm_api.h"
 #include "stack/include/btm_iso_api.h"
 #include "stack/include/btu.h"
+#include "stack/include/hci_error_code.h"
 #include "stack/include/hcimsgs.h"
 #include "stack/include/l2cap_acl_interface.h"
 #include "stack/include/sco_hci_link_interface.h"
@@ -66,7 +67,7 @@
 
 void gatt_find_in_device_record(const RawAddress& bd_addr,
                                 tBLE_BD_ADDR* address_with_type);
-void l2c_link_hci_conn_comp(uint8_t status, uint16_t handle,
+void l2c_link_hci_conn_comp(tHCI_STATUS status, uint16_t handle,
                             const RawAddress& p_bda);
 
 void BTM_db_reset(void);
@@ -342,23 +343,6 @@ void btm_acl_process_sca_cmpl_pkt(uint8_t len, uint8_t* data) {
   p_acl->sca = sca;
 }
 
-/*******************************************************************************
- *
- * Function         btm_acl_created
- *
- * Description      This function is called by L2CAP when an ACL connection
- *                  is created.
- *
- * Returns          void
- *
- ******************************************************************************/
-void acl_initialize_power_mode(const tACL_CONN& p_acl) {
-  tBTM_PM_MCB* p_db =
-      &btm_cb.acl_cb_.pm_mode_db[btm_handle_to_acl_index(p_acl.hci_handle)];
-  memset(p_db, 0, sizeof(tBTM_PM_MCB));
-  p_db->Init();
-}
-
 tACL_CONN* StackAclBtmAcl::acl_allocate_connection() {
   tACL_CONN* p_acl = &btm_cb.acl_cb_.acl_db[0];
   for (uint8_t xx = 0; xx < MAX_L2CAP_LINKS; xx++, p_acl++) {
@@ -401,7 +385,7 @@ void btm_acl_created(const RawAddress& bda, uint16_t hci_handle,
   p_acl->transport = transport;
   p_acl->switch_role_failed_attempts = 0;
   p_acl->reset_switch_role();
-  acl_initialize_power_mode(*p_acl);
+  BTM_PM_OnConnected(hci_handle, bda);
 
   LOG_DEBUG(
       "Created new ACL connection peer:%s role:%s handle:0x%04x transport:%s",
@@ -465,6 +449,7 @@ void btm_acl_removed(uint16_t handle) {
   p_acl->in_use = false;
   NotifyAclLinkDown(*p_acl);
   p_acl->Reset();
+  BTM_PM_OnDisconnected(handle);
 }
 
 /*******************************************************************************
@@ -1207,13 +1192,7 @@ uint16_t BTM_GetNumAclLinks(void) {
   if (bluetooth::shim::is_gd_l2cap_enabled()) {
     return bluetooth::shim::L2CA_GetNumLinks();
   }
-  uint16_t num_acl = 0;
-
-  for (uint16_t i = 0; i < MAX_L2CAP_LINKS; ++i) {
-    if (btm_cb.acl_cb_.acl_db[i].in_use) ++num_acl;
-  }
-
-  return num_acl;
+  return static_cast<uint16_t>(btm_cb.acl_cb_.NumberOfActiveLinks());
 }
 
 /*******************************************************************************
@@ -1325,9 +1304,9 @@ uint8_t BTM_GetPeerSCA(const RawAddress& remote_bda, tBT_TRANSPORT transport) {
 
 /*******************************************************************************
  *
- * Function         btm_blacklist_role_change_device
+ * Function         btm_rejectlist_role_change_device
  *
- * Description      This function is used to blacklist the device if the role
+ * Description      This function is used to rejectlist the device if the role
  *                  switch fails for maximum number of times. It also removes
  *                  the device from the black list if the role switch succeeds.
  *
@@ -1337,8 +1316,8 @@ uint8_t BTM_GetPeerSCA(const RawAddress& remote_bda, tBT_TRANSPORT transport) {
  * Returns          void
  *
  *******************************************************************************/
-void btm_blacklist_role_change_device(const RawAddress& bd_addr,
-                                      uint8_t hci_status) {
+void btm_rejectlist_role_change_device(const RawAddress& bd_addr,
+                                       uint8_t hci_status) {
   tACL_CONN* p = internal_.btm_bda_to_acl(bd_addr, BT_TRANSPORT_BR_EDR);
 
   if (!p) {
@@ -1364,7 +1343,7 @@ void btm_blacklist_role_change_device(const RawAddress& bd_addr,
     p->switch_role_failed_attempts++;
     if (p->switch_role_failed_attempts == BTM_MAX_SW_ROLE_FAILED_ATTEMPTS) {
       LOG_WARN(
-          "Device %s blacklisted for role switching - "
+          "Device %s rejectlisted for role switching - "
           "multiple role switch failed attempts: %u",
           bd_addr.ToString().c_str(), p->switch_role_failed_attempts);
       interop_database_add(INTEROP_DYNAMIC_ROLE_SWITCH, &bd_addr, 3);
@@ -2329,6 +2308,13 @@ void BTM_ReadConnectionAddr(const RawAddress& remote_bda,
     return bluetooth::shim::BTM_ReadConnectionAddr(remote_bda, local_conn_addr,
                                                    p_addr_type);
   }
+
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    bluetooth::shim::L2CA_ReadConnectionAddr(remote_bda, local_conn_addr,
+                                             p_addr_type);
+    return;
+  }
+
   tACL_CONN* p_acl = internal_.btm_bda_to_acl(remote_bda, BT_TRANSPORT_LE);
 
   if (p_acl == NULL) {
@@ -2374,35 +2360,6 @@ const RawAddress acl_address_from_handle(uint16_t handle) {
   return p_acl->remote_addr;
 }
 
-tBTM_PM_MCB* acl_power_mode_from_handle(uint16_t hci_handle) {
-  uint8_t index = btm_handle_to_acl_index(hci_handle);
-  if (index >= MAX_L2CAP_LINKS) {
-    return nullptr;
-  }
-  return &btm_cb.acl_cb_.pm_mode_db[index];
-}
-
-/*******************************************************************************
- *
- * Function         btm_pm_find_acl_ind
- *
- * Description      This function initializes the control block of an ACL link.
- *                  It is called when an ACL connection is created.
- *
- * Returns          void
- *
- ******************************************************************************/
-int btm_pm_find_acl_ind(const RawAddress& remote_bda) {
-  tACL_CONN* p = &btm_cb.acl_cb_.acl_db[0];
-  uint8_t xx;
-
-  for (xx = 0; xx < MAX_L2CAP_LINKS; xx++, p++) {
-    if (p->in_use && p->remote_addr == remote_bda && p->is_transport_br_edr())
-      break;
-  }
-  return xx;
-}
-
 /*******************************************************************************
  *
  * Function         btm_ble_refresh_local_resolvable_private_addr
@@ -2432,30 +2389,26 @@ void btm_ble_refresh_local_resolvable_private_addr(
   }
 }
 
-bool sco_peer_supports_esco_2m_phy(uint16_t hci_handle) {
-  tACL_CONN* p_acl = internal_.acl_get_connection_from_handle(hci_handle);
-  if (p_acl == nullptr) {
-    return false;
-  }
-  if (!p_acl->peer_lmp_feature_valid[0]) {
+bool sco_peer_supports_esco_2m_phy(const RawAddress& remote_bda) {
+  uint8_t* features = BTM_ReadRemoteFeatures(remote_bda);
+  if (features == nullptr) {
     LOG_WARN(
         "Checking remote features but remote feature read is "
         "incomplete");
+    return false;
   }
-  return HCI_EDR_ESCO_2MPS_SUPPORTED(p_acl->peer_lmp_feature_pages[0]);
+  return HCI_EDR_ESCO_2MPS_SUPPORTED(features);
 }
 
-bool sco_peer_supports_esco_3m_phy(uint16_t hci_handle) {
-  tACL_CONN* p_acl = internal_.acl_get_connection_from_handle(hci_handle);
-  if (p_acl == nullptr) {
-    return false;
-  }
-  if (!p_acl->peer_lmp_feature_valid[0]) {
+bool sco_peer_supports_esco_3m_phy(const RawAddress& remote_bda) {
+  uint8_t* features = BTM_ReadRemoteFeatures(remote_bda);
+  if (features == nullptr) {
     LOG_WARN(
         "Checking remote features but remote feature read is "
         "incomplete");
+    return false;
   }
-  return HCI_EDR_ESCO_3MPS_SUPPORTED(p_acl->peer_lmp_feature_pages[0]);
+  return HCI_EDR_ESCO_3MPS_SUPPORTED(features);
 }
 
 bool acl_is_switch_role_idle(const RawAddress& bd_addr,
@@ -2489,6 +2442,12 @@ bool BTM_ReadRemoteConnectionAddr(const RawAddress& pseudo_addr,
     return bluetooth::shim::BTM_ReadRemoteConnectionAddr(pseudo_addr, conn_addr,
                                                          p_addr_type);
   }
+
+  if (bluetooth::shim::is_gd_l2cap_enabled()) {
+    return bluetooth::shim::L2CA_ReadRemoteConnectionAddr(
+        pseudo_addr, conn_addr, p_addr_type);
+  }
+
   bool st = true;
   tACL_CONN* p_acl = internal_.btm_bda_to_acl(pseudo_addr, BT_TRANSPORT_LE);
 
@@ -2560,7 +2519,7 @@ bool acl_is_role_switch_allowed() {
 }
 
 uint16_t acl_get_supported_packet_types() {
-  return btm_cb.acl_cb_.btm_acl_pkt_types_supported;
+  return btm_cb.acl_cb_.DefaultPacketTypes();
 }
 
 bool acl_set_peer_le_features_from_handle(uint16_t hci_handle,
@@ -2791,17 +2750,6 @@ bool acl_create_le_connection(const RawAddress& bd_addr) {
   return acl_create_le_connection_with_id(CONN_MGR_ID_L2CAP, bd_addr);
 }
 
-void acl_cancel_le_connection(const RawAddress& bd_addr) {
-  if (bluetooth::shim::is_gd_acl_enabled()) {
-    tBLE_BD_ADDR address_with_type{
-        .bda = bd_addr,
-        .type = BLE_ADDR_RANDOM,
-    };
-    return bluetooth::shim::ACL_CancelLeConnection(address_with_type);
-  }
-  connection_manager::direct_connect_remove(CONN_MGR_ID_L2CAP, bd_addr);
-}
-
 void acl_rcv_acl_data(BT_HDR* p_msg) {
   acl_header_t acl_header{
       .handle = HCI_INVALID_HANDLE,
@@ -2897,4 +2845,15 @@ void ACL_RegisterClient(struct acl_client_callback_s* callbacks) {
 
 void ACL_UnregisterClient(struct acl_client_callback_s* callbacks) {
   LOG_DEBUG("UNIMPLEMENTED");
+}
+
+bool ACL_SupportTransparentSynchronousData(const RawAddress& bd_addr) {
+  const tACL_CONN* p_acl =
+      internal_.btm_bda_to_acl(bd_addr, BT_TRANSPORT_BR_EDR);
+  if (p_acl == nullptr) {
+    LOG_WARN("Unable to find active acl");
+    return false;
+  }
+
+  return HCI_LMP_TRANSPNT_SUPPORTED(p_acl->peer_lmp_feature_pages[0]);
 }

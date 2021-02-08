@@ -42,6 +42,7 @@
 #include "stack/include/btu.h"
 #include "stack/include/dev_hci_link_interface.h"
 #include "stack/include/gatt_api.h"
+#include "stack/include/hci_error_code.h"
 #include "stack/include/hci_evt_length.h"
 #include "stack/include/hcidefs.h"
 #include "stack/include/inq_hci_link_interface.h"
@@ -52,7 +53,8 @@
 using base::Location;
 using bluetooth::hci::IsoManager;
 
-bool l2c_link_hci_disc_comp(uint16_t handle, uint8_t reason);  // TODO remove
+bool l2c_link_hci_disc_comp(uint16_t handle,
+                            tHCI_REASON reason);               // TODO remove
 bool BTM_BLE_IS_RESOLVE_BDA(const RawAddress& x);              // TODO remove
 void BTA_sys_signal_hw_error();                                // TODO remove
 void smp_cancel_start_encryption_attempt();                    // TODO remove
@@ -962,7 +964,8 @@ static void btu_hcif_connection_comp_evt(uint8_t* p, uint8_t evt_len) {
     memset(&esco_data, 0, sizeof(tBTM_ESCO_DATA));
     /* esco_data.link_type = HCI_LINK_TYPE_SCO; already zero */
     esco_data.bd_addr = bda;
-    btm_sco_connected(status, &bda, handle, &esco_data);
+    btm_sco_connected(static_cast<tHCI_STATUS>(status), bda, handle,
+                      &esco_data);
   }
 }
 
@@ -1178,7 +1181,7 @@ static void btu_hcif_esco_connection_comp_evt(uint8_t* p) {
   handle = HCID_GET_HANDLE(handle);
 
   data.bd_addr = bda;
-  btm_sco_connected(status, &bda, handle, &data);
+  btm_sco_connected(static_cast<tHCI_STATUS>(status), bda, handle, &data);
 }
 
 /*******************************************************************************
@@ -1437,8 +1440,6 @@ static void btu_hcif_hdl_command_status(uint16_t opcode, uint8_t status,
         // Determine if initial connection failed or is a change of setup
         if (btm_is_sco_active(handle)) {
           btm_esco_proc_conn_chg(status, handle, 0, 0, 0, 0);
-        } else {
-          btm_sco_connected(status, nullptr, handle, nullptr);
         }
       }
       break;
@@ -1550,7 +1551,7 @@ static void btu_hcif_role_change_evt(uint8_t* p) {
   STREAM_TO_BDADDR(bda, p);
   STREAM_TO_UINT8(role, p);
 
-  btm_blacklist_role_change_device(bda, status);
+  btm_rejectlist_role_change_device(bda, status);
   btm_acl_role_changed(static_cast<tHCI_STATUS>(status), bda, role);
 }
 

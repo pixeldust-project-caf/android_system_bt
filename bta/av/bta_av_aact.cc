@@ -29,6 +29,7 @@
 #include "bt_target.h"
 
 #include <base/logging.h>
+#include <base/strings/stringprintf.h>
 #include <string.h>
 #include <vector>
 
@@ -48,8 +49,15 @@
 #include "osi/include/osi.h"
 #include "osi/include/properties.h"
 #include "stack/include/acl_api.h"
+#include "stack/include/btm_api.h"
 #include "stack/include/btm_client_interface.h"
 #include "utl.h"
+
+namespace {
+
+constexpr char kBtmLogTag[] = "A2DP";
+
+}
 
 /*****************************************************************************
  *  Constants
@@ -1147,6 +1155,7 @@ void bta_av_setconfig_rsp(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
  ******************************************************************************/
 void bta_av_str_opened(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
   tBTA_AV_CONN_CHG msg;
+  char remote_name[BTM_MAX_REM_BD_NAME_LEN] = "";
   uint8_t* p;
 
   APPL_TRACE_DEBUG("%s: peer %s bta_handle: 0x%x", __func__,
@@ -1160,6 +1169,15 @@ void bta_av_str_opened(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
   /* set the congestion flag, so AV would not send media packets by accident */
   p_scb->cong = true;
   p_scb->offload_start_pending = false;
+  // Don't use AVDTP SUSPEND for restrict listed devices
+  btif_storage_get_stored_remote_name(p_scb->PeerAddress(), remote_name);
+  if (interop_match_name(INTEROP_DISABLE_AVDTP_SUSPEND, remote_name) ||
+      interop_match_addr(INTEROP_DISABLE_AVDTP_SUSPEND,
+                         &p_scb->PeerAddress())) {
+    LOG_INFO("%s: disable AVDTP SUSPEND: interop matched name %s address %s",
+             __func__, remote_name, p_scb->PeerAddress().ToString().c_str());
+    p_scb->suspend_sup = false;
+  }
 
   p_scb->stream_mtu =
       p_data->str_msg.msg.open_ind.peer_mtu - AVDT_MEDIA_HDR_SIZE;
@@ -1959,15 +1977,19 @@ void bta_av_reconfig(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
 
   alarm_cancel(p_scb->avrc_ct_timer);
 
-  APPL_TRACE_DEBUG(
-      "%s: p_scb->sep_info_idx=%d p_scb->rcfg_idx=%d p_rcfg->sep_info_idx=%d",
-      __func__, p_scb->sep_info_idx, p_scb->rcfg_idx, p_rcfg->sep_info_idx);
-  APPL_TRACE_DEBUG("%s: codec: %s", __func__,
-                   A2DP_CodecInfoString(p_scb->peer_cap.codec_info).c_str());
-  APPL_TRACE_DEBUG("%s: codec: %s", __func__,
-                   A2DP_CodecInfoString(p_scb->cfg.codec_info).c_str());
-  APPL_TRACE_DEBUG("%s: codec: %s", __func__,
-                   A2DP_CodecInfoString(p_rcfg->codec_info).c_str());
+  LOG_DEBUG("p_scb->sep_info_idx=%d p_scb->rcfg_idx=%d p_rcfg->sep_info_idx=%d",
+            p_scb->sep_info_idx, p_scb->rcfg_idx, p_rcfg->sep_info_idx);
+  LOG_DEBUG("Peer capable codec: %s",
+            A2DP_CodecInfoString(p_scb->peer_cap.codec_info).c_str());
+  LOG_DEBUG("Current codec: %s",
+            A2DP_CodecInfoString(p_scb->cfg.codec_info).c_str());
+  LOG_DEBUG("Reconfig codec: %s",
+            A2DP_CodecInfoString(p_rcfg->codec_info).c_str());
+
+  BTM_LogHistory(
+      kBtmLogTag, p_scb->PeerAddress(), "Codec reconfig",
+      base::StringPrintf("%s => %s", A2DP_CodecName(p_scb->cfg.codec_info),
+                         A2DP_CodecName(p_rcfg->codec_info)));
 
   p_cfg->num_protect = p_rcfg->num_protect;
   memcpy(p_cfg->codec_info, p_rcfg->codec_info, AVDT_CODEC_SIZE);
@@ -2467,10 +2489,6 @@ void bta_av_suspend_cfm(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
 
   suspend_rsp.status = BTA_AV_SUCCESS;
   if (err_code && (err_code != AVDT_ERR_BAD_STATE)) {
-    /* Disable suspend feature only with explicit rejection(not with timeout) */
-    if (err_code != AVDT_ERR_TIMEOUT) {
-      p_scb->suspend_sup = false;
-    }
     suspend_rsp.status = BTA_AV_FAIL;
 
     APPL_TRACE_ERROR("%s: suspend failed, closing connection", __func__);
@@ -2684,11 +2702,6 @@ void bta_av_suspend_cont(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
       bta_av_ssm_execute(p_scb, BTA_AV_STR_DISC_FAIL_EVT, NULL);
     } else {
       APPL_TRACE_ERROR("%s: suspend rejected, try close", __func__);
-      /* Disable suspend feature only with explicit rejection(not with timeout)
-       */
-      if (err_code != AVDT_ERR_TIMEOUT) {
-        p_scb->suspend_sup = false;
-      }
       /* drop the buffers queued in L2CAP */
       L2CA_FlushChannel(p_scb->l2c_cid, L2CAP_FLUSH_CHANS_ALL);
 
@@ -2720,7 +2733,7 @@ void bta_av_rcfg_cfm(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
 
   APPL_TRACE_DEBUG("%s: err_code = %d", __func__, err_code);
 
-  // Disable AVDTP RECONFIGURE for blacklisted devices
+  // Disable AVDTP RECONFIGURE for rejectlisted devices
   bool disable_avdtp_reconfigure = false;
   {
     char remote_name[BTM_MAX_REM_BD_NAME_LEN] = "";

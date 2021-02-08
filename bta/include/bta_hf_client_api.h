@@ -25,7 +25,10 @@
 #ifndef BTA_HF_CLIENT_API_H
 #define BTA_HF_CLIENT_API_H
 
-#include "bta_api.h"
+#include <cstdint>
+
+#include "bta/include/bta_api.h"
+#include "types/raw_address.h"
 
 /*****************************************************************************
  *  Constants and data types
@@ -89,7 +92,7 @@ typedef uint16_t tBTA_HF_CLIENT_CHLD_FEAT;
 #define BTA_HF_CLIENT_AT_RESULT_BUSY 3
 #define BTA_HF_CLIENT_AT_RESULT_NO_ANSWER 4
 #define BTA_HF_CLIENT_AT_RESULT_DELAY 5
-#define BTA_HF_CLIENT_AT_RESULT_BLACKLISTED 6
+#define BTA_HF_CLIENT_AT_RESULT_REJECTLISTED 6
 #define BTA_HF_CLIENT_AT_RESULT_CME 7
 
 typedef uint8_t tBTA_HF_CLIENT_AT_RESULT_TYPE;
