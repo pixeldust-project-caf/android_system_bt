@@ -37,13 +37,23 @@ enum class AdvertisingApiType {
   EXTENDED = 3,
 };
 
+enum class AdvertisingFlag : uint8_t {
+  LE_LIMITED_DISCOVERABLE = 0x01,
+  LE_GENERAL_DISCOVERABLE = 0x02,
+  BR_EDR_NOT_SUPPORTED = 0x04,
+  SIMULTANEOUS_LE_AND_BR_EDR_CONTROLLER = 0x08,
+  SIMULTANEOUS_LE_AND_BR_EDR_HOST = 0x10,
+};
+
 struct Advertiser {
   os::Handler* handler;
   AddressWithType current_address;
   common::Callback<void(Address, AddressType)> scan_callback;
   common::Callback<void(ErrorCode, uint8_t, uint8_t)> set_terminated_callback;
   int8_t tx_power;
+  uint16_t duration;
   bool started = false;
+  bool connectable = false;
 };
 
 ExtendedAdvertisingConfig::ExtendedAdvertisingConfig(const AdvertisingConfig& config) : AdvertisingConfig(config) {
@@ -210,74 +220,32 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
 
     switch (advertising_api_type_) {
       case (AdvertisingApiType::LEGACY): {
-        le_advertising_interface_->EnqueueCommand(
-            hci::LeSetAdvertisingParametersBuilder::Create(
-                config.interval_min,
-                config.interval_max,
-                config.advertising_type,
-                config.own_address_type,
-                config.peer_address_type,
-                config.peer_address,
-                config.channel_map,
-                config.filter_policy),
-            module_handler_->BindOnce(impl::check_status<LeSetAdvertisingParametersCompleteView>));
+        set_parameters(id, config);
         if (!config.scan_response.empty()) {
-          le_advertising_interface_->EnqueueCommand(
-              hci::LeSetScanResponseDataBuilder::Create(config.scan_response),
-              module_handler_->BindOnce(impl::check_status<LeSetScanResponseDataCompleteView>));
+          set_data(id, true, config.scan_response);
         }
-        le_advertising_interface_->EnqueueCommand(
-            hci::LeSetAdvertisingDataBuilder::Create(config.advertisement),
-            module_handler_->BindOnce(impl::check_status<LeSetAdvertisingDataCompleteView>));
-        EnabledSet curr_set;
-        curr_set.advertising_handle_ = id;
-        enabled_sets_[id] = curr_set;
+        set_data(id, false, config.advertisement);
         if (!paused) {
-          std::vector<EnabledSet> enabled_sets = {curr_set};
-          le_advertising_interface_->EnqueueCommand(
-              hci::LeSetAdvertisingEnableBuilder::Create(Enable::ENABLED),
-              module_handler_->BindOnceOn(
-                  this,
-                  &impl::on_set_advertising_enable_complete<LeSetAdvertisingEnableCompleteView>,
-                  true,
-                  enabled_sets));
+          enable_advertiser(id, true, 0, 0);
+        } else {
+          enabled_sets_[id].advertising_handle_ = id;
         }
       } break;
       case (AdvertisingApiType::ANDROID_HCI): {
-        le_advertising_interface_->EnqueueCommand(
-            hci::LeMultiAdvtParamBuilder::Create(
-                config.interval_min,
-                config.interval_max,
-                config.advertising_type,
-                config.own_address_type,
-                config.peer_address_type,
-                config.peer_address,
-                config.channel_map,
-                config.filter_policy,
-                id,
-                config.tx_power),
-            module_handler_->BindOnce(impl::check_status<LeMultiAdvtCompleteView>));
-        le_advertising_interface_->EnqueueCommand(
-            hci::LeMultiAdvtSetDataBuilder::Create(config.advertisement, id),
-            module_handler_->BindOnce(impl::check_status<LeMultiAdvtCompleteView>));
+        set_parameters(id, config);
         if (!config.scan_response.empty()) {
-          le_advertising_interface_->EnqueueCommand(
-              hci::LeMultiAdvtSetScanRespBuilder::Create(config.scan_response, id),
-              module_handler_->BindOnce(impl::check_status<LeMultiAdvtCompleteView>));
+          set_data(id, true, config.scan_response);
         }
-
+        set_data(id, false, config.advertisement);
         advertising_sets_[id].current_address = le_address_manager_->GetAnotherAddress();
         le_advertising_interface_->EnqueueCommand(
             hci::LeMultiAdvtSetRandomAddrBuilder::Create(advertising_sets_[id].current_address.GetAddress(), id),
             module_handler_->BindOnce(impl::check_status<LeMultiAdvtCompleteView>));
         if (!paused) {
-          le_advertising_interface_->EnqueueCommand(
-              hci::LeMultiAdvtSetEnableBuilder::Create(Enable::ENABLED, id),
-              module_handler_->BindOnce(impl::check_status<LeMultiAdvtCompleteView>));
+          enable_advertiser(id, true, 0, 0);
+        } else {
+          enabled_sets_[id].advertising_handle_ = id;
         }
-        EnabledSet curr_set;
-        curr_set.advertising_handle_ = id;
-        enabled_sets_[id] = curr_set;
       } break;
       case (AdvertisingApiType::EXTENDED): {
         LOG_WARN("Unexpected AdvertisingApiType EXTENDED");
@@ -291,6 +259,8 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
       const ExtendedAdvertisingConfig config,
       const common::Callback<void(Address, AddressType)>& scan_callback,
       const common::Callback<void(ErrorCode, uint8_t, uint8_t)>& set_terminated_callback,
+      uint16_t duration,
+      uint8_t max_ext_adv_events,
       os::Handler* handler) {
     id_map_[id] = reg_id;
 
@@ -301,6 +271,7 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
 
     advertising_sets_[id].scan_callback = scan_callback;
     advertising_sets_[id].set_terminated_callback = set_terminated_callback;
+    advertising_sets_[id].duration = duration;
     advertising_sets_[id].handler = handler;
 
     if (!address_manager_registered) {
@@ -308,69 +279,7 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
       address_manager_registered = true;
     }
 
-    if (config.legacy_pdus) {
-      LegacyAdvertisingProperties legacy_properties = LegacyAdvertisingProperties::ADV_IND;
-      if (config.connectable && config.directed) {
-        if (config.high_duty_directed_connectable) {
-          legacy_properties = LegacyAdvertisingProperties::ADV_DIRECT_IND_HIGH;
-        } else {
-          legacy_properties = LegacyAdvertisingProperties::ADV_DIRECT_IND_LOW;
-        }
-      }
-      if (config.scannable && !config.connectable) {
-        legacy_properties = LegacyAdvertisingProperties::ADV_SCAN_IND;
-      }
-      if (!config.scannable && !config.connectable) {
-        legacy_properties = LegacyAdvertisingProperties::ADV_NONCONN_IND;
-      }
-
-      le_advertising_interface_->EnqueueCommand(
-          LeSetExtendedAdvertisingLegacyParametersBuilder::Create(
-              id,
-              legacy_properties,
-              config.interval_min,
-              config.interval_max,
-              config.channel_map,
-              config.own_address_type,
-              config.peer_address_type,
-              config.peer_address,
-              config.filter_policy,
-              config.tx_power,
-              config.sid,
-              config.enable_scan_request_notifications),
-          module_handler_->BindOnceOn(
-              this,
-              &impl::on_set_extended_advertising_parameters_complete<LeSetExtendedAdvertisingParametersCompleteView>,
-              id));
-    } else {
-      uint8_t legacy_properties = (config.connectable ? 0x1 : 0x00) | (config.scannable ? 0x2 : 0x00) |
-                                  (config.directed ? 0x4 : 0x00) | (config.high_duty_directed_connectable ? 0x8 : 0x00);
-      uint8_t extended_properties = (config.anonymous ? 0x20 : 0x00) | (config.include_tx_power ? 0x40 : 0x00);
-      extended_properties = extended_properties >> 5;
-
-      le_advertising_interface_->EnqueueCommand(
-          hci::LeSetExtendedAdvertisingParametersBuilder::Create(
-              id,
-              legacy_properties,
-              extended_properties,
-              config.interval_min,
-              config.interval_max,
-              config.channel_map,
-              config.own_address_type,
-              config.peer_address_type,
-              config.peer_address,
-              config.filter_policy,
-              config.tx_power,
-              (config.use_le_coded_phy ? PrimaryPhyType::LE_CODED : PrimaryPhyType::LE_1M),
-              config.secondary_max_skip,
-              config.secondary_advertising_phy,
-              config.sid,
-              config.enable_scan_request_notifications),
-          module_handler_->BindOnceOn(
-              this,
-              &impl::on_set_extended_advertising_parameters_complete<LeSetExtendedAdvertisingParametersCompleteView>,
-              id));
-    }
+    set_parameters(id, config);
 
     if (config.own_address_type == OwnAddressType::RANDOM_DEVICE_ADDRESS) {
       advertising_sets_[id].current_address = le_address_manager_->GetAnotherAddress();
@@ -383,33 +292,26 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
           AddressWithType(controller_->GetMacAddress(), AddressType::PUBLIC_DEVICE_ADDRESS);
     }
 
-    // TODO(b/149221472): Support fragmentation
-    auto operation = Operation::COMPLETE_ADVERTISEMENT;
     if (!config.scan_response.empty()) {
-      le_advertising_interface_->EnqueueCommand(
-          hci::LeSetExtendedAdvertisingScanResponseBuilder::Create(
-              id, operation, kFragment_preference, config.scan_response),
-          module_handler_->BindOnce(impl::check_status<LeSetExtendedAdvertisingScanResponseCompleteView>));
+      set_data(id, true, config.scan_response);
     }
-    le_advertising_interface_->EnqueueCommand(
-        hci::LeSetExtendedAdvertisingDataBuilder::Create(id, operation, kFragment_preference, config.advertisement),
-        module_handler_->BindOnce(impl::check_status<LeSetExtendedAdvertisingDataCompleteView>));
+    set_data(id, false, config.advertisement);
 
-    EnabledSet curr_set;
-    curr_set.advertising_handle_ = id;
-    curr_set.duration_ = 0;                         // TODO: 0 means until the host disables it
-    curr_set.max_extended_advertising_events_ = 0;  // TODO: 0 is no maximum
-    std::vector<EnabledSet> enabled_sets = {curr_set};
+    if (!config.periodic_data.empty()) {
+      set_periodic_parameter(id, config.periodic_advertising_parameters);
+      set_periodic_data(id, config.periodic_data);
+      enable_periodic_advertising(id, true);
+    }
 
-    enabled_sets_[id] = curr_set;
     if (!paused) {
-      le_advertising_interface_->EnqueueCommand(
-          hci::LeSetExtendedAdvertisingEnableBuilder::Create(Enable::ENABLED, enabled_sets),
-          module_handler_->BindOnceOn(
-              this,
-              &impl::on_set_extended_advertising_enable_complete<LeSetExtendedAdvertisingEnableCompleteView>,
-              true,
-              enabled_sets));
+      enable_advertiser(id, true, duration, max_ext_adv_events);
+    } else {
+      EnabledSet curr_set;
+      curr_set.advertising_handle_ = id;
+      curr_set.duration_ = duration;
+      curr_set.max_extended_advertising_events_ = max_ext_adv_events;
+      std::vector<EnabledSet> enabled_sets = {curr_set};
+      enabled_sets_[id] = curr_set;
     }
   }
 
@@ -452,6 +354,8 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
   }
 
   void set_parameters(AdvertiserId advertiser_id, ExtendedAdvertisingConfig config) {
+    advertising_sets_[advertiser_id].connectable = config.connectable;
+
     switch (advertising_api_type_) {
       case (AdvertisingApiType::LEGACY): {
         le_advertising_interface_->EnqueueCommand(
@@ -468,7 +372,19 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
                 this, &impl::check_status_with_id<LeSetAdvertisingParametersCompleteView>, advertiser_id));
       } break;
       case (AdvertisingApiType::ANDROID_HCI): {
-        // TODO
+        le_advertising_interface_->EnqueueCommand(
+            hci::LeMultiAdvtParamBuilder::Create(
+                config.interval_min,
+                config.interval_max,
+                config.advertising_type,
+                config.own_address_type,
+                config.peer_address_type,
+                config.peer_address,
+                config.channel_map,
+                config.filter_policy,
+                advertiser_id,
+                config.tx_power),
+            module_handler_->BindOnceOn(this, &impl::check_status_with_id<LeMultiAdvtCompleteView>, advertiser_id));
       } break;
       case (AdvertisingApiType::EXTENDED): {
         // sid must be in range 0x00 to 0x0F. Since no controller supports more than
@@ -546,6 +462,17 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
   }
 
   void set_data(AdvertiserId advertiser_id, bool set_scan_rsp, std::vector<GapData> data) {
+    if (!set_scan_rsp && advertising_sets_[advertiser_id].connectable) {
+      GapData gap_data;
+      gap_data.data_type_ = GapDataType::FLAGS;
+      if (advertising_sets_[advertiser_id].duration == 0) {
+        gap_data.data_.push_back(static_cast<uint8_t>(AdvertisingFlag::LE_GENERAL_DISCOVERABLE));
+      } else {
+        gap_data.data_.push_back(static_cast<uint8_t>(AdvertisingFlag::LE_LIMITED_DISCOVERABLE));
+      }
+      data.insert(data.begin(), gap_data);
+    }
+
     switch (advertising_api_type_) {
       case (AdvertisingApiType::LEGACY): {
         if (set_scan_rsp) {
@@ -561,7 +488,15 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
         }
       } break;
       case (AdvertisingApiType::ANDROID_HCI): {
-        // TODO
+        if (set_scan_rsp) {
+          le_advertising_interface_->EnqueueCommand(
+              hci::LeMultiAdvtSetScanRespBuilder::Create(data, advertiser_id),
+              module_handler_->BindOnceOn(this, &impl::check_status_with_id<LeMultiAdvtCompleteView>, advertiser_id));
+        } else {
+          le_advertising_interface_->EnqueueCommand(
+              hci::LeMultiAdvtSetDataBuilder::Create(data, advertiser_id),
+              module_handler_->BindOnceOn(this, &impl::check_status_with_id<LeMultiAdvtCompleteView>, advertiser_id));
+        }
       } break;
       case (AdvertisingApiType::EXTENDED): {
         uint16_t data_len = 0;
@@ -569,12 +504,14 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
         for (int i = 0; i < data.size(); i++) {
           if (data[i].size() > kLeMaximumFragmentLength) {
             LOG_WARN("AD data len shall not greater than %d", kLeMaximumFragmentLength);
-            if (set_scan_rsp) {
-              advertising_callbacks_->OnScanResponseDataSet(
-                  advertiser_id, AdvertisingCallback::AdvertisingStatus::INTERNAL_ERROR);
-            } else {
-              advertising_callbacks_->OnAdvertisingDataSet(
-                  advertiser_id, AdvertisingCallback::AdvertisingStatus::INTERNAL_ERROR);
+            if (advertising_callbacks_ != nullptr) {
+              if (set_scan_rsp) {
+                advertising_callbacks_->OnScanResponseDataSet(
+                    advertiser_id, AdvertisingCallback::AdvertisingStatus::INTERNAL_ERROR);
+              } else {
+                advertising_callbacks_->OnAdvertisingDataSet(
+                    advertiser_id, AdvertisingCallback::AdvertisingStatus::INTERNAL_ERROR);
+              }
             }
             return;
           }
@@ -650,18 +587,19 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
     }
   }
 
-  void enable_advertiser(AdvertiserId advertiser_id, bool enable, uint16_t duration, uint8_t maxExtAdvEvents) {
+  void enable_advertiser(
+      AdvertiserId advertiser_id, bool enable, uint16_t duration, uint8_t max_extended_advertising_events) {
     EnabledSet curr_set;
     curr_set.advertising_handle_ = advertiser_id;
     curr_set.duration_ = duration;
-    curr_set.max_extended_advertising_events_ = maxExtAdvEvents;
+    curr_set.max_extended_advertising_events_ = max_extended_advertising_events;
     std::vector<EnabledSet> enabled_sets = {curr_set};
     Enable enable_value = enable ? Enable::ENABLED : Enable::DISABLED;
 
     switch (advertising_api_type_) {
       case (AdvertisingApiType::LEGACY): {
         le_advertising_interface_->EnqueueCommand(
-            hci::LeSetAdvertisingEnableBuilder::Create(Enable::DISABLED),
+            hci::LeSetAdvertisingEnableBuilder::Create(enable_value),
             module_handler_->BindOnceOn(
                 this,
                 &impl::on_set_advertising_enable_complete<LeSetAdvertisingEnableCompleteView>,
@@ -669,7 +607,10 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
                 enabled_sets));
       } break;
       case (AdvertisingApiType::ANDROID_HCI): {
-        // TODO
+        le_advertising_interface_->EnqueueCommand(
+            hci::LeMultiAdvtSetEnableBuilder::Create(enable_value, advertiser_id),
+            module_handler_->BindOnceOn(
+                this, &impl::on_set_advertising_enable_complete<LeMultiAdvtCompleteView>, enable, enabled_sets));
       } break;
       case (AdvertisingApiType::EXTENDED): {
         le_advertising_interface_->EnqueueCommand(
@@ -705,13 +646,63 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
   }
 
   void set_periodic_data(AdvertiserId advertiser_id, std::vector<GapData> data) {
-    // TODO(b/149221472): Support fragmentation
-    auto operation = Operation::COMPLETE_ADVERTISEMENT;
+    uint16_t data_len = 0;
+    // check data size
+    for (int i = 0; i < data.size(); i++) {
+      if (data[i].size() > kLeMaximumFragmentLength) {
+        LOG_WARN("AD data len shall not greater than %d", kLeMaximumFragmentLength);
+        if (advertising_callbacks_ != nullptr) {
+          advertising_callbacks_->OnPeriodicAdvertisingDataSet(
+              advertiser_id, AdvertisingCallback::AdvertisingStatus::INTERNAL_ERROR);
+        }
+        return;
+      }
+      data_len += data[i].size();
+    }
 
-    le_advertising_interface_->EnqueueCommand(
-        hci::LeSetPeriodicAdvertisingDataBuilder::Create(advertiser_id, operation, data),
-        module_handler_->BindOnceOn(
-            this, &impl::check_status_with_id<LeSetPeriodicAdvertisingDataCompleteView>, advertiser_id));
+    if (data_len > le_maximum_advertising_data_length_) {
+      LOG_WARN(
+          "advertising data len exceeds le_maximum_advertising_data_length_ %d", le_maximum_advertising_data_length_);
+      if (advertising_callbacks_ != nullptr) {
+        advertising_callbacks_->OnPeriodicAdvertisingDataSet(
+            advertiser_id, AdvertisingCallback::AdvertisingStatus::DATA_TOO_LARGE);
+      }
+      return;
+    }
+
+    if (data_len <= kLeMaximumFragmentLength) {
+      send_periodic_data_fragment(advertiser_id, data, Operation::COMPLETE_ADVERTISEMENT);
+    } else {
+      std::vector<GapData> sub_data;
+      uint16_t sub_data_len = 0;
+      Operation operation = Operation::FIRST_FRAGMENT;
+
+      for (int i = 0; i < data.size(); i++) {
+        if (sub_data_len + data[i].size() > kLeMaximumFragmentLength) {
+          send_periodic_data_fragment(advertiser_id, sub_data, operation);
+          operation = Operation::INTERMEDIATE_FRAGMENT;
+          sub_data_len = 0;
+          sub_data.clear();
+        }
+        sub_data.push_back(data[i]);
+        sub_data_len += data[i].size();
+      }
+      send_periodic_data_fragment(advertiser_id, sub_data, Operation::LAST_FRAGMENT);
+    }
+  }
+
+  void send_periodic_data_fragment(AdvertiserId advertiser_id, std::vector<GapData> data, Operation operation) {
+    if (operation == Operation::COMPLETE_ADVERTISEMENT || operation == Operation::LAST_FRAGMENT) {
+      le_advertising_interface_->EnqueueCommand(
+          hci::LeSetPeriodicAdvertisingDataBuilder::Create(advertiser_id, operation, data),
+          module_handler_->BindOnceOn(
+              this, &impl::check_status_with_id<LeSetPeriodicAdvertisingDataCompleteView>, advertiser_id));
+    } else {
+      // For first and intermediate fragment, do not trigger advertising_callbacks_.
+      le_advertising_interface_->EnqueueCommand(
+          hci::LeSetPeriodicAdvertisingDataBuilder::Create(advertiser_id, operation, data),
+          module_handler_->BindOnce(impl::check_status<LeSetPeriodicAdvertisingDataCompleteView>));
+    }
   }
 
   void enable_periodic_advertising(AdvertiserId advertiser_id, bool enable) {
@@ -994,6 +985,25 @@ struct LeAdvertisingManager::impl : public bluetooth::hci::LeAddressManagerCallb
       case OpCode::LE_SET_PERIODIC_ADVERTISING_DATA:
         advertising_callbacks_->OnPeriodicAdvertisingDataSet(id, advertising_status);
         break;
+      case OpCode::LE_MULTI_ADVT: {
+        auto command_view = LeMultiAdvtCompleteView::Create(view);
+        ASSERT(command_view.IsValid());
+        auto sub_opcode = command_view.GetSubCmd();
+        switch (sub_opcode) {
+          case SubOcf::SET_PARAM:
+            advertising_callbacks_->OnAdvertisingParametersUpdated(
+                id, le_physical_channel_tx_power_, advertising_status);
+            break;
+          case SubOcf::SET_DATA:
+            advertising_callbacks_->OnAdvertisingDataSet(id, advertising_status);
+            break;
+          case SubOcf::SET_SCAN_RESP:
+            advertising_callbacks_->OnScanResponseDataSet(id, advertising_status);
+            break;
+          default:
+            LOG_WARN("Unexpected sub event type %s", SubOcfText(command_view.GetSubCmd()).c_str());
+        }
+      } break;
       default:
         LOG_WARN("Unexpected event type %s", OpCodeText(view.GetCommandOpCode()).c_str());
     }
@@ -1071,6 +1081,8 @@ AdvertiserId LeAdvertisingManager::ExtendedCreateAdvertiser(
     const ExtendedAdvertisingConfig config,
     const common::Callback<void(Address, AddressType)>& scan_callback,
     const common::Callback<void(ErrorCode, uint8_t, uint8_t)>& set_terminated_callback,
+    uint16_t duration,
+    uint8_t max_extended_advertising_events,
     os::Handler* handler) {
   AdvertisingApiType advertising_api_type = pimpl_->get_advertising_api_type();
   if (advertising_api_type != AdvertisingApiType::EXTENDED) {
@@ -1113,6 +1125,8 @@ AdvertiserId LeAdvertisingManager::ExtendedCreateAdvertiser(
       config,
       scan_callback,
       set_terminated_callback,
+      duration,
+      max_extended_advertising_events,
       handler);
   return id;
 }
@@ -1126,8 +1140,8 @@ void LeAdvertisingManager::SetData(AdvertiserId advertiser_id, bool set_scan_rsp
 }
 
 void LeAdvertisingManager::EnableAdvertiser(
-    AdvertiserId advertiser_id, bool enable, uint16_t duration, uint8_t maxExtAdvEvents) {
-  CallOn(pimpl_.get(), &impl::enable_advertiser, advertiser_id, enable, duration, maxExtAdvEvents);
+    AdvertiserId advertiser_id, bool enable, uint16_t duration, uint8_t max_extended_advertising_events) {
+  CallOn(pimpl_.get(), &impl::enable_advertiser, advertiser_id, enable, duration, max_extended_advertising_events);
 }
 
 void LeAdvertisingManager::SetPeriodicParameters(

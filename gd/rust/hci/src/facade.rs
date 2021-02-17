@@ -1,16 +1,20 @@
 //! HCI layer facade
 
 use crate::HciExports;
-use bt_hci_proto::empty::Empty;
-use bt_hci_proto::facade::*;
-use bt_hci_proto::facade_grpc::{create_hci_layer_facade, HciLayerFacade};
-use futures::prelude::*;
+use bt_common::GrpcFacade;
+use bt_facade_proto::common::Data;
+use bt_facade_proto::empty::Empty;
+use bt_facade_proto::hci_facade::EventRequest;
+use bt_facade_proto::hci_facade_grpc::{create_hci_layer_facade, HciLayerFacade};
+use bt_packets::hci;
 use futures::sink::SinkExt;
-use gddi::{module, provides};
+use gddi::{module, provides, Stoppable};
 use grpcio::*;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use log::error;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::Mutex;
+use num_traits::FromPrimitive;
 
 module! {
     facade_module,
@@ -21,19 +25,26 @@ module! {
 
 #[provides]
 async fn provide_facade(hci_exports: HciExports, rt: Arc<Runtime>) -> HciLayerFacadeService {
-    HciLayerFacadeService { hci_exports, rt }
+    let (from_hci_evt_tx, to_grpc_evt_rx) = channel::<hci::EventPacket>(10);
+    HciLayerFacadeService {
+        hci_exports,
+        rt,
+        from_hci_evt_tx,
+        to_grpc_evt_rx: Arc::new(Mutex::new(to_grpc_evt_rx)),
+    }
 }
 
 /// HCI layer facade service
-#[derive(Clone)]
+#[derive(Clone, Stoppable)]
 pub struct HciLayerFacadeService {
     hci_exports: HciExports,
     rt: Arc<Runtime>,
+    from_hci_evt_tx: Sender<hci::EventPacket>,
+    to_grpc_evt_rx: Arc<Mutex<Receiver<hci::EventPacket>>>,
 }
 
-impl HciLayerFacadeService {
-    /// Convert to a grpc service
-    pub fn create_grpc(self) -> grpcio::Service {
+impl GrpcFacade for HciLayerFacadeService {
+    fn into_grpc(self) -> grpcio::Service {
         create_hci_layer_facade(self)
     }
 }
@@ -41,69 +52,36 @@ impl HciLayerFacadeService {
 impl HciLayerFacade for HciLayerFacadeService {
     fn send_command_with_complete(
         &mut self,
-        ctx: RpcContext<'_>,
-        mut cmd: Command,
+        _ctx: RpcContext<'_>,
+        mut data: Data,
         sink: UnarySink<Empty>,
     ) {
         self.rt.block_on(
             self.hci_exports
-                .enqueue_command_with_complete(cmd.take_payload().into()),
-        );
-
-        let f = sink
-            .success(Empty::default())
-            .map_err(|e: grpcio::Error| {
-                error!(
-                    "failed to handle enqueue_command_with_complete request: {:?}",
-                    e
-                )
-            })
-            .map(|_| ());
-
-        ctx.spawn(f);
+                .send_raw(hci::CommandPacket::parse(&data.take_payload()).unwrap()),
+        ).unwrap();
+        sink.success(Empty::default());
     }
 
     fn send_command_with_status(
         &mut self,
-        ctx: RpcContext<'_>,
-        mut cmd: Command,
+        _ctx: RpcContext<'_>,
+        mut data: Data,
         sink: UnarySink<Empty>,
     ) {
         self.rt.block_on(
             self.hci_exports
-                .enqueue_command_with_complete(cmd.take_payload().into()),
-        );
-
-        let f = sink
-            .success(Empty::default())
-            .map_err(|e: grpcio::Error| {
-                error!(
-                    "failed to handle enqueue_command_with_status request: {:?}",
-                    e
-                )
-            })
-            .map(|_| ());
-
-        ctx.spawn(f);
+                .send_raw(hci::CommandPacket::parse(&data.take_payload()).unwrap()),
+        ).unwrap();
+        sink.success(Empty::default());
     }
 
-    fn request_event(&mut self, ctx: RpcContext<'_>, code: EventRequest, sink: UnarySink<Empty>) {
+    fn request_event(&mut self, _ctx: RpcContext<'_>, code: EventRequest, sink: UnarySink<Empty>) {
         self.rt.block_on(
             self.hci_exports
-                .register_event_handler(code.get_code() as u8),
+                .register_event_handler(hci::EventCode::from_u32(code.get_code()).unwrap(), self.from_hci_evt_tx.clone()),
         );
-
-        let f = sink
-            .success(Empty::default())
-            .map_err(|e: grpcio::Error| {
-                error!(
-                    "failed to handle enqueue_command_with_status request: {:?}",
-                    e
-                )
-            })
-            .map(|_| ());
-
-        ctx.spawn(f);
+        sink.success(Empty::default());
     }
 
     fn request_le_subevent(
@@ -115,21 +93,25 @@ impl HciLayerFacade for HciLayerFacadeService {
         unimplemented!()
     }
 
-    fn send_acl(&mut self, _ctx: RpcContext<'_>, _data: AclPacket, _sink: UnarySink<Empty>) {
-        unimplemented!()
+    fn send_acl(&mut self, _ctx: RpcContext<'_>, mut packet: Data, sink: UnarySink<Empty>) {
+        let acl_tx = self.hci_exports.acl_tx.clone();
+        self.rt.block_on(async move {
+            acl_tx.send(hci::AclPacket::parse(&packet.take_payload()).unwrap()).await.unwrap();
+        });
+        sink.success(Empty::default());
     }
 
     fn stream_events(
         &mut self,
         _ctx: RpcContext<'_>,
         _req: Empty,
-        mut resp: ServerStreamingSink<Event>,
+        mut resp: ServerStreamingSink<Data>,
     ) {
-        let evt_rx = self.hci_exports.evt_rx.clone();
+        let evt_rx = self.to_grpc_evt_rx.clone();
 
         self.rt.spawn(async move {
             while let Some(event) = evt_rx.lock().await.recv().await {
-                let mut evt = Event::default();
+                let mut evt = Data::default();
                 evt.set_payload(event.to_vec());
                 resp.send((evt, WriteFlags::default())).await.unwrap();
             }
@@ -140,7 +122,7 @@ impl HciLayerFacade for HciLayerFacadeService {
         &mut self,
         _ctx: RpcContext<'_>,
         _req: Empty,
-        mut _resp: ServerStreamingSink<LeSubevent>,
+        mut _resp: ServerStreamingSink<Data>,
     ) {
         unimplemented!()
     }
@@ -149,8 +131,16 @@ impl HciLayerFacade for HciLayerFacadeService {
         &mut self,
         _ctx: RpcContext<'_>,
         _req: Empty,
-        mut _resp: ServerStreamingSink<AclPacket>,
+        mut resp: ServerStreamingSink<Data>,
     ) {
-        unimplemented!()
+        let acl_rx = self.hci_exports.acl_rx.clone();
+
+        self.rt.spawn(async move {
+            while let Some(data) = acl_rx.lock().await.recv().await {
+                let mut packet = Data::default();
+                packet.set_payload(data.to_vec());
+                resp.send((packet, WriteFlags::default())).await.unwrap();
+            }
+        });
     }
 }

@@ -1,11 +1,12 @@
 rust_library {
     name: "libbt_hal",
+    defaults: ["gd_rust_defaults"],
     crate_name: "bt_hal",
     srcs: ["src/lib.rs"],
     edition: "2018",
     rustlibs: [
-        "libbt_packet",
-        "libbt_hal_proto",
+        "libbt_facade_proto",
+        "libbt_packets",
         "libbytes",
         "libfutures",
         "libthiserror",
@@ -17,8 +18,12 @@ rust_library {
         "libcxx",
         "liblazy_static",
         "liblog_rust",
+        "libbt_common",
+        "libnum_traits",
     ],
-    host_supported: true,
+    proc_macros: [
+        "libnum_derive",
+    ],
     target: {
         android: {
             static_libs: ["libbt_hidl_hal_cxx"],
@@ -49,8 +54,9 @@ genrule {
 
 cc_library_static {
     name: "libbt_hidl_hal_cxx",
-    srcs: ["src/hidl/interop.cc"],
-    local_include_dirs: ["src/hidl"],
+    defaults: ["gd_ffi_defaults"],
+    srcs: ["src/ffi/hidl.cc"],
+    local_include_dirs: ["src/ffi"],
     generated_headers: ["libbt_hidl_hal_bridge_header", "cxx-bridge-header"],
     generated_sources: ["libbt_hidl_hal_bridge_code"],
     shared_libs: [

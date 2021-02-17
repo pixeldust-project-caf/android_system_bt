@@ -26,7 +26,6 @@ from cert.py_security import PySecurity
 from cert.truth import assertThat
 from datetime import datetime
 from google.protobuf import empty_pb2 as empty_proto
-from hci.facade import facade_pb2 as hci_facade
 from l2cap.classic import facade_pb2 as l2cap_facade
 from security.facade_pb2 import IoCapabilities
 from security.facade_pb2 import AuthenticationRequirements
@@ -237,10 +236,12 @@ class CertSecurity(PySecurity):
         """
             Pretend to answer the pairing dialog as a user
         """
+
         if len(pin) > self.MAX_PIN_LENGTH or len(pin) < self.MIN_PIN_LENGTH:
             raise Exception("Pin code must be within range")
+
         logging.info("Cert: Waiting for PIN request")
-        assertThat(self._hci_event_stream).emits(HciMatchers.EventWithCode(hci_packets.EventCode.PIN_CODE_REQUEST))
+        assertThat(self._hci_event_stream).emits(HciMatchers.PinCodeRequest())
         logging.info("Cert: Send user input PIN %s for %s" % (pin.decode(), address))
         peer = address.decode('utf-8')
         pin_list = list(pin)

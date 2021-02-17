@@ -27,6 +27,7 @@
 #include "gd/hci/controller.h"
 #include "gd/hci/le_advertising_manager.h"
 #include "gd/packet/packet_view.h"
+#include "gd/storage/storage_module.h"
 #include "main/shim/entry.h"
 
 #include "ble_advertiser.h"
@@ -50,14 +51,19 @@ class BleAdvertiserInterfaceImpl : public BleAdvertiserInterface,
     // Register callback
     bluetooth::shim::GetAdvertising()->RegisterAdvertisingCallback(this);
 
-    if (!bluetooth::common::InitFlags::GdSecurityEnabled()) {
+    if (!bluetooth::common::init_flags::gd_security_is_enabled() &&
+        !bluetooth::common::init_flags::gd_acl_is_enabled()) {
       // Set private policy
       auto address = bluetooth::shim::GetController()->GetMacAddress();
+      auto storage = bluetooth::shim::GetStorage();
+      auto adapter_config = storage->GetAdapterConfig();
+      auto irk_bytes = adapter_config.GetLeIdentityResolvingKey();
+      std::array<uint8_t, 16> irk{0};
+      std::copy_n(irk.begin(), 16, irk_bytes->data());
       bluetooth::hci::AddressWithType address_with_type(
           address, bluetooth::hci::AddressType::PUBLIC_DEVICE_ADDRESS);
-      bluetooth::crypto_toolbox::Octet16 irk = {};
-      auto minimum_rotation_time = std::chrono::milliseconds(7 * 60 * 1000);
-      auto maximum_rotation_time = std::chrono::milliseconds(15 * 60 * 1000);
+      auto minimum_rotation_time = std::chrono::minutes(7);
+      auto maximum_rotation_time = std::chrono::minutes(15);
       bluetooth::shim::GetAclManager()->SetPrivacyPolicyForInitiatorAddress(
           bluetooth::hci::LeAddressManager::AddressPolicy::USE_PUBLIC_ADDRESS,
           address_with_type, irk, minimum_rotation_time, maximum_rotation_time);
@@ -140,6 +146,12 @@ class BleAdvertiserInterfaceImpl : public BleAdvertiserInterface,
 
     bluetooth::hci::ExtendedAdvertisingConfig config{};
     parse_parameter(config, params);
+    bluetooth::hci::PeriodicAdvertisingParameters periodic_parameters;
+    periodic_parameters.max_interval = periodic_params.max_interval;
+    periodic_parameters.min_interval = periodic_params.min_interval;
+    periodic_parameters.properties =
+        periodic_params.periodic_advertising_properties;
+    config.periodic_advertising_parameters = periodic_parameters;
 
     size_t offset = 0;
     while (offset < advertise_data.size()) {
@@ -169,10 +181,24 @@ class BleAdvertiserInterfaceImpl : public BleAdvertiserInterface,
       offset += len + 1;  // 1 byte for len
     }
 
+    offset = 0;
+    while (offset < periodic_data.size()) {
+      GapData gap_data;
+      uint8_t len = periodic_data[offset];
+      auto begin = periodic_data.begin() + offset;
+      auto end = begin + len + 1;  // 1 byte for len
+      auto data_copy = std::make_shared<std::vector<uint8_t>>(begin, end);
+      bluetooth::packet::PacketView<bluetooth::packet::kLittleEndian> packet(
+          data_copy);
+      GapData::Parse(&gap_data, packet.begin());
+      config.periodic_data.push_back(gap_data);
+      offset += len + 1;  // 1 byte for len
+    }
+
     bluetooth::hci::AdvertiserId id =
         bluetooth::shim::GetAdvertising()->ExtendedCreateAdvertiser(
-            reg_id, config, scan_callback, set_terminated_callback,
-            bluetooth::shim::GetGdShimHandler());
+            reg_id, config, scan_callback, set_terminated_callback, duration,
+            maxExtAdvEvents, bluetooth::shim::GetGdShimHandler());
 
     LOG(INFO) << "create advertising set, reg_id:" << reg_id
               << ", id:" << (uint16_t)id;
@@ -351,11 +377,6 @@ class BleAdvertiserInterfaceImpl : public BleAdvertiserInterface,
     if (bluetooth::shim::BTM_BleLocalPrivacyEnabled()) {
       config.own_address_type = OwnAddressType::RANDOM_DEVICE_ADDRESS;
     } else {
-      config.own_address_type = OwnAddressType::PUBLIC_DEVICE_ADDRESS;
-    }
-
-    if (!bluetooth::common::InitFlags::GdSecurityEnabled()) {
-      // use public address for testing
       config.own_address_type = OwnAddressType::PUBLIC_DEVICE_ADDRESS;
     }
   }

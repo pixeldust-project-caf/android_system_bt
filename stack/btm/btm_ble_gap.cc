@@ -1215,7 +1215,7 @@ tBTM_STATUS btm_ble_start_inquiry(uint8_t duration) {
  ******************************************************************************/
 void btm_ble_read_remote_name_cmpl(bool status, const RawAddress& bda,
                                    uint16_t length, char* p_name) {
-  uint8_t hci_status = HCI_SUCCESS;
+  tHCI_STATUS hci_status = HCI_SUCCESS;
   BD_NAME bd_name;
 
   memset(bd_name, 0, (BD_NAME_LEN + 1));
@@ -2397,6 +2397,12 @@ void btm_ble_init(void) {
 #if (BLE_VND_INCLUDED == FALSE)
   btm_ble_adv_filter_init();
 #endif
+}
+
+// Clean up btm ble control block
+void btm_ble_free() {
+  tBTM_BLE_CB* p_cb = &btm_cb.ble_ctr_cb;
+  alarm_free(p_cb->addr_mgnt_cb.refresh_raddr_timer);
 }
 
 /*******************************************************************************

@@ -25,7 +25,7 @@ namespace hci {
 static constexpr uint8_t BLE_ADDR_MASK = 0xc0u;
 
 LeAddressManager::LeAddressManager(
-    common::Callback<void(std::unique_ptr<CommandPacketBuilder>)> enqueue_command,
+    common::Callback<void(std::unique_ptr<CommandBuilder>)> enqueue_command,
     os::Handler* handler,
     Address public_address,
     uint8_t connect_list_size,
@@ -147,7 +147,7 @@ void LeAddressManager::register_client(LeAddressManagerCallback* callback) {
   } else if (
       address_policy_ == AddressPolicy::USE_RESOLVABLE_ADDRESS ||
       address_policy_ == AddressPolicy::USE_NON_RESOLVABLE_ADDRESS) {
-    if (bluetooth::common::InitFlags::GdAclEnabled()) {
+    if (bluetooth::common::init_flags::gd_acl_is_enabled()) {
       if (registered_clients_.size() == 1) {
         schedule_rotate_random_address();
       }
@@ -197,6 +197,11 @@ void LeAddressManager::pause_registered_clients() {
       client.first->OnPause();
     }
   }
+}
+
+void LeAddressManager::push_command(Command command) {
+  pause_registered_clients();
+  cached_commands_.push(std::move(command));
 }
 
 void LeAddressManager::ack_pause(LeAddressManagerCallback* callback) {
@@ -364,8 +369,7 @@ void LeAddressManager::AddDeviceToConnectList(
     ConnectListAddressType connect_list_address_type, bluetooth::hci::Address address) {
   auto packet_builder = hci::LeAddDeviceToConnectListBuilder::Create(connect_list_address_type, address);
   Command command = {CommandType::ADD_DEVICE_TO_CONNECT_LIST, std::move(packet_builder)};
-  handler_->BindOnceOn(this, &LeAddressManager::pause_registered_clients).Invoke();
-  cached_commands_.push(std::move(command));
+  handler_->BindOnceOn(this, &LeAddressManager::push_command, std::move(command)).Invoke();
 }
 
 void LeAddressManager::AddDeviceToResolvingList(
@@ -376,16 +380,14 @@ void LeAddressManager::AddDeviceToResolvingList(
   auto packet_builder = hci::LeAddDeviceToResolvingListBuilder::Create(
       peer_identity_address_type, peer_identity_address, peer_irk, local_irk);
   Command command = {CommandType::ADD_DEVICE_TO_RESOLVING_LIST, std::move(packet_builder)};
-  handler_->BindOnceOn(this, &LeAddressManager::pause_registered_clients).Invoke();
-  cached_commands_.push(std::move(command));
+  handler_->BindOnceOn(this, &LeAddressManager::push_command, std::move(command)).Invoke();
 }
 
 void LeAddressManager::RemoveDeviceFromConnectList(
     ConnectListAddressType connect_list_address_type, bluetooth::hci::Address address) {
   auto packet_builder = hci::LeRemoveDeviceFromConnectListBuilder::Create(connect_list_address_type, address);
   Command command = {CommandType::REMOVE_DEVICE_FROM_CONNECT_LIST, std::move(packet_builder)};
-  handler_->BindOnceOn(this, &LeAddressManager::pause_registered_clients).Invoke();
-  cached_commands_.push(std::move(command));
+  handler_->BindOnceOn(this, &LeAddressManager::push_command, std::move(command)).Invoke();
 }
 
 void LeAddressManager::RemoveDeviceFromResolvingList(
@@ -393,22 +395,19 @@ void LeAddressManager::RemoveDeviceFromResolvingList(
   auto packet_builder =
       hci::LeRemoveDeviceFromResolvingListBuilder::Create(peer_identity_address_type, peer_identity_address);
   Command command = {CommandType::REMOVE_DEVICE_FROM_RESOLVING_LIST, std::move(packet_builder)};
-  handler_->BindOnceOn(this, &LeAddressManager::pause_registered_clients).Invoke();
-  cached_commands_.push(std::move(command));
+  handler_->BindOnceOn(this, &LeAddressManager::push_command, std::move(command)).Invoke();
 }
 
 void LeAddressManager::ClearConnectList() {
   auto packet_builder = hci::LeClearConnectListBuilder::Create();
   Command command = {CommandType::CLEAR_CONNECT_LIST, std::move(packet_builder)};
-  handler_->BindOnceOn(this, &LeAddressManager::pause_registered_clients).Invoke();
-  cached_commands_.push(std::move(command));
+  handler_->BindOnceOn(this, &LeAddressManager::push_command, std::move(command)).Invoke();
 }
 
 void LeAddressManager::ClearResolvingList() {
   auto packet_builder = hci::LeClearResolvingListBuilder::Create();
   Command command = {CommandType::CLEAR_RESOLVING_LIST, std::move(packet_builder)};
-  handler_->BindOnceOn(this, &LeAddressManager::pause_registered_clients).Invoke();
-  cached_commands_.push(std::move(command));
+  handler_->BindOnceOn(this, &LeAddressManager::push_command, std::move(command)).Invoke();
 }
 
 void LeAddressManager::OnCommandComplete(bluetooth::hci::CommandCompleteView view) {

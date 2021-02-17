@@ -171,6 +171,18 @@ class SecurityTest(GdBaseTestClass):
         initiator.wait_for_bond_event(expected_init_bond_event)
         responder.wait_for_bond_event(expected_resp_bond_event)
 
+    def _run_pin(self, initiator, responder, expected_init_bond_event, expected_resp_bond_event):
+        initiator.create_bond(responder.get_address(), common.BluetoothAddressTypeEnum.PUBLIC_DEVICE_ADDRESS)
+        self._verify_pin(initiator, responder, expected_init_bond_event, expected_resp_bond_event)
+
+    def _verify_pin(self, initiator, responder, expected_init_bond_event, expected_resp_bond_event):
+        pin = b'123456789A'
+        logging.info("pin: %s" % pin)
+        initiator.input_pin(responder.get_address(), pin)
+        responder.input_pin(initiator.get_address(), pin)
+        initiator.wait_for_bond_event(expected_init_bond_event)
+        responder.wait_for_bond_event(expected_resp_bond_event)
+
     def test_setup_teardown(self):
         """
             Make sure our setup and teardown is sane
@@ -357,7 +369,19 @@ class SecurityTest(GdBaseTestClass):
         self.dut_security.enable_secure_connections()
         self.cert_security.enable_secure_connections()
 
-    def test_get_oob_data_from_controller_not_present(self):
+    def test_get_oob_data_from_dut_controller_p192_present(self):
+        oob_data = self.dut_security.get_oob_data_from_controller(OobDataPresent.P192_PRESENT)
+        assertThat(len(oob_data)).isEqualTo(4)
+        has192C = not all([i == 0 for i in oob_data[0]])
+        has192R = not all([i == 0 for i in oob_data[1]])
+        has256C = not all([i == 0 for i in oob_data[2]])
+        has256R = not all([i == 0 for i in oob_data[3]])
+        assertThat(has192C).isTrue()
+        assertThat(has192R).isTrue()
+        assertThat(has256C).isFalse()
+        assertThat(has256R).isFalse()
+
+    def test_get_oob_data_from_cert_controller_not_present(self):
         oob_data = self.cert_security.get_oob_data_from_controller(OobDataPresent.NOT_PRESENT)
         assertThat(len(oob_data)).isEqualTo(4)
         has192C = not all([i == 0 for i in oob_data[0]])
@@ -369,7 +393,7 @@ class SecurityTest(GdBaseTestClass):
         assertThat(has256C).isFalse()
         assertThat(has256R).isFalse()
 
-    def test_get_oob_data_from_controller_p192_present_no_secure_connections(self):
+    def test_get_oob_data_from_cert_controller_p192_present_no_secure_connections(self):
         oob_data = self.cert_security.get_oob_data_from_controller(OobDataPresent.P192_PRESENT)
         assertThat(len(oob_data)).isEqualTo(4)
         has192C = not all([i == 0 for i in oob_data[0]])
@@ -381,7 +405,7 @@ class SecurityTest(GdBaseTestClass):
         assertThat(has256C).isFalse()
         assertThat(has256R).isFalse()
 
-    def test_get_oob_data_from_controller_p192_present(self):
+    def test_get_oob_data_from_cert_controller_p192_present(self):
         self.cert_security.enable_secure_simple_pairing()
         self.cert_security.enable_secure_connections()
         oob_data = self.cert_security.get_oob_data_from_controller(OobDataPresent.P192_PRESENT)
@@ -395,7 +419,7 @@ class SecurityTest(GdBaseTestClass):
         assertThat(has256C).isFalse()
         assertThat(has256R).isFalse()
 
-    def test_get_oob_data_from_controller_p256_present(self):
+    def test_get_oob_data_from_cert_controller_p256_present(self):
         self.cert_security.enable_secure_simple_pairing()
         self.cert_security.enable_secure_connections()
         oob_data = self.cert_security.get_oob_data_from_controller(OobDataPresent.P256_PRESENT)
@@ -409,7 +433,7 @@ class SecurityTest(GdBaseTestClass):
         assertThat(has256C).isTrue()
         assertThat(has256R).isTrue()
 
-    def test_get_oob_data_from_controller_p192_and_p256_present(self):
+    def test_get_oob_data_from_cert_controller_p192_and_p256_present(self):
         self.cert_security.enable_secure_simple_pairing()
         self.cert_security.enable_secure_connections()
         oob_data = self.cert_security.get_oob_data_from_controller(OobDataPresent.P192_AND_256_PRESENT)
@@ -480,6 +504,27 @@ class SecurityTest(GdBaseTestClass):
         self.cert_security.set_authentication_requirements(cert_auth_reqs)
 
         self._run_ssp_passkey(
+            initiator=self.dut_security,
+            responder=self.cert_security,
+            expected_init_bond_event=BondMsgType.DEVICE_BONDED,
+            expected_resp_bond_event=BondMsgType.DEVICE_BONDED)
+
+        self.dut_security.remove_bond(self.cert_security.get_address(),
+                                      common.BluetoothAddressTypeEnum.PUBLIC_DEVICE_ADDRESS)
+        self.cert_security.remove_bond(self.dut_security.get_address(),
+                                       common.BluetoothAddressTypeEnum.PUBLIC_DEVICE_ADDRESS)
+
+        self.dut_security.wait_for_bond_event(BondMsgType.DEVICE_UNBONDED)
+        self.cert_security.wait_for_bond_event(BondMsgType.DEVICE_UNBONDED)
+
+        self.dut_security.wait_for_disconnect_event()
+        self.cert_security.wait_for_disconnect_event()
+
+    def test_successful_dut_initiated_pin(self):
+        self.dut_security.set_io_capabilities(IoCapabilities.DISPLAY_YES_NO_IO_CAP)
+        self.dut_security.set_authentication_requirements(AuthenticationRequirements.DEDICATED_BONDING)
+
+        self._run_pin(
             initiator=self.dut_security,
             responder=self.cert_security,
             expected_init_bond_event=BondMsgType.DEVICE_BONDED,

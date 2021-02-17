@@ -706,6 +706,7 @@ tBTM_STATUS BTM_PmRegister(uint8_t mask, uint8_t* p_pm_id,
  ******************************************************************************/
 tBTM_STATUS BTM_SetPowerMode(uint8_t pm_id, const RawAddress& remote_bda,
                              const tBTM_PM_PWR_MD* p_mode);
+bool BTM_SetLinkPolicyActiveMode(const RawAddress& remote_bda);
 
 /*******************************************************************************
  *
@@ -942,5 +943,10 @@ uint16_t BTM_GetMaxPacketSize(const RawAddress& addr);
 
 extern tBTM_STATUS BTM_BT_Quality_Report_VSE_Register(
     bool is_register, tBTM_BT_QUALITY_REPORT_RECEIVER* p_bqr_report_receiver);
+
+void BTM_LogHistory(const std::string& tag, const RawAddress& addr,
+                    const std::string& msg);
+void BTM_LogHistory(const std::string& tag, const RawAddress& addr,
+                    const std::string& msg, const std::string& extra);
 
 #endif /* BTM_API_H */
