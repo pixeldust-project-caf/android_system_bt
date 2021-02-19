@@ -756,6 +756,24 @@ void PacketDef::GenRustChildEnums(std::ostream& s) const {
     }
     s << "None,";
     s << "}\n";
+
+    s << "impl " << name_ << "DataChild {";
+    s << "fn get_total_size(&self) -> usize {";
+    s << "match self {";
+    for (const auto& child : children_) {
+      if (child->name_.rfind("LeGetVendorCapabilitiesComplete", 0) == 0) {
+        continue;
+      }
+      s << name_ << "DataChild::" << child->name_ << "(value) => value.get_total_size(),";
+    }
+    if (payload) {
+      s << name_ << "DataChild::Payload(p) => p.len(),";
+    }
+    s << name_ << "DataChild::None => 0,";
+    s << "}\n";
+    s << "}\n";
+    s << "}\n";
+
     s << "#[derive(Debug)] ";
     s << "pub enum " << name_ << "Child {";
     for (const auto& child : children_) {
@@ -848,21 +866,6 @@ void PacketDef::GenRustStructFieldNames(std::ostream& s) const {
   }
 }
 
-void PacketDef::GenRustStructSizeField(std::ostream& s) const {
-  int size = 0;
-  auto fields = fields_.GetFieldsWithoutTypes({
-      BodyField::kFieldType,
-      CountField::kFieldType,
-      SizeField::kFieldType,
-  });
-  for (int i = 0; i < fields.size(); i++) {
-    size += fields[i]->GetSize().bytes();
-  }
-  if (fields.size() > 0) {
-    s << size;
-  }
-}
-
 void PacketDef::GenRustStructImpls(std::ostream& s) const {
   s << "impl " << name_ << "Data {";
 
@@ -929,10 +932,10 @@ void PacketDef::GenRustStructImpls(std::ostream& s) const {
         s << name_ << "DataChild::";
         s << desc_path[0]->name_ << "(Arc::new(";
         if (desc_path[0]->parent_constraints_.empty()) {
-          s << desc_path[0]->name_ << "Data::parse(&bytes[" << payload_offset.bytes() << "..]";
+          s << desc_path[0]->name_ << "Data::parse(&bytes[..]";
           s << ", " << enum_variant << ")?))";
         } else {
-          s << desc_path[0]->name_ << "Data::parse(&bytes[" << payload_offset.bytes() << "..])?))";
+          s << desc_path[0]->name_ << "Data::parse(&bytes[..])?))";
         }
       } else if (constraint_type == ScalarField::kFieldType) {
         s << std::get<int64_t>(desc.second) << " => {";
@@ -981,30 +984,7 @@ void PacketDef::GenRustStructImpls(std::ostream& s) const {
 
   // write_to function
   s << "fn write_to(&self, buffer: &mut BytesMut) {";
-  if (fields.size() > 0) {
-    s << " buffer.resize(buffer.len() + self.get_size(), 0);";
-  }
-
-  fields = fields_.GetFieldsWithoutTypes({
-      BodyField::kFieldType,
-      CountField::kFieldType,
-      PaddingField::kFieldType,
-      ReservedField::kFieldType,
-      SizeField::kFieldType,
-      FixedScalarField::kFieldType,
-  });
-
-  for (auto const& field : fields) {
-    auto start_field_offset = GetOffsetForField(field->GetName(), false);
-    auto end_field_offset = GetOffsetForField(field->GetName(), true);
-
-    if (start_field_offset.empty() && end_field_offset.empty()) {
-      ERROR(field) << "Field location for " << field->GetName() << " is ambiguous, "
-                   << "no method exists to determine field location from begin() or end().\n";
-    }
-
-    field->GenRustWriter(s, start_field_offset, end_field_offset);
-  }
+  GenRustWriteToFields(s);
 
   if (HasChildEnums()) {
     s << "match &self.child {";
@@ -1015,7 +995,8 @@ void PacketDef::GenRustStructImpls(std::ostream& s) const {
       s << name_ << "DataChild::" << child->name_ << "(value) => value.write_to(buffer),";
     }
     if (fields_.HasPayload()) {
-      s << name_ << "DataChild::Payload(p) => buffer.put(&p[..]),";
+      auto offset = GetOffsetForField("payload");
+      s << name_ << "DataChild::Payload(p) => buffer[" << offset.bytes() << "..].copy_from_slice(&p[..]),";
     }
     s << name_ << "DataChild::None => {}";
     s << "}";
@@ -1023,11 +1004,17 @@ void PacketDef::GenRustStructImpls(std::ostream& s) const {
 
   s << "}\n";
 
-  if (fields.size() > 0) {
-    s << "pub fn get_size(&self) -> usize {";
-    GenRustStructSizeField(s);
-    s << "}";
+  s << "fn get_total_size(&self) -> usize {";
+  if (HasChildEnums()) {
+    s << "self.get_size() + self.child.get_total_size()";
+  } else {
+    s << "self.get_size()";
   }
+  s << "}\n";
+
+  s << "fn get_size(&self) -> usize {";
+  GenSizeRetVal(s);
+  s << "}\n";
   s << "}\n";
 }
 
@@ -1049,6 +1036,7 @@ void PacketDef::GenRustAccessStructImpls(std::ostream& s) const {
 
   s << "fn to_bytes(self) -> Bytes {";
   s << " let mut buffer = BytesMut::new();";
+  s << " buffer.resize(self." << root_accessor << ".get_total_size(), 0);";
   s << " self." << root_accessor << ".write_to(&mut buffer);";
   s << " buffer.freeze()";
   s << "}\n";

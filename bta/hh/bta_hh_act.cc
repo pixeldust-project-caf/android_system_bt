@@ -22,6 +22,8 @@
  *
  ******************************************************************************/
 
+#define LOG_TAG "bluetooth"
+
 #include "bt_target.h"
 
 #if (BTA_HH_INCLUDED == TRUE)
@@ -35,6 +37,7 @@
 #include "btm_api.h"
 #include "l2c_api.h"
 #include "osi/include/osi.h"
+#include "stack/include/hidh_api.h"
 #include "utl.h"
 
 /*****************************************************************************

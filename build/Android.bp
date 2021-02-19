@@ -83,7 +83,6 @@ fluoride_defaults {
         "libbluetooth_rust_interop",
         "liblog",
         "libcutils",
-        "libbt_shim_ffi",
     ],
     cpp_std: "c++17",
     sanitize: {
@@ -94,7 +93,11 @@ fluoride_defaults {
 fluoride_defaults {
     name: "fluoride_defaults",
     defaults: ["fluoride_defaults_fuzzable", "fluoride_types_defaults"],
-    shared_libs: ["libstatslog"],
+    shared_libs: [
+        "libgrpc++",
+        "libgrpc_wrap",
+        "libstatslog"
+    ],
     sanitize: {
         misc_undefined: ["bounds"],
     },
@@ -102,7 +105,6 @@ fluoride_defaults {
         "libbluetooth_gd",
         "libbluetooth_rust_interop",
         "libbt_shim_ffi",
-        "libcxxbridge05",
     ],
     target: {
         darwin: {
@@ -115,10 +117,6 @@ fluoride_defaults {
                 "libhidlbase",
                 "libutils",
                 "libcutils",
-            ],
-            static_libs: [
-                "libbt_common_sys_prop_cxx",
-                "libbt_hidl_hal_cxx",
             ],
         },
     },
