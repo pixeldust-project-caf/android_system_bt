@@ -76,12 +76,22 @@ bool bluetooth::shim::L2CA_IsLinkEstablished(const RawAddress& bd_addr,
   mock_function_count_map[__func__]++;
   return false;
 }
-uint16_t bluetooth::shim::L2CA_GetLeHandle(uint16_t cid,
-                                           const RawAddress& bd_addr) {
+uint16_t bluetooth::shim::L2CA_GetLeHandle(const RawAddress& bd_addr) {
   mock_function_count_map[__func__]++;
   return 0;
 }
 bool bluetooth::shim::L2CA_IsLeLink(uint16_t) {
+  mock_function_count_map[__func__]++;
+  return false;
+}
+void bluetooth::shim::L2CA_ReadConnectionAddr(const RawAddress& pseudo_addr,
+                                              RawAddress& conn_addr,
+                                              uint8_t* p_addr_type) {
+  mock_function_count_map[__func__]++;
+}
+bool bluetooth::shim::L2CA_ReadRemoteConnectionAddr(
+    const RawAddress& pseudo_addr, RawAddress& conn_addr,
+    uint8_t* p_addr_type) {
   mock_function_count_map[__func__]++;
   return false;
 }

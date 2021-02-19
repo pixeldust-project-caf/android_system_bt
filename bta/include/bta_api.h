@@ -25,14 +25,20 @@
 #ifndef BTA_API_H
 #define BTA_API_H
 
-#include <hardware/bt_common_types.h>
-#include <memory>
-#include "bt_target.h"
-#include "bt_types.h"
-#include "btm_api.h"
-#include "btm_ble_api.h"
+#include <cstdint>
+#include <vector>
+
+#include "bt_target.h"  // Must be first to define build configuration
+
+#include "osi/include/log.h"
+#include "stack/include/bt_types.h"
+#include "stack/include/btm_api_types.h"
+#include "stack/include/btm_ble_api_types.h"
+#include "stack/include/sdp_api.h"
 #include "types/ble_address_with_type.h"
+#include "types/bluetooth/uuid.h"
 #include "types/bt_transport.h"
+#include "types/raw_address.h"
 
 /*****************************************************************************
  *  Constants and data types
@@ -113,14 +119,32 @@ typedef uint16_t
 
 typedef uint16_t tBTA_DM_CONN;
 
-/* M/S preferred roles */
-#define BTA_ANY_ROLE 0x00
-#define BTA_CENTRAL_ROLE_PREF 0x01
-#define BTA_CENTRAL_ROLE_ONLY 0x02
-#define BTA_PERIPHERAL_ROLE_ONLY \
-  0x03 /* Used for PANU only, skip role switch to central */
+/* Central/peripheral preferred roles */
+typedef enum : uint8_t {
+  BTA_ANY_ROLE = 0x00,
+  BTA_CENTRAL_ROLE_PREF = 0x01,
+  BTA_CENTRAL_ROLE_ONLY = 0x02,
+  /* Used for PANU only, skip role switch to central */
+  BTA_PERIPHERAL_ROLE_ONLY = 0x03,
+} tBTA_PREF_ROLES;
 
-typedef uint8_t tBTA_PREF_ROLES;
+inline tBTA_PREF_ROLES toBTA_PREF_ROLES(uint8_t role) {
+  ASSERT_LOG(role <= BTA_PERIPHERAL_ROLE_ONLY,
+             "Passing illegal preferred role:0x%02x [0x%02x<=>0x%02x]", role,
+             BTA_ANY_ROLE, BTA_PERIPHERAL_ROLE_ONLY);
+  return static_cast<tBTA_PREF_ROLES>(role);
+}
+
+inline std::string preferred_role_text(const tBTA_PREF_ROLES& role) {
+  switch (role) {
+    CASE_RETURN_TEXT(BTA_ANY_ROLE);
+    CASE_RETURN_TEXT(BTA_CENTRAL_ROLE_PREF);
+    CASE_RETURN_TEXT(BTA_CENTRAL_ROLE_ONLY);
+    CASE_RETURN_TEXT(BTA_PERIPHERAL_ROLE_ONLY);
+    default:
+      return std::string("UNKNOWN:%hhu", role);
+  }
+}
 
 enum {
 
@@ -458,7 +482,7 @@ typedef void(tBTA_BLE_ENERGY_INFO_CBACK)(tBTM_BLE_TX_TIME_MS tx_time,
 /* Maximum service name length */
 #define BTA_SERVICE_NAME_LEN 35
 
-enum : uint8_t {
+typedef enum : uint8_t {
   /* power mode actions  */
   BTA_DM_PM_NO_ACTION = 0x00, /* no change to the current pm setting */
   BTA_DM_PM_PARK = 0x10,      /* prefers park mode */
@@ -479,7 +503,8 @@ enum : uint8_t {
   BTA_DM_PM_SUSPEND = 0x04, /* prefers suspend mode */
   BTA_DM_PM_NO_PREF = 0x01, /* service has no preference on power mode setting.
                                eg. connection to \ service got closed */
-};
+  BTA_DM_PM_SNIFF_MASK = 0x0f,  // Masks the sniff submode
+} tBTA_DM_PM_ACTION_BITMASK;
 typedef uint8_t tBTA_DM_PM_ACTION;
 
 /* index to bta_dm_ssr_spec */

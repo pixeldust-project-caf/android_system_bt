@@ -130,10 +130,6 @@ cc_defaults {
                 "libutils",
                 "libcutils",
             ],
-            static_libs: [
-                "libbt_common_sys_prop_cxx",
-                "libbt_hidl_hal_cxx",
-            ],
         },
     },
     srcs: [
@@ -163,12 +159,12 @@ cc_defaults {
         "libchrome",
         "libcrypto",
         "libflatbuffers-cpp",
+        "libgrpc++",
+        "libgrpc_wrap",
     ],
     static_libs: [
         "libbluetooth-protos",
         "libbluetooth_rust_interop",
-        "libbt_shim_ffi",
-        "libcxxbridge05",
     ],
     export_static_lib_headers: [ "libbluetooth_rust_interop" ],
 }
@@ -230,14 +226,14 @@ cc_binary {
         "libbluetooth_gd",
         "libflatbuffers-cpp",
         "libbluetooth_rust_interop",
-        "libbt_shim_ffi",
-        "libcxxbridge05",
     ],
     shared_libs: [
         "libbacktrace",
         "libchrome",
         "libcrypto",
+        "libgrpc++",
         "libgrpc++_unsecure",
+        "libgrpc_wrap",
         "libprotobuf-cpp-full",
     ],
     target: {
@@ -329,12 +325,12 @@ cc_test {
         "libflatbuffers-cpp",
         "libgmock",
         "libbluetooth_rust_interop",
-        "libbt_shim_ffi",
-        "libcxxbridge05",
     ],
     shared_libs: [
         "libchrome",
         "libcrypto",
+        "libgrpc++",
+        "libgrpc_wrap",
     ],
     sanitize: {
         address: true,
@@ -366,10 +362,22 @@ cc_test {
     },
     static_libs: [
         "libbluetooth_rust_interop",
-        "libbt_shim_ffi",
-        "libcxxbridge05",
         "libchrome",
     ],
+    shared_libs: [
+        "libgrpc++",
+        "libgrpc_wrap",
+    ],
+    target: {
+        android: {
+            shared_libs: [
+                "android.hardware.bluetooth@1.0",
+                "libhidlbase",
+                "libutils",
+                "libcutils",
+            ],
+        },
+    },
 }
 
 cc_defaults {
@@ -386,8 +394,6 @@ cc_defaults {
         "libgmock",
         "libgtest",
         "libbluetooth_rust_interop",
-        "libbt_shim_ffi",
-        "libcxxbridge05",
     ],
     host_supported: true,
     generated_headers: [
@@ -397,6 +403,8 @@ cc_defaults {
     shared_libs: [
         "libcrypto",
         "libflatbuffers-cpp",
+        "libgrpc++",
+        "libgrpc_wrap",
     ],
     cflags: [
         "-DFUZZ_TARGET",

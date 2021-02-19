@@ -7,6 +7,7 @@ rust_library {
     rustlibs: [
         "libtokio",
         "libnix",
+        "liblazy_static",
         "liblog_rust",
         "libcxx",
         "libgrpcio",
@@ -40,6 +41,7 @@ rust_test_host {
     rustlibs: [
         "libtokio",
         "libnix",
+        "liblazy_static",
         "liblog_rust",
         "libenv_logger",
         "libcxx",
@@ -68,4 +70,5 @@ cc_library_static {
     shared_libs: [
         "libcutils",
     ],
+    whole_static_libs: ["libcxxbridge05"],
 }

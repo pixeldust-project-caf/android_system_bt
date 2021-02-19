@@ -393,7 +393,7 @@ uint16_t L2CA_SendFixedChnlData(uint16_t fixed_cid, const RawAddress& rem_bda,
  ******************************************************************************/
 bool L2CA_RemoveFixedChnl(uint16_t fixed_cid, const RawAddress& rem_bda);
 
-uint16_t L2CA_GetLeHandle(uint16_t cid, const RawAddress& rem_bda);
+uint16_t L2CA_GetLeHandle(const RawAddress& rem_bda);
 hci_role_t L2CA_GetBleConnRole(const RawAddress& bd_addr);
 
 void L2CA_LeConnectionUpdate(const RawAddress& rem_bda, uint16_t min_int,
@@ -479,6 +479,12 @@ void L2CA_DisconnectLink(const RawAddress& remote);
 uint16_t L2CA_GetNumLinks();
 
 bool L2CA_IsLeLink(uint16_t acl_handle);
+
+void L2CA_ReadConnectionAddr(const RawAddress& pseudo_addr,
+                             RawAddress& conn_addr, uint8_t* p_addr_type);
+
+bool L2CA_ReadRemoteConnectionAddr(const RawAddress& pseudo_addr,
+                                   RawAddress& conn_addr, uint8_t* p_addr_type);
 
 }  // namespace shim
 }  // namespace bluetooth
