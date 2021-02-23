@@ -27,7 +27,6 @@ static_library("utils") {
 
   configs += [
     "//bt:target_defaults",
-    "//bt:external_gtest"
   ]
 
   deps = [

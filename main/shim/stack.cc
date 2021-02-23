@@ -16,7 +16,10 @@
 
 #define LOG_TAG "bt_gd_shim"
 
+#include "device/include/controller.h"
+
 #include "gd/att/att_module.h"
+#include "gd/btaa/activity_attribution.h"
 #include "gd/common/init_flags.h"
 #include "gd/hal/hci_hal.h"
 #include "gd/hci/acl_manager.h"
@@ -39,6 +42,7 @@
 #include "gd/storage/storage_module.h"
 
 #include "main/shim/acl_legacy_interface.h"
+#include "main/shim/activity_attribution.h"
 #include "main/shim/hci_layer.h"
 #include "main/shim/helpers.h"
 #include "main/shim/l2c_api.h"
@@ -81,6 +85,7 @@ void Stack::StartEverything() {
       rust_controller_ = new ::rust::Box<rust::Controller>(
           rust::get_controller(**rust_stack_));
     }
+    bluetooth::shim::hci_on_reset_complete();
     return;
   }
 
@@ -114,6 +119,9 @@ void Stack::StartEverything() {
   if (common::init_flags::gd_scanning_is_enabled()) {
     modules.add<hci::LeScanningManager>();
   }
+  if (common::init_flags::btaa_hci_is_enabled()) {
+    modules.add<activity_attribution::ActivityAttribution>();
+  }
   if (common::init_flags::gd_core_is_enabled()) {
     modules.add<att::AttModule>();
     modules.add<neighbor::ConnectabilityModule>();
@@ -136,7 +144,9 @@ void Stack::StartEverything() {
   }
   if (common::init_flags::gd_acl_is_enabled()) {
     if (!common::init_flags::gd_core_is_enabled()) {
-      acl_ = new legacy::Acl(stack_handler_, legacy::GetAclInterface());
+      acl_ = new legacy::Acl(
+          stack_handler_, legacy::GetAclInterface(),
+          controller_get_interface()->get_ble_acceptlist_size());
     }
   }
   if (!common::init_flags::gd_core_is_enabled()) {
@@ -152,6 +162,9 @@ void Stack::StartEverything() {
   if (common::init_flags::gd_l2cap_is_enabled() &&
       !common::init_flags::gd_core_is_enabled()) {
     L2CA_UseLegacySecurityModule();
+  }
+  if (common::init_flags::btaa_hci_is_enabled()) {
+    bluetooth::shim::get_activity_attribution_instance()->Init();
   }
 }
 
