@@ -118,6 +118,7 @@ filegroup {
         "android/bluetooth/IBluetoothConnectionCallback.aidl",
         "android/bluetooth/IBluetoothDun.aidl",
         "android/bluetooth/IBluetoothDeviceGroup.aidl",
-        "android/bluetooth/IBluetoothGroupCallback.aidl"
+        "android/bluetooth/IBluetoothGroupCallback.aidl",
+        "android/bluetooth/IBluetoothVcp.aidl",
     ],
 }

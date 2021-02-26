@@ -30,15 +30,19 @@
 
 #define LOG_TAG "bt_btm_pm"
 
+#include <base/strings/stringprintf.h>
 #include <cstdint>
 
 #include "bt_target.h"
 #include "device/include/controller.h"
 #include "device/include/interop.h"
 #include "main/shim/dumpsys.h"
+#include "main/shim/link_policy.h"
+#include "main/shim/shim.h"
 #include "osi/include/log.h"
 #include "stack/btm/btm_int_types.h"
 #include "stack/include/acl_api.h"
+#include "stack/include/btm_api.h"
 #include "stack/include/btm_api_types.h"
 #include "stack/include/btm_status.h"
 #include "stack/include/l2cap_hci_link_interface.h"
@@ -58,6 +62,8 @@ struct StackAclBtmPm {
 
 namespace {
 StackAclBtmPm internal_;
+
+constexpr char kBtmLogTag[] = "ACL";
 }
 
 /*****************************************************************************/
@@ -85,11 +91,11 @@ const uint8_t
 static void send_sniff_subrating(const tACL_CONN& p_acl, uint16_t max_lat,
                                  uint16_t min_rmt_to, uint16_t min_loc_to) {
   btsnd_hcic_sniff_sub_rate(p_acl.hci_handle, max_lat, min_rmt_to, min_loc_to);
-  btm_cb.history_->Push(
-      "%-32s: %s max_latency:%.2f peer_timeout:%.2f local_timeout:%.2f",
-      "Sniff subrating (seconds)", PRIVATE_ADDRESS(p_acl.remote_addr),
-      ticks_to_seconds(max_lat), ticks_to_seconds(min_rmt_to),
-      ticks_to_seconds(min_loc_to));
+  BTM_LogHistory(kBtmLogTag, p_acl.remote_addr, "Sniff subrating",
+                 base::StringPrintf(
+                     "max_latency:%.2f peer_timeout:%.2f local_timeout:%.2f",
+                     ticks_to_seconds(max_lat), ticks_to_seconds(min_rmt_to),
+                     ticks_to_seconds(min_loc_to)));
 }
 
 /*****************************************************************************/
@@ -109,6 +115,21 @@ static void send_sniff_subrating(const tACL_CONN& p_acl, uint16_t max_lat,
 tBTM_STATUS BTM_PmRegister(uint8_t mask, uint8_t* p_pm_id,
                            tBTM_PM_STATUS_CBACK* p_cb) {
   int xx;
+
+  if (bluetooth::shim::is_gd_link_policy_enabled()) {
+    ASSERT(p_pm_id != nullptr);
+    ASSERT(p_cb != nullptr);
+    if (mask & BTM_PM_DEREG) {
+      return (bluetooth::shim::UnregisterLinkPolicyClient(p_cb))
+                 ? (BTM_SUCCESS)
+                 : (BTM_NO_RESOURCES);
+    } else {
+      *p_pm_id = 0;
+      return (bluetooth::shim::RegisterLinkPolicyClient(p_cb))
+                 ? (BTM_SUCCESS)
+                 : (BTM_NO_RESOURCES);
+    }
+  }
 
   /* de-register */
   if (mask & BTM_PM_DEREG) {
@@ -176,12 +197,14 @@ tBTM_STATUS BTM_SetPowerMode(uint8_t pm_id, const RawAddress& remote_bda,
     mode &= (~BTM_PM_MD_FORCE);
   }
 
+  if (bluetooth::shim::is_gd_link_policy_enabled()) {
+    tBTM_PM_PWR_MD power_mode_request = *p_mode;
+    power_mode_request.mode &= (~BTM_PM_MD_FORCE);
+    return bluetooth::shim::BTM_SetPowerMode(*p_acl, power_mode_request);
+  }
+
   int acl_ind = btm_pm_find_acl_ind(remote_bda);
   if (acl_ind == MAX_L2CAP_LINKS) {
-    if (btm_pm_is_le_link(remote_bda)) {
-      LOG_ERROR("Setting power mode on le link is unsupported");
-      return BTM_MODE_UNSUPPORTED;
-    }
     LOG_ERROR("br_edr acl addr:%s is unknown", PRIVATE_ADDRESS(remote_bda));
     return BTM_UNKNOWN_ADDR;
   }
@@ -244,9 +267,9 @@ tBTM_STATUS BTM_SetPowerMode(uint8_t pm_id, const RawAddress& remote_bda,
         btm_cb.acl_cb_.pm_pend_link);
     /* command pending */
     if (acl_ind != btm_cb.acl_cb_.pm_pend_link) {
-      /* set the stored mask */
       p_cb->state |= BTM_PM_STORED_MASK;
-      LOG_INFO("btm_pm state stored: %d", acl_ind);
+      LOG_INFO("Setting stored bitmask for peer:%s",
+               PRIVATE_ADDRESS(remote_bda));
     }
     return BTM_CMD_STORED;
   }
@@ -317,6 +340,11 @@ tBTM_STATUS BTM_SetSsrParams(const RawAddress& remote_bda, uint16_t max_lat,
   if (p_acl == nullptr) {
     LOG_WARN("Unable to find acl for peer:%s", PRIVATE_ADDRESS(remote_bda));
     return BTM_UNKNOWN_ADDR;
+  }
+
+  if (bluetooth::shim::is_gd_link_policy_enabled()) {
+    return bluetooth::shim::BTM_SetSsrParams(*p_acl, max_lat, min_rmt_to,
+                                             min_loc_to);
   }
 
   if (p_cb->state == BTM_PM_ST_ACTIVE || p_cb->state == BTM_PM_ST_SNIFF) {
@@ -551,14 +579,16 @@ tBTM_STATUS StackAclBtmPm::btm_pm_snd_md_req(tACL_CONN& p_acl, uint8_t pm_id,
   /* send the appropriate HCI command */
   btm_cb.acl_cb_.pm_pend_id = pm_id;
 
-  LOG_INFO("switching from %s(0x%x) to %s(0x%x), link_ind: %d",
+  LOG_INFO("Switching from %s[0x%02x] to %s[0x%02x]",
            power_mode_state_text(p_cb->State()).c_str(), p_cb->State(),
-           power_mode_state_text(md_res.mode).c_str(), md_res.mode, link_ind);
-  btm_cb.history_->Push(
-      "%-32s: %s  %s(0x%02x) ==> %s(0x%02x)", "Power mode change",
-      PRIVATE_ADDRESS(btm_cb.acl_cb_.acl_db[link_ind].remote_addr),
-      power_mode_state_text(p_cb->State()).c_str(), p_cb->State(),
-      power_mode_state_text(md_res.mode).c_str(), md_res.mode);
+           power_mode_state_text(md_res.mode).c_str(), md_res.mode);
+  BTM_LogHistory(
+      kBtmLogTag, btm_cb.acl_cb_.acl_db[link_ind].remote_addr,
+      "Power mode change",
+      base::StringPrintf(
+          "%s[0x%02x] ==> %s[0x%02x]",
+          power_mode_state_text(p_cb->State()).c_str(), p_cb->State(),
+          power_mode_state_text(md_res.mode).c_str(), md_res.mode));
 
   switch (md_res.mode) {
     case BTM_PM_MD_ACTIVE:
@@ -793,9 +823,8 @@ void btm_pm_proc_mode_change(tHCI_STATUS hci_status, uint16_t hci_handle,
  * Returns          none.
  *
  ******************************************************************************/
-static void process_ssr_event(tHCI_STATUS status, uint16_t handle,
-                              UNUSED_ATTR uint16_t max_tx_lat,
-                              uint16_t max_rx_lat) {
+void process_ssr_event(tHCI_STATUS status, uint16_t handle,
+                       UNUSED_ATTR uint16_t max_tx_lat, uint16_t max_rx_lat) {
   const RawAddress bd_addr = acl_address_from_handle(handle);
   if (bd_addr == RawAddress::kEmpty) {
     LOG_WARN("Received sniff subrating event with no active ACL");
@@ -829,6 +858,20 @@ static void process_ssr_event(tHCI_STATUS status, uint16_t handle,
       "status:%s",
       cnt, PRIVATE_ADDRESS(bd_addr), logbool(use_ssr).c_str(),
       hci_error_code_text(status).c_str());
+}
+
+void btm_pm_on_sniff_subrating(tHCI_STATUS status, uint16_t handle,
+                               uint16_t maximum_transmit_latency,
+                               uint16_t maximum_receive_latency,
+                               uint16_t minimum_remote_timeout,
+                               uint16_t minimum_local_timeout) {
+  if (bluetooth::shim::is_gd_link_policy_enabled()) {
+    return bluetooth::shim::btm_pm_on_sniff_subrating(
+        status, handle, maximum_transmit_latency, maximum_receive_latency,
+        minimum_remote_timeout, minimum_local_timeout);
+  }
+  process_ssr_event(status, handle, maximum_transmit_latency,
+                    maximum_receive_latency);
 }
 
 void btm_pm_proc_ssr_evt(uint8_t* p, UNUSED_ATTR uint16_t evt_len) {
@@ -924,6 +967,11 @@ tBTM_CONTRL_STATE BTM_PM_ReadControllerState(void) {
 
 void btm_pm_on_mode_change(tHCI_STATUS status, uint16_t handle,
                            tHCI_MODE current_mode, uint16_t interval) {
+  if (bluetooth::shim::is_gd_link_policy_enabled()) {
+    return bluetooth::shim::btm_pm_on_mode_change(status, handle, current_mode,
+                                                  interval);
+  }
+
   btm_sco_chk_pend_unpark(status, handle);
   btm_pm_proc_mode_change(status, handle, current_mode, interval);
 }
