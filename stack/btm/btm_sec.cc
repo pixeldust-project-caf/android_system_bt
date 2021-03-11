@@ -1190,8 +1190,6 @@ static tBTM_STATUS btm_sec_send_hci_disconnect(tBTM_SEC_DEV_REC* p_dev_rec,
 void BTM_ConfirmReqReply(tBTM_STATUS res, const RawAddress& bd_addr) {
   ASSERT_LOG(!bluetooth::shim::is_gd_shim_enabled(), "Unreachable code path");
 
-  tBTM_SEC_DEV_REC* p_dev_rec;
-
   BTM_TRACE_EVENT("BTM_ConfirmReqReply() State: %s  Res: %u",
                   btm_pair_state_descr(btm_cb.pairing_state), res);
 
@@ -1204,14 +1202,6 @@ void BTM_ConfirmReqReply(tBTM_STATUS res, const RawAddress& bd_addr) {
 
   if ((res == BTM_SUCCESS) || (res == BTM_SUCCESS_NO_SECURITY)) {
     acl_set_disconnect_reason(HCI_SUCCESS);
-
-    if (res == BTM_SUCCESS) {
-      p_dev_rec = btm_find_dev(bd_addr);
-      if (p_dev_rec != NULL) {
-        p_dev_rec->sec_flags |= BTM_SEC_LINK_KEY_AUTHED;
-        p_dev_rec->sec_flags |= BTM_SEC_16_DIGIT_PIN_AUTHED;
-      }
-    }
 
     btsnd_hcic_user_conf_reply(bd_addr, true);
   } else {
@@ -3362,20 +3352,22 @@ void btm_sec_connected(const RawAddress& bda, uint16_t handle,
   }
 
   if (!p_dev_rec) {
-    LOG_DEBUG("Allocating new device record for new connection peer:%s",
-              PRIVATE_ADDRESS(bda));
     if (status == HCI_SUCCESS) {
       p_dev_rec = btm_sec_alloc_dev(bda);
+      LOG_DEBUG("Allocated new device record for new connection peer:%s",
+                PRIVATE_ADDRESS(bda));
     } else {
       /* If the device matches with stored paring address
        * reset the paring state to idle */
       if ((btm_cb.pairing_state != BTM_PAIR_STATE_IDLE) &&
           btm_cb.pairing_bda == bda) {
+        LOG_WARN("Connection failed during bonding attempt peer:%s reason:%s",
+                 PRIVATE_ADDRESS(bda), hci_error_code_text(status).c_str());
         btm_sec_change_pairing_state(BTM_PAIR_STATE_IDLE);
       }
 
-      /* can not find the device record and the status is error,
-       * just ignore it */
+      LOG_DEBUG("Ignoring failed device connection peer:%s reason:%s",
+                PRIVATE_ADDRESS(bda), hci_error_code_text(status).c_str());
       return;
     }
   } else /* Update the timestamp for this device */
@@ -3787,6 +3779,7 @@ void btm_sec_link_key_notification(const RawAddress& p_bda,
   if (p_dev_rec->pin_code_length >= 16 ||
       p_dev_rec->link_key_type == BTM_LKEY_TYPE_AUTH_COMB ||
       p_dev_rec->link_key_type == BTM_LKEY_TYPE_AUTH_COMB_P_256) {
+    p_dev_rec->sec_flags |= BTM_SEC_LINK_KEY_AUTHED;
     p_dev_rec->sec_flags |= BTM_SEC_16_DIGIT_PIN_AUTHED;
   }
 
@@ -4536,23 +4529,21 @@ static const char* btm_pair_state_descr(tBTM_PAIRING_STATE state) {
  * Parameters:      void
  *
  ******************************************************************************/
-void btm_sec_dev_rec_cback_event(tBTM_SEC_DEV_REC* p_dev_rec, uint8_t res,
-                                 bool is_le_transport) {
+void btm_sec_dev_rec_cback_event(tBTM_SEC_DEV_REC* p_dev_rec,
+                                 tBTM_STATUS btm_status, bool is_le_transport) {
+  ASSERT(p_dev_rec != nullptr);
+  LOG_DEBUG("transport=%s, btm_status=%s", is_le_transport ? "le" : "classic",
+            btm_status_text(btm_status).c_str());
+
   tBTM_SEC_CALLBACK* p_callback = p_dev_rec->p_callback;
-
-  BTM_TRACE_DEBUG("%s: p_callback=%p, is_le_transport=%d, res=%d, p_dev_rec=%p",
-                  __func__, p_dev_rec->p_callback, is_le_transport, res,
-                  p_dev_rec);
-
-  if (p_dev_rec->p_callback) {
-    p_dev_rec->p_callback = NULL;
-
+  p_dev_rec->p_callback = NULL;
+  if (p_callback != nullptr) {
     if (is_le_transport)
       (*p_callback)(&p_dev_rec->ble.pseudo_addr, BT_TRANSPORT_LE,
-                    p_dev_rec->p_ref_data, res);
+                    p_dev_rec->p_ref_data, btm_status);
     else
       (*p_callback)(&p_dev_rec->bd_addr, BT_TRANSPORT_BR_EDR,
-                    p_dev_rec->p_ref_data, res);
+                    p_dev_rec->p_ref_data, btm_status);
   }
 
   btm_sec_check_pending_reqs();
@@ -4754,8 +4745,9 @@ bool btm_sec_is_a_bonded_dev(const RawAddress& bda) {
                     (p_dev_rec->sec_flags & BTM_SEC_LINK_KEY_KNOWN))) {
     is_bonded = true;
   }
-  BTM_TRACE_DEBUG("%s() is_bonded=%d", __func__, is_bonded);
-  return (is_bonded);
+  LOG_DEBUG("Device record bonded check peer:%s is_bonded:%s",
+            PRIVATE_ADDRESS(bda), logbool(is_bonded).c_str());
+  return is_bonded;
 }
 
 /*******************************************************************************

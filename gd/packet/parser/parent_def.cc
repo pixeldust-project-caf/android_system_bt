@@ -570,13 +570,28 @@ bool ParentDef::HasChildEnums() const {
   return !children_.empty() || fields_.HasPayload();
 }
 
+void ParentDef::GenRustConformanceCheck(std::ostream& s) const {
+  auto fields = fields_.GetFieldsWithTypes({
+      FixedScalarField::kFieldType,
+  });
+
+  for (auto const& field : fields) {
+    auto start_offset = GetOffsetForField(field->GetName(), false);
+    auto end_offset = GetOffsetForField(field->GetName(), true);
+
+    auto f = (FixedScalarField*)field;
+    f->GenRustGetter(s, start_offset, end_offset);
+    s << "if " << f->GetName() << " != ";
+    f->GenValue(s);
+    s << " { return false; } ";
+  }
+}
+
 void ParentDef::GenRustWriteToFields(std::ostream& s) const {
   auto fields = fields_.GetFieldsWithoutTypes({
       BodyField::kFieldType,
-      CountField::kFieldType,
       PaddingField::kFieldType,
       ReservedField::kFieldType,
-      FixedScalarField::kFieldType,
   });
 
   for (auto const& field : fields) {
@@ -634,25 +649,42 @@ void ParentDef::GenSizeRetVal(std::ostream& s) const {
   int size = 0;
   auto fields = fields_.GetFieldsWithoutTypes({
       BodyField::kFieldType,
-      CountField::kFieldType,
   });
+  s << "let ret = 0;";
   for (int i = 0; i < fields.size(); i++) {
-    size += fields[i]->GetSize().bits();
-  }
-  if (size % 8 != 0) {
-    ERROR() << "size is not a multiple of 8!\n";
-  }
-  s << size / 8;
+    auto field = fields[i];
+    bool is_padding = field->GetFieldType() == PaddingField::kFieldType;
+    bool is_vector = field->GetFieldType() == VectorField::kFieldType;
+    if (is_padding || is_vector) {
+      if (size > 0) {
+        if (size % 8 != 0) {
+          ERROR() << "size is not a multiple of 8!\n";
+        }
+        s << "let ret = ret + " << size / 8 << ";";
+        size = 0;
+      }
 
-  fields = fields_.GetFieldsWithTypes({
-      VectorField::kFieldType,
-  });
-  for (int i = 0; i < fields.size(); i++) {
-    const VectorField* vector = (VectorField*)fields[i];
-    if (vector->element_size_.empty() || vector->element_size_.has_dynamic()) {
-      s << " + self." << vector->GetName() << ".iter().fold(0, |acc, x| acc + x.get_total_size())";
+      if (is_vector) {
+        const VectorField* vector = (VectorField*)field;
+        if (vector->element_size_.empty() || vector->element_size_.has_dynamic()) {
+          s << "let ret = ret + self." << vector->GetName() << ".iter().fold(0, |acc, x| acc + x.get_total_size());";
+        } else {
+          s << "let ret = ret + (self." << vector->GetName() << ".len() * ((" << vector->element_size_ << ") / 8));";
+        }
+      } else {
+        auto padded = field->GetSize().bytes();
+        s << "let ret = if ret < " << padded << " { " << padded << " } else { ret };";
+      }
     } else {
-      s << " + (self." << vector->GetName() << ".len() * ((" << vector->element_size_ << ") / 8))";
+      size += field->GetSize().bits();
     }
   }
+  if (size > 0) {
+    if (size % 8 != 0) {
+      ERROR() << "size is not a multiple of 8!\n";
+    }
+    s << "let ret = ret + " << size / 8 << ";";
+  }
+
+  s << "ret";
 }
