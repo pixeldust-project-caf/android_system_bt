@@ -29,6 +29,7 @@
 #include <memory>
 #include <string>
 
+#include "device/include/controller.h"
 #include "gd/common/bidi_queue.h"
 #include "gd/common/bind.h"
 #include "gd/common/strings.h"
@@ -261,7 +262,10 @@ class ShimAclConnection {
   }
 
   virtual ~ShimAclConnection() {
-    ASSERT_LOG(queue_.empty(), "Shim ACL queue still has outgoing packets");
+    if (!queue_.empty())
+      LOG_ERROR(
+          "ACL cleaned up with non-empty queue handle:0x%04x stranded_pkts:%zu",
+          handle_, queue_.size());
     ASSERT_LOG(is_disconnected_,
                "Shim Acl was not properly disconnected handle:0x%04x", handle_);
   }
@@ -290,7 +294,8 @@ class ShimAclConnection {
     preamble.push_back(LowByte(length));
     preamble.push_back(HighByte(length));
     BT_HDR* p_buf = MakeLegacyBtHdrPacket(std::move(packet), preamble);
-    ASSERT_LOG(p_buf != nullptr, "Unable to allocate BT_HDR legacy packet");
+    ASSERT_LOG(p_buf != nullptr,
+               "Unable to allocate BT_HDR legacy packet handle:%04x", handle_);
     TRY_POSTING_ON_MAIN(send_data_upwards_, p_buf);
   }
 
@@ -316,10 +321,15 @@ class ShimAclConnection {
   }
 
   void Disconnect() {
-    ASSERT_LOG(!is_disconnected_, "Cannot disconnect multiple times");
+    ASSERT_LOG(!is_disconnected_,
+               "Cannot disconnect ACL multiple times handle:%04x", handle_);
     is_disconnected_ = true;
     UnregisterEnqueue();
     queue_up_end_->UnregisterDequeue();
+    if (!queue_.empty())
+      LOG_WARN(
+          "ACL disconnect with non-empty queue handle:%04x stranded_pkts::%zu",
+          handle_, queue_.size());
   }
 
   virtual void ReadRemoteControllerInformation() = 0;
@@ -335,7 +345,8 @@ class ShimAclConnection {
 
   void RegisterEnqueue() {
     ASSERT_LOG(!is_disconnected_,
-               "Unable to send data over disconnected channel");
+               "Unable to send data over disconnected channel handle:%04x",
+               handle_);
     if (is_enqueue_registered_) return;
     is_enqueue_registered_ = true;
     queue_up_end_->RegisterEnqueue(
@@ -604,7 +615,9 @@ class LeShimAclConnection
                         rx_phy);
   }
 
-  void OnLocalAddressUpdate(hci::AddressWithType address_with_type) override {}
+  void OnLocalAddressUpdate(hci::AddressWithType address_with_type) override {
+    connection_->UpdateLocalAddress(address_with_type);
+  }
 
   void OnDisconnection(hci::ErrorCode reason) {
     Disconnect();
@@ -763,6 +776,8 @@ struct shim::legacy::Acl::impl {
     for (auto& entry : history) {
       LOG_DEBUG("%s", entry.c_str());
     }
+    LOG_DEBUG("Shadow le accept list  size:%hhu",
+              controller_get_interface()->get_ble_acceptlist_size());
     const auto acceptlist = shadow_acceptlist_.GetCopy();
     for (auto& entry : acceptlist) {
       LOG_DEBUG("acceptlist:%s", entry.ToString().c_str());
@@ -776,6 +791,8 @@ struct shim::legacy::Acl::impl {
     for (auto& entry : history) {
       LOG_DUMPSYS(fd, "%s", entry.c_str());
     }
+    LOG_DUMPSYS(fd, "Shadow le accept list  size:%hhu",
+                controller_get_interface()->get_ble_acceptlist_size());
     unsigned cnt = 0;
     auto acceptlist = shadow_acceptlist_.GetCopy();
     for (auto& entry : acceptlist) {
@@ -910,6 +927,7 @@ shim::legacy::Acl::Acl(os::Handler* handler,
                        const acl_interface_t& acl_interface,
                        uint8_t max_acceptlist_size)
     : handler_(handler), acl_interface_(acl_interface) {
+  ASSERT(handler_ != nullptr);
   ValidateAclInterface(acl_interface_);
   pimpl_ = std::make_unique<Acl::impl>(max_acceptlist_size);
   GetAclManager()->RegisterCallbacks(this, handler_);
@@ -918,7 +936,8 @@ shim::legacy::Acl::Acl(os::Handler* handler,
       handler->BindOn(this, &Acl::on_incoming_acl_credits));
   shim::RegisterDumpsysFunction(static_cast<void*>(this),
                                 [this](int fd) { Dump(fd); });
-  Stack::GetInstance()->GetBtm()->Register_HACK_SetScoDisconnectCallback(
+
+  GetAclManager()->HACK_SetScoDisconnectCallback(
       [this](uint16_t handle, uint8_t reason) {
         TRY_POSTING_ON_MAIN(acl_interface_.connection.sco.on_disconnected,
                             handle, static_cast<tHCI_REASON>(reason));

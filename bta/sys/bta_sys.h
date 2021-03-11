@@ -24,13 +24,13 @@
 #ifndef BTA_SYS_H
 #define BTA_SYS_H
 
-#include "bt_common.h"
-#include "bt_target.h"
+#include <base/time/time.h>
+#include <cstdint>
+
+#include "bt_target.h"  // Must be first to define build configuration
+
 #include "osi/include/alarm.h"
 #include "stack/include/hci_error_code.h"
-
-#include <base/logging.h>
-#include <base/threading/thread.h>
 
 /*****************************************************************************
  *  Constants and data types
@@ -44,6 +44,11 @@ typedef bool(tBTA_SYS_EVT_HDLR)(BT_HDR* p_msg);
 
 /* disable function type */
 typedef void(tBTA_SYS_DISABLE)(void);
+
+template <typename T, typename U>
+inline const T* Specialize(U* u) {
+  return const_cast<const T*>(reinterpret_cast<T*>(u));
+}
 
 #ifndef BTA_DM_NUM_JV_ID
 #define BTA_DM_NUM_JV_ID 2

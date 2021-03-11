@@ -17,8 +17,13 @@
 source_set("BluetoothCommonSources") {
   sources = [
     "init_flags.cc",
+    "metric_id_manager.cc"
     "stop_watch.cc",
     "strings.cc",
+  ]
+
+  deps = [
+    "//bt/gd/rust/shim:init_flags_bridge_header",
   ]
 
   include_dirs = [ "//bt/gd" ]
