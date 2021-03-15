@@ -1,6 +1,6 @@
 //! ACL core dispatch shared between LE and classic
 
-use crate::fragment::{fragmenting_stream, Reassembler};
+use crate::acl::fragment::{fragmenting_stream, Reassembler};
 use bt_common::Bluetooth::{self, Classic, Le};
 use bt_hal::AclHal;
 use bt_hci::{ControllerExports, EventRegistry};
@@ -16,6 +16,7 @@ use tokio::runtime::Runtime;
 use tokio::select;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex};
+use tokio_stream::wrappers::ReceiverStream;
 
 module! {
     core_module,
@@ -108,11 +109,11 @@ async fn provide_acl_dispatch(
                             match bt {
                                 Classic => {
                                     classic_outbound.push(fragmenting_stream(
-                                        in_rx, controller.acl_buffer_length.into(), handle, bt, close_rx));
+                                        ReceiverStream::new(in_rx), controller.acl_buffer_length.into(), handle, bt, close_rx));
                                 },
                                 Le => {
                                     le_outbound.push(fragmenting_stream(
-                                        in_rx, controller.le_buffer_length.into(), handle, bt, close_rx));
+                                        ReceiverStream::new(in_rx), controller.le_buffer_length.into(), handle, bt, close_rx));
                                 },
                             }
 

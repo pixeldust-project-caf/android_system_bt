@@ -18,8 +18,8 @@
 
 #include <base/location.h>
 #include <base/strings/stringprintf.h>
-
 #include <time.h>
+
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -326,9 +326,9 @@ class ClassicShimAclConnection
     TRY_POSTING_ON_MAIN(interface_.on_packet_type_changed, packet_type);
   }
 
-  void OnAuthenticationComplete() override {
+  void OnAuthenticationComplete(hci::ErrorCode hci_status) override {
     TRY_POSTING_ON_MAIN(interface_.on_authentication_complete, handle_,
-                        ToLegacyHciErrorCode(hci::ErrorCode::SUCCESS));
+                        ToLegacyHciErrorCode(hci_status));
   }
 
   void OnEncryptionChange(hci::EncryptionEnabled enabled) override {
@@ -345,18 +345,19 @@ class ClassicShimAclConnection
     LOG_INFO("UNIMPLEMENTED");
   }
 
-  void OnModeChange(hci::Mode current_mode, uint16_t interval) override {
-    TRY_POSTING_ON_MAIN(interface_.on_mode_change,
-                        ToLegacyHciErrorCode(hci::ErrorCode::SUCCESS), handle_,
-                        ToLegacyHciMode(current_mode), interval);
+  void OnModeChange(hci::ErrorCode status, hci::Mode current_mode,
+                    uint16_t interval) override {
+    TRY_POSTING_ON_MAIN(interface_.on_mode_change, ToLegacyHciErrorCode(status),
+                        handle_, ToLegacyHciMode(current_mode), interval);
   }
 
-  void OnSniffSubrating(uint16_t maximum_transmit_latency,
+  void OnSniffSubrating(hci::ErrorCode hci_status,
+                        uint16_t maximum_transmit_latency,
                         uint16_t maximum_receive_latency,
                         uint16_t minimum_remote_timeout,
                         uint16_t minimum_local_timeout) {
     TRY_POSTING_ON_MAIN(interface_.on_sniff_subrating,
-                        ToLegacyHciErrorCode(hci::ErrorCode::SUCCESS), handle_,
+                        ToLegacyHciErrorCode(hci_status), handle_,
                         maximum_transmit_latency, maximum_receive_latency,
                         minimum_remote_timeout, minimum_local_timeout);
   }
@@ -424,14 +425,14 @@ class ClassicShimAclConnection
     LOG_INFO("%s UNIMPLEMENTED", __func__);
   }
 
-  void OnRoleChange(hci::Role new_role) override {
-    TRY_POSTING_ON_MAIN(interface_.on_role_change,
-                        ToLegacyHciErrorCode(hci::ErrorCode::SUCCESS),
-                        ToRawAddress(connection_->GetAddress()),
-                        ToLegacyRole(new_role));
+  void OnRoleChange(hci::ErrorCode hci_status, hci::Role new_role) override {
+    TRY_POSTING_ON_MAIN(
+        interface_.on_role_change, ToLegacyHciErrorCode(hci_status),
+        ToRawAddress(connection_->GetAddress()), ToLegacyRole(new_role));
     BTM_LogHistory(kBtmLogTag, ToRawAddress(connection_->GetAddress()),
                    "Role change",
-                   base::StringPrintf("classic new_role:%s",
+                   base::StringPrintf("classic  status:%s new_role:%s",
+                                      hci::ErrorCodeText(hci_status).c_str(),
                                       hci::RoleText(new_role).c_str()));
   }
 
@@ -440,12 +441,13 @@ class ClassicShimAclConnection
     on_disconnect_(handle_, reason);
   }
 
-  void OnReadRemoteVersionInformationComplete(uint8_t lmp_version,
+  void OnReadRemoteVersionInformationComplete(hci::ErrorCode hci_status,
+                                              uint8_t lmp_version,
                                               uint16_t manufacturer_name,
                                               uint16_t sub_version) override {
     TRY_POSTING_ON_MAIN(interface_.on_read_remote_version_information_complete,
-                        ToLegacyHciErrorCode(hci::ErrorCode::SUCCESS), handle_,
-                        lmp_version, manufacturer_name, sub_version);
+                        ToLegacyHciErrorCode(hci_status), handle_, lmp_version,
+                        manufacturer_name, sub_version);
   }
 
   void OnReadRemoteExtendedFeaturesComplete(uint8_t page_number,
@@ -519,13 +521,13 @@ class LeShimAclConnection
     // TODO Issue LeReadRemoteFeatures Command
   }
 
-  void OnConnectionUpdate(uint16_t connection_interval,
+  void OnConnectionUpdate(hci::ErrorCode hci_status,
+                          uint16_t connection_interval,
                           uint16_t connection_latency,
                           uint16_t supervision_timeout) {
-    TRY_POSTING_ON_MAIN(interface_.on_connection_update,
-                        ToLegacyHciErrorCode(hci::ErrorCode::SUCCESS), handle_,
-                        connection_interval, connection_latency,
-                        supervision_timeout);
+    TRY_POSTING_ON_MAIN(
+        interface_.on_connection_update, ToLegacyHciErrorCode(hci_status),
+        handle_, connection_interval, connection_latency, supervision_timeout);
   }
   void OnDataLengthChange(uint16_t tx_octets, uint16_t tx_time,
                           uint16_t rx_octets, uint16_t rx_time) {
@@ -533,18 +535,20 @@ class LeShimAclConnection
                         rx_octets, rx_time);
   }
 
-  void OnReadRemoteVersionInformationComplete(uint8_t lmp_version,
+  void OnReadRemoteVersionInformationComplete(hci::ErrorCode hci_status,
+                                              uint8_t lmp_version,
                                               uint16_t manufacturer_name,
                                               uint16_t sub_version) override {
     TRY_POSTING_ON_MAIN(interface_.on_read_remote_version_information_complete,
-                        ToLegacyHciErrorCode(hci::ErrorCode::SUCCESS), handle_,
-                        lmp_version, manufacturer_name, sub_version);
+                        ToLegacyHciErrorCode(hci_status), handle_, lmp_version,
+                        manufacturer_name, sub_version);
   }
 
-  void OnPhyUpdate(uint8_t tx_phy, uint8_t rx_phy) override {
+  void OnPhyUpdate(hci::ErrorCode hci_status, uint8_t tx_phy,
+                   uint8_t rx_phy) override {
     TRY_POSTING_ON_MAIN(interface_.on_phy_update,
-                        ToLegacyHciErrorCode(hci::ErrorCode::SUCCESS), handle_,
-                        tx_phy, rx_phy);
+                        ToLegacyHciErrorCode(hci_status), handle_, tx_phy,
+                        rx_phy);
   }
 
   void OnLocalAddressUpdate(hci::AddressWithType address_with_type) override {}
@@ -588,6 +592,8 @@ struct bluetooth::shim::legacy::Acl::impl {
 
   void EnqueueClassicPacket(
       HciHandle handle, std::unique_ptr<bluetooth::packet::RawBuilder> packet) {
+    ASSERT_LOG(IsClassicAcl(handle), "handle %d is not a classic connection",
+               handle);
     handle_to_classic_connection_map_[handle]->EnqueuePacket(std::move(packet));
   }
 
@@ -596,48 +602,47 @@ struct bluetooth::shim::legacy::Acl::impl {
            handle_to_le_connection_map_.end();
   }
 
-  bool ClassicConnectionExists(HciHandle handle) {
-    return handle_to_classic_connection_map_.find(handle) !=
-           handle_to_classic_connection_map_.end();
-  }
-
   void EnqueueLePacket(HciHandle handle,
                        std::unique_ptr<bluetooth::packet::RawBuilder> packet) {
-    if (ClassicConnectionExists(handle))
-      handle_to_le_connection_map_[handle]->EnqueuePacket(std::move(packet));
+    ASSERT_LOG(IsLeAcl(handle), "handle %d is not a LE connection", handle);
+    handle_to_le_connection_map_[handle]->EnqueuePacket(std::move(packet));
   }
 
   void HoldMode(HciHandle handle, uint16_t max_interval,
                 uint16_t min_interval) {
-    if (ClassicConnectionExists(handle))
-      handle_to_classic_connection_map_[handle]->HoldMode(max_interval,
-                                                          min_interval);
+    ASSERT_LOG(IsClassicAcl(handle), "handle %d is not a classic connection",
+               handle);
+    handle_to_classic_connection_map_[handle]->HoldMode(max_interval,
+                                                        min_interval);
   }
 
   void ExitSniffMode(HciHandle handle) {
-    if (ClassicConnectionExists(handle))
-      handle_to_classic_connection_map_[handle]->ExitSniffMode();
+    ASSERT_LOG(IsClassicAcl(handle), "handle %d is not a classic connection",
+               handle);
+    handle_to_classic_connection_map_[handle]->ExitSniffMode();
   }
 
   void SniffMode(HciHandle handle, uint16_t max_interval, uint16_t min_interval,
                  uint16_t attempt, uint16_t timeout) {
-    if (ClassicConnectionExists(handle))
-      handle_to_classic_connection_map_[handle]->SniffMode(
-          max_interval, min_interval, attempt, timeout);
+    ASSERT_LOG(IsClassicAcl(handle), "handle %d is not a classic connection",
+               handle);
+    handle_to_classic_connection_map_[handle]->SniffMode(
+        max_interval, min_interval, attempt, timeout);
   }
 
   void SniffSubrating(HciHandle handle, uint16_t maximum_latency,
                       uint16_t minimum_remote_timeout,
                       uint16_t minimum_local_timeout) {
-    if (ClassicConnectionExists(handle))
-      handle_to_classic_connection_map_[handle]->SniffSubrating(
-          maximum_latency, minimum_remote_timeout, minimum_local_timeout);
+    ASSERT_LOG(IsClassicAcl(handle), "handle %d is not a classic connection",
+               handle);
+    handle_to_classic_connection_map_[handle]->SniffSubrating(
+        maximum_latency, minimum_remote_timeout, minimum_local_timeout);
   }
 
   void SetConnectionEncryption(HciHandle handle, hci::Enable enable) {
-    if (ClassicConnectionExists(handle))
-      handle_to_classic_connection_map_[handle]->SetConnectionEncryption(
-          enable);
+    ASSERT_LOG(IsClassicAcl(handle), "handle %d is not a classic connection",
+               handle);
+    handle_to_classic_connection_map_[handle]->SetConnectionEncryption(enable);
   }
 
   void DumpConnectionHistory() const {
@@ -691,7 +696,6 @@ void DumpsysAcl(int fd) {
 
   for (int i = 0; i < MAX_L2CAP_LINKS; i++) {
     const tACL_CONN& acl_conn = acl_cb.acl_db[i];
-    const tBTM_PM_MCB& btm_pm_mcb = acl_cb.pm_mode_db[i];
     if (!acl_conn.in_use) continue;
 
     LOG_DUMPSYS(fd, "    peer_le_features valid:%s data:%s",
@@ -727,10 +731,7 @@ void DumpsysAcl(int fd) {
                 ticks_to_seconds(acl_conn.link_super_tout));
     LOG_DUMPSYS(fd, "    pkt_types_mask:0x%04x", acl_conn.pkt_types_mask);
     LOG_DUMPSYS(fd, "    disconnect_reason:0x%02x", acl_conn.disconnect_reason);
-    LOG_DUMPSYS(fd, "    chg_ind:%s", (btm_pm_mcb.chg_ind) ? "true" : "false");
     LOG_DUMPSYS(fd, "    role:%s", RoleText(acl_conn.link_role).c_str());
-    LOG_DUMPSYS(fd, "    power_mode_state:%s",
-                power_mode_state_text(btm_pm_mcb.State()).c_str());
   }
 }
 #undef DUMPSYS_TAG
@@ -922,9 +923,9 @@ void bluetooth::shim::legacy::Acl::OnLeLinkDisconnected(HciHandle handle,
   hci::AddressWithType remote_address_with_type =
       pimpl_->handle_to_le_connection_map_[handle]->GetRemoteAddressWithType();
   CreationTime creation_time =
-      pimpl_->handle_to_classic_connection_map_[handle]->GetCreationTime();
+      pimpl_->handle_to_le_connection_map_[handle]->GetCreationTime();
   bool is_locally_initiated =
-      pimpl_->handle_to_classic_connection_map_[handle]->IsLocallyInitiated();
+      pimpl_->handle_to_le_connection_map_[handle]->IsLocallyInitiated();
 
   TeardownTime teardown_time = std::chrono::system_clock::now();
 
@@ -1014,9 +1015,9 @@ void bluetooth::shim::legacy::Acl::OnLeConnectSuccess(
   uint16_t conn_latency = 0;   /* TODO Default to zero events */
   uint16_t conn_timeout = 500; /* TODO Default to 5s */
 
-  RawAddress local_rpa = RawAddress::kEmpty;           /* TODO enhanced */
-  RawAddress peer_rpa = RawAddress::kEmpty;            /* TODO enhanced */
-  uint8_t peer_addr_type = 0;                          /* TODO public */
+  RawAddress local_rpa = RawAddress::kEmpty; /* TODO enhanced */
+  RawAddress peer_rpa = RawAddress::kEmpty;  /* TODO enhanced */
+  uint8_t peer_addr_type = 0;                /* TODO public */
 
   TRY_POSTING_ON_MAIN(
       acl_interface_.connection.le.on_connected, legacy_address_with_type,
@@ -1062,16 +1063,13 @@ void bluetooth::shim::legacy::Acl::ConfigureLePrivacy(
       hci::LeAddressManager::AddressPolicy::USE_RESOLVABLE_ADDRESS;
   hci::AddressWithType empty_address_with_type(
       hci::Address{}, hci::AddressType::RANDOM_DEVICE_ADDRESS);
-  crypto_toolbox::Octet16 rotation_irk = {0x44, 0xfb, 0x4b, 0x8d, 0x6c, 0x58,
-                                          0x21, 0x0c, 0xf9, 0x3d, 0xda, 0xf1,
-                                          0x64, 0xa3, 0xbb, 0x7f};
   /* 7 minutes minimum, 15 minutes maximum for random address refreshing */
   auto minimum_rotation_time = std::chrono::minutes(7);
   auto maximum_rotation_time = std::chrono::minutes(15);
 
   GetAclManager()->SetPrivacyPolicyForInitiatorAddress(
-      address_policy, empty_address_with_type, rotation_irk,
-      minimum_rotation_time, maximum_rotation_time);
+      address_policy, empty_address_with_type, minimum_rotation_time,
+      maximum_rotation_time);
 }
 
 void bluetooth::shim::legacy::Acl::DisconnectClassic(uint16_t handle,

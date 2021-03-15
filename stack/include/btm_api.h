@@ -29,6 +29,7 @@
 #include "stack/btm/neighbor_inquiry.h"
 #include "stack/include/btm_api_types.h"
 #include "stack/include/btm_status.h"
+#include "stack/include/sco_client_callbacks.h"
 #include "stack/include/sdp_api.h"
 #include "types/bt_transport.h"
 #include "types/raw_address.h"
@@ -693,6 +694,12 @@ char* BTM_SecReadDevName(const RawAddress& bd_addr);
  ******************************************************************************/
 tBTM_STATUS BTM_PmRegister(uint8_t mask, uint8_t* p_pm_id,
                            tBTM_PM_STATUS_CBACK* p_cb);
+
+// Notified by ACL that a new link is connected
+void BTM_PM_OnConnected(uint16_t handle, const RawAddress& remote_bda);
+
+// Notified by ACL that a link is disconnected
+void BTM_PM_OnDisconnected(uint16_t handle);
 
 /*******************************************************************************
  *

@@ -269,8 +269,6 @@ typedef uint8_t tBTM_EIR_SEARCH_RESULT;
 #define BTM_EIR_COMPLETE_LOCAL_NAME_TYPE HCI_EIR_COMPLETE_LOCAL_NAME_TYPE
 /* 0x0A */
 #define BTM_EIR_TX_POWER_LEVEL_TYPE HCI_EIR_TX_POWER_LEVEL_TYPE
-/* 0xFF */
-#define BTM_EIR_MANUFACTURER_SPECIFIC_TYPE HCI_EIR_MANUFACTURER_SPECIFIC_TYPE
 
 #define BTM_BLE_SEC_NONE 0
 /* encrypt the link using current key */
@@ -470,6 +468,19 @@ typedef enum : uint8_t {
   BTM_SEC_MODE_SP = 4,
   BTM_SEC_MODE_SC = 6,
 } tSECURITY_MODE;
+
+inline std::string security_mode_text(const tSECURITY_MODE& security_mode) {
+  switch (security_mode) {
+    case BTM_SEC_MODE_SERVICE:
+      return std::string("service");
+    case BTM_SEC_MODE_SP:
+      return std::string("simple pairing");
+    case BTM_SEC_MODE_SC:
+      return std::string("secure connections only");
+    default:
+      return std::string("UNKNOWN[%hhu]", security_mode);
+  }
+}
 
 enum : uint16_t {
   /* Nothing required */
@@ -867,116 +878,6 @@ typedef struct {
   bool smp_over_br;
 } tBTM_LE_COMPLT;
 
-/* BLE encryption keys */
-typedef struct {
-  Octet16 ltk;
-  BT_OCTET8 rand;
-  uint16_t ediv;
-  uint8_t sec_level;
-  uint8_t key_size;
-} tBTM_LE_PENC_KEYS;
-
-/* BLE CSRK keys */
-typedef struct {
-  uint32_t counter;
-  Octet16 csrk;
-  uint8_t sec_level;
-} tBTM_LE_PCSRK_KEYS;
-
-/* BLE Encryption reproduction keys */
-typedef struct {
-  Octet16 ltk;
-  uint16_t div;
-  uint8_t key_size;
-  uint8_t sec_level;
-} tBTM_LE_LENC_KEYS;
-
-/* BLE SRK keys */
-typedef struct {
-  uint32_t counter;
-  uint16_t div;
-  uint8_t sec_level;
-  Octet16 csrk;
-} tBTM_LE_LCSRK_KEYS;
-
-typedef struct {
-  Octet16 irk;
-  tBLE_ADDR_TYPE identity_addr_type;
-  RawAddress identity_addr;
-} tBTM_LE_PID_KEYS;
-
-typedef union {
-  tBTM_LE_PENC_KEYS penc_key;   /* received peer encryption key */
-  tBTM_LE_PCSRK_KEYS pcsrk_key; /* received peer device SRK */
-  tBTM_LE_PID_KEYS pid_key;     /* peer device ID key */
-  tBTM_LE_LENC_KEYS lenc_key;   /* local encryption reproduction keys
-                                 * LTK = = d1(ER,DIV,0) */
-  tBTM_LE_LCSRK_KEYS lcsrk_key; /* local device CSRK = d1(ER,DIV,1)*/
-} tBTM_LE_KEY_VALUE;
-
-typedef struct {
-  tBTM_LE_KEY_TYPE key_type;
-  tBTM_LE_KEY_VALUE* p_key_value;
-} tBTM_LE_KEY;
-
-typedef union {
-  tBTM_LE_IO_REQ io_req; /* BTM_LE_IO_REQ_EVT      */
-  uint32_t key_notif;    /* BTM_LE_KEY_NOTIF_EVT   */
-                         /* BTM_LE_NC_REQ_EVT */
-                         /* no callback data for
-                          * BTM_LE_KEY_REQ_EVT
-                          * and BTM_LE_OOB_REQ_EVT  */
-  tBTM_LE_COMPLT complt; /* BTM_LE_COMPLT_EVT      */
-  tSMP_OOB_DATA_TYPE req_oob_type;
-  tBTM_LE_KEY key;
-} tBTM_LE_EVT_DATA;
-
-/* Simple Pairing Events.  Called by the stack when Simple Pairing related
- * events occur.
-*/
-typedef uint8_t(tBTM_LE_CALLBACK)(tBTM_LE_EVT event, const RawAddress& bda,
-                                  tBTM_LE_EVT_DATA* p_data);
-
-#define BTM_BLE_KEY_TYPE_ID 1
-#define BTM_BLE_KEY_TYPE_ER 2
-#define BTM_BLE_KEY_TYPE_COUNTER 3  // tobe obsolete
-
-typedef struct {
-  Octet16 ir;
-  Octet16 irk;
-  Octet16 dhk;
-
-} tBTM_BLE_LOCAL_ID_KEYS;
-
-typedef union {
-  tBTM_BLE_LOCAL_ID_KEYS id_keys;
-  Octet16 er;
-} tBTM_BLE_LOCAL_KEYS;
-
-/* New LE identity key for local device.
-*/
-typedef void(tBTM_LE_KEY_CALLBACK)(uint8_t key_type,
-                                   tBTM_BLE_LOCAL_KEYS* p_key);
-
-/***************************
- *  Security Manager Types
- ***************************/
-/* Structure that applications use to register with BTM_SecRegister */
-typedef struct {
-  tBTM_PIN_CALLBACK* p_pin_callback;
-  tBTM_LINK_KEY_CALLBACK* p_link_key_callback;
-  tBTM_AUTH_COMPLETE_CALLBACK* p_auth_complete_callback;
-  tBTM_BOND_CANCEL_CMPL_CALLBACK* p_bond_cancel_cmpl_callback;
-  tBTM_SP_CALLBACK* p_sp_callback;
-  tBTM_LE_CALLBACK* p_le_callback;
-  tBTM_LE_KEY_CALLBACK* p_le_key_callback;
-} tBTM_APPL_INFO;
-
-/* Callback function for when a link supervision timeout event occurs.
- * This asynchronous event is enabled/disabled by calling BTM_RegForLstoEvt().
-*/
-typedef void(tBTM_LSTO_CBACK)(const RawAddress& remote_bda, uint16_t timeout);
-
 /*****************************************************************************
  *  POWER MANAGEMENT
  ****************************************************************************/
@@ -1062,8 +963,6 @@ inline std::string power_mode_text(tBTM_PM_MODE mode) {
 typedef enum : uint8_t {
   /* The module wants to set the desired power mode */
   BTM_PM_REG_SET = (1u << 0),
-  /* The module wants to receive mode change event */
-  BTM_PM_REG_NOTIF = (1u << 1),
   /* The module does not want to involve with PM anymore */
   BTM_PM_DEREG = (1u << 2),
 } tBTM_PM_REGISTER;
@@ -1072,11 +971,11 @@ typedef enum : uint8_t {
  *  Power Manager Types
  ************************/
 typedef struct {
-  uint16_t max;
-  uint16_t min;
-  uint16_t attempt;
-  uint16_t timeout;
-  tBTM_PM_MODE mode;
+  uint16_t max = 0;
+  uint16_t min = 0;
+  uint16_t attempt = 0;
+  uint16_t timeout = 0;
+  tBTM_PM_MODE mode = BTM_PM_MD_ACTIVE;  // 0
 } tBTM_PM_PWR_MD;
 
 /*************************************
