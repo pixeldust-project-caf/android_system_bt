@@ -25,23 +25,22 @@
 
 #define LOG_TAG "bt_bta_gattc"
 
-#include <string.h>
+#include <base/bind.h>
+#include <base/strings/stringprintf.h>
 
-#include <base/callback.h>
-#include "bt_common.h"
-#include "bt_target.h"
-#include "bta_gattc_int.h"
-#include "bta_sys.h"
+#include "bt_target.h"  // Must be first to define build configuration
+
+#include "bta/gatt/bta_gattc_int.h"
+#include "bta/hh/bta_hh_int.h"
 #include "btif/include/btif_debug_conn.h"
 #include "device/include/controller.h"
-#include "l2c_api.h"
 #include "osi/include/log.h"
-#include "osi/include/osi.h"
-#include "stack/include/btu.h"
-#include "stack/include/gatt_api.h"
-#include "utl.h"
-
-#include "bta_hh_int.h"
+#include "osi/include/osi.h"  // UNUSED_ATTR
+#include "stack/include/btm_ble_api_types.h"
+#include "stack/include/btu.h"  // do_in_main_thread
+#include "stack/include/l2c_api.h"
+#include "types/bluetooth/uuid.h"
+#include "types/raw_address.h"
 
 using base::StringPrintf;
 using bluetooth::Uuid;
@@ -276,12 +275,16 @@ void bta_gattc_process_api_open(tBTA_GATTC_DATA* p_msg) {
 
 /** process connect API request */
 void bta_gattc_process_api_open_cancel(tBTA_GATTC_DATA* p_msg) {
+  CHECK(p_msg != nullptr);
+
   uint16_t event = ((BT_HDR*)p_msg)->event;
 
   if (!p_msg->api_cancel_conn.is_direct) {
+    LOG_DEBUG("Cancel GATT client background connection");
     bta_gattc_cancel_bk_conn(&p_msg->api_cancel_conn);
     return;
   }
+  LOG_DEBUG("Cancel GATT client direct connection");
 
   tBTA_GATTC_CLCB* p_clcb = bta_gattc_find_clcb_by_cif(
       p_msg->api_cancel_conn.client_if, p_msg->api_cancel_conn.remote_bda,

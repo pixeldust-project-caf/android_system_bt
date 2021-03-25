@@ -135,6 +135,10 @@ inline tBTA_PREF_ROLES toBTA_PREF_ROLES(uint8_t role) {
   return static_cast<tBTA_PREF_ROLES>(role);
 }
 
+#define CASE_RETURN_TEXT(code) \
+  case code:                   \
+    return #code
+
 inline std::string preferred_role_text(const tBTA_PREF_ROLES& role) {
   switch (role) {
     CASE_RETURN_TEXT(BTA_ANY_ROLE);
@@ -145,6 +149,7 @@ inline std::string preferred_role_text(const tBTA_PREF_ROLES& role) {
       return std::string("UNKNOWN:%hhu", role);
   }
 }
+#undef CASE_RETURN_TEXT
 
 enum {
 
@@ -330,15 +335,6 @@ typedef struct {
   tBTM_IO_CAP loc_io_caps;    /* IO Capabilities of local device */
   tBTM_AUTH_REQ rmt_io_caps;  /* IO Capabilities of remote device */
 } tBTA_DM_SP_CFM_REQ;
-
-enum {
-  BTA_SP_KEY_STARTED, /* passkey entry started */
-  BTA_SP_KEY_ENTERED, /* passkey digit entered */
-  BTA_SP_KEY_ERASED,  /* passkey digit erased */
-  BTA_SP_KEY_CLEARED, /* passkey cleared */
-  BTA_SP_KEY_COMPLT   /* passkey entry completed */
-};
-typedef uint8_t tBTA_SP_KEY_TYPE;
 
 /* Structure associated with BTA_DM_SP_KEY_NOTIF_EVT */
 typedef struct {

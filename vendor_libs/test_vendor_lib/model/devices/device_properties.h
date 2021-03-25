@@ -41,8 +41,12 @@ class DeviceProperties {
   const std::vector<uint8_t>& GetVersionInformation() const;
 
   // Specification Version 4.2, Volume 2, Part E, Section 7.4.2
-  const std::vector<uint8_t>& GetSupportedCommands() const {
+  const std::array<uint8_t, 64>& GetSupportedCommands() const {
     return supported_commands_;
+  }
+
+  void SetSupportedCommands(const std::array<uint8_t, 64>& commands) {
+    supported_commands_ = commands;
   }
 
   // Specification Version 4.2, Volume 2, Part E, Section 7.4.3
@@ -104,6 +108,20 @@ class DeviceProperties {
   }
 
   uint8_t GetEncryptionKeySize() const { return encryption_key_size_; }
+
+  uint16_t GetVoiceSetting() const { return voice_setting_; }
+
+  void SetVoiceSetting(uint16_t voice_setting) {
+    voice_setting_ = voice_setting;
+  }
+
+  uint16_t GetConnectionAcceptTimeout() const {
+    return connection_accept_timeout_;
+  }
+
+  void SetConnectionAcceptTimeout(uint16_t connection_accept_timeout) {
+    connection_accept_timeout_ = connection_accept_timeout;
+  }
 
   uint16_t GetTotalNumAclDataPackets() const {
     return num_acl_data_packets_;
@@ -358,7 +376,7 @@ class DeviceProperties {
   uint8_t authentication_enable_{};
   std::vector<uint8_t> supported_codecs_;
   std::vector<uint32_t> vendor_specific_codecs_;
-  std::vector<uint8_t> supported_commands_;
+  std::array<uint8_t, 64> supported_commands_;
   std::vector<uint64_t> extended_features_{{0x875b3fd8fe8ffeff, 0x04}};
   ClassOfDevice class_of_device_{{0, 0, 0}};
   std::vector<uint8_t> extended_inquiry_data_;
@@ -367,6 +385,8 @@ class DeviceProperties {
   uint8_t page_scan_repetition_mode_{};
   uint16_t clock_offset_{};
   uint8_t encryption_key_size_{10};
+  uint16_t voice_setting_{0x0060};
+  uint16_t connection_accept_timeout_{0x7d00};
 
   // Low Energy
   uint16_t le_data_packet_length_;

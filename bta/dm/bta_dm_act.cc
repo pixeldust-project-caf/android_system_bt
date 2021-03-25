@@ -41,6 +41,7 @@
 #include "main/shim/shim.h"
 #include "osi/include/log.h"
 #include "osi/include/osi.h"
+#include "stack/btm/btm_sec.h"
 #include "stack/btm/neighbor_inquiry.h"
 #include "stack/gatt/connection_manager.h"
 #include "stack/include/acl_api.h"
@@ -227,13 +228,14 @@ const uint16_t bta_service_id_to_uuid_lkup_tbl[BTA_MAX_SERVICE_ID] = {
 };
 
 /* bta security callback */
-const tBTM_APPL_INFO bta_security = {&bta_dm_pin_cback,
-                                     &bta_dm_new_link_key_cback,
-                                     &bta_dm_authentication_complete_cback,
-                                     &bta_dm_bond_cancel_complete_cback,
-                                     &bta_dm_sp_cback,
-                                     &bta_dm_ble_smp_cback,
-                                     &bta_dm_ble_id_key_cback};
+const tBTM_APPL_INFO bta_security = {
+    .p_pin_callback = &bta_dm_pin_cback,
+    .p_link_key_callback = &bta_dm_new_link_key_cback,
+    .p_auth_complete_callback = &bta_dm_authentication_complete_cback,
+    .p_bond_cancel_cmpl_callback = &bta_dm_bond_cancel_complete_cback,
+    .p_sp_callback = &bta_dm_sp_cback,
+    .p_le_callback = &bta_dm_ble_smp_cback,
+    .p_le_key_callback = &bta_dm_ble_id_key_cback};
 
 #define MAX_DISC_RAW_DATA_BUF (4096)
 uint8_t g_disc_raw_data_buf[MAX_DISC_RAW_DATA_BUF];
@@ -1627,9 +1629,6 @@ static void bta_dm_discover_device(const RawAddress& remote_bd_addr) {
     transport = bta_dm_search_cb.transport;
   }
 
-  /* Reset transport state for next discovery */
-  bta_dm_search_cb.transport = BT_TRANSPORT_UNKNOWN;
-
   VLOG(1) << __func__ << " BDA: " << remote_bd_addr;
 
   bta_dm_search_cb.peer_bdaddr = remote_bd_addr;
@@ -1658,12 +1657,21 @@ static void bta_dm_discover_device(const RawAddress& remote_bd_addr) {
       ((bta_dm_search_cb.p_btm_inq_info == NULL) ||
        (bta_dm_search_cb.p_btm_inq_info &&
         (!bta_dm_search_cb.p_btm_inq_info->appl_knows_rem_name)))) {
-    if (bta_dm_read_remote_device_name(bta_dm_search_cb.peer_bdaddr, transport))
+    if (bta_dm_read_remote_device_name(bta_dm_search_cb.peer_bdaddr,
+                                       transport)) {
+      if (bta_dm_search_cb.state != BTA_DM_DISCOVER_ACTIVE) {
+        /* Reset transport state for next discovery */
+        bta_dm_search_cb.transport = BT_TRANSPORT_UNKNOWN;
+      }
       return;
+    }
 
     /* starting name discovery failed */
     bta_dm_search_cb.name_discover_done = true;
   }
+
+  /* Reset transport state for next discovery */
+  bta_dm_search_cb.transport = BT_TRANSPORT_UNKNOWN;
 
   /* if application wants to discover service */
   if (bta_dm_search_cb.services) {
@@ -2548,7 +2556,11 @@ void bta_dm_rm_cback(tBTA_SYS_CONN_STATUS status, uint8_t id, uint8_t app_id,
         if (((p_bta_dm_rm_cfg[j].app_id == app_id) ||
              (p_bta_dm_rm_cfg[j].app_id == BTA_ALL_APP_ID)) &&
             (p_bta_dm_rm_cfg[j].id == id)) {
-          role = toBTA_PREF_ROLES(p_bta_dm_rm_cfg[j].cfg);
+          ASSERT_LOG(p_bta_dm_rm_cfg[j].cfg <= BTA_PERIPHERAL_ROLE_ONLY,
+                     "Passing illegal preferred role:0x%02x [0x%02x<=>0x%02x]",
+                     p_bta_dm_rm_cfg[j].cfg, BTA_ANY_ROLE,
+                     BTA_PERIPHERAL_ROLE_ONLY);
+          role = static_cast<tBTA_PREF_ROLES>(p_bta_dm_rm_cfg[j].cfg);
           if (role > p_dev->pref_role) p_dev->pref_role = role;
           break;
         }

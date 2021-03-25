@@ -135,6 +135,10 @@ inline std::string bt_status_text(const bt_status_t& status) {
   }
 }
 
+/** Bluetooth HCI Error Codes */
+/** Corresponding to [Vol 2] Part D, "Error Codes" of Core_v5.1 specs */
+typedef uint8_t bt_hci_error_code_t;
+
 /** Bluetooth PinKey Code */
 typedef struct { uint8_t pin[16]; } __attribute__((packed)) bt_pin_code_t;
 
@@ -423,7 +427,8 @@ typedef void (*bond_state_changed_callback)(bt_status_t status,
 /** Bluetooth ACL connection state changed callback */
 typedef void (*acl_state_changed_callback)(bt_status_t status,
                                            RawAddress* remote_bd_addr,
-                                           bt_acl_state_t state);
+                                           bt_acl_state_t state,
+                                           bt_hci_error_code_t hci_reason);
 
 /** Bluetooth link quality report callback */
 typedef void (*link_quality_report_callback)(
@@ -532,14 +537,15 @@ typedef struct {
    * The |start_restricted| flag inits the adapter in restricted mode. In
    * restricted mode, bonds that are created are marked as restricted in the
    * config file. These devices are deleted upon leaving restricted mode.
-   * The |is_niap_mode| flag inits the adapter in NIAP mode.
-   * The |config_compare_result| flag show the config checksum check result if
-   * is in NIAP mode.
-   * The |init_flags| are config flags that cannot change during run.
-   * The |is_atv| flag indicates whether the local device is an Android TV
+   * The |is_common_criteria_mode| flag inits the adapter in commom criteria
+   * mode. The |config_compare_result| flag show the config checksum check
+   * result if is in common criteria mode. The |init_flags| are config flags
+   * that cannot change during run. The |is_atv| flag indicates whether the
+   * local device is an Android TV
    */
-  int (*init)(bt_callbacks_t* callbacks, bool guest_mode, bool is_niap_mode,
-              int config_compare_result, const char** init_flags, bool is_atv);
+  int (*init)(bt_callbacks_t* callbacks, bool guest_mode,
+              bool is_common_criteria_mode, int config_compare_result,
+              const char** init_flags, bool is_atv);
 
   /** Enable Bluetooth. */
   int (*enable)();
