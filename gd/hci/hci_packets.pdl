@@ -353,6 +353,7 @@ enum OpCode : 16 {
   LE_READ_BUFFER_SIZE_V2 = 0x2060,
   LE_READ_ISO_TX_SYNC = 0X2061,
   LE_SET_CIG_PARAMETERS = 0X2062,
+  LE_SET_CIG_PARAMETERS_TEST = 0x2063,
   LE_CREATE_CIS = 0X2064,
   LE_REMOVE_CIG = 0X2065,
   LE_ACCEPT_CIS_REQUEST = 0X2066,
@@ -613,6 +614,7 @@ enum OpCodeIndex : 16 {
   LE_READ_BUFFER_SIZE_V2 = 415,
   LE_READ_ISO_TX_SYNC = 416,
   LE_SET_CIG_PARAMETERS = 417,
+  LE_SET_CIG_PARAMETERS_TEST = 418,
   LE_CREATE_CIS = 421,
   LE_REMOVE_CIG = 422,
   LE_ACCEPT_CIS_REQUEST = 423,
@@ -1314,8 +1316,8 @@ packet EnhancedSetupSynchronousConnection : ScoConnectionCommand (op_code = ENHA
   // Next two items
   // [0x00000000, 0xFFFFFFFE] Bandwidth in octets per second.
   // [0xFFFFFFFF]: Don't care
-  transmit_bandwidth : 32,
-  receive_bandwidth : 32,
+  transmit_bandwidth_octets_per_second : 32,
+  receive_bandwidth_octets_per_second : 32,
   transmit_coding_format : ScoCodingFormat,
   receive_coding_format : ScoCodingFormat,
   // Next two items
@@ -1325,8 +1327,8 @@ packet EnhancedSetupSynchronousConnection : ScoConnectionCommand (op_code = ENHA
   receive_codec_frame_size : 16,
   // Next two items
   // Host to Controller nominal data rate in octets per second.
-  input_bandwidth : 32,
-  output_bandwidth : 32,
+  input_bandwidth_octets_per_second : 32,
+  output_bandwidth_octets_per_second : 32,
   input_coding_format : ScoCodingFormat,
   output_coding_format : ScoCodingFormat,
   // Next two items
@@ -1599,8 +1601,17 @@ packet SetEventMaskComplete : CommandComplete (command_op_code = SET_EVENT_MASK)
 packet Reset : Command (op_code = RESET) {
 }
 
+test Reset {
+  "\x03\x0c\x00",
+}
+
 packet ResetComplete : CommandComplete (command_op_code = RESET) {
   status : ErrorCode,
+}
+
+test ResetComplete {
+  "\x0e\x04\x01\x03\x0c\x00",
+  "\x0e\x04\x01\x03\x0c\x01", // unknown command
 }
 
 enum FilterType : 8 {
@@ -3791,13 +3802,9 @@ struct CisParametersConfig {
   _reserved_ : 4,
   max_sdu_s_to_m : 12,
   _reserved_ : 4,
-  phy_m_to_s_1_m : 1,
-  phy_m_to_s_2_m : 1,
-  phy_m_to_s_coded : 1,
+  phy_m_to_s : 3,
   _reserved_ : 5,
-  phy_s_to_m_1_m : 1,
-  phy_s_to_m_2_m : 1,
-  phy_s_to_m_coded : 1,
+  phy_s_to_m : 3,
   _reserved_ : 5,
   rtn_m_to_s : 4,
   _reserved_ : 4,
@@ -3835,6 +3842,40 @@ packet LeSetCigParameters : LeIsoCommand (op_code = LE_SET_CIG_PARAMETERS) {
 }
 
 packet LeSetCigParametersComplete : CommandComplete (command_op_code = LE_SET_CIG_PARAMETERS) {
+  status : ErrorCode,
+  cig_id : 8,
+  _count_(connection_handle) : 8,
+  connection_handle : 16[],
+}
+
+struct LeCisParametersTestConfig {
+  cis_id : 8,
+  nse : 8,
+  max_sdu_m_to_s : 16,
+  max_sdu_s_to_m : 16,
+  max_pdu_m_to_s : 16,
+  max_pdu_s_to_m : 16,
+  phy_m_to_s : 8,
+  phy_s_to_m : 8,
+  bn_m_to_s : 8,
+  bn_s_to_m : 8,
+}
+
+packet LeSetCigParametersTest : LeIsoCommand (op_code = LE_SET_CIG_PARAMETERS_TEST) {
+  cig_id : 8,
+  sdu_interval_m_to_s : 24,
+  sdu_interval_s_to_m : 24,
+  ft_m_to_s : 8,
+  ft_s_to_m : 8,
+  iso_interval : 16,
+  peripherals_clock_accuracy : ClockAccuracy,
+  packing : Packing,
+  framing : Enable,
+  _count_(cis_config) : 8,
+  cis_config : LeCisParametersTestConfig[],
+}
+
+packet LeSetCigParametersTestComplete : CommandComplete (command_op_code = LE_SET_CIG_PARAMETERS_TEST) {
   status : ErrorCode,
   cig_id : 8,
   _count_(connection_handle) : 8,

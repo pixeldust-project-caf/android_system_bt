@@ -1,23 +1,38 @@
+/******************************************************************************
+ *
+ *  Copyright 2021 The Android Open Source Project
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at:
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ ******************************************************************************/
+
 #include <gtest/gtest.h>
 
-#include "bta_dm_int.h"
+#include "bta/dm/bta_dm_int.h"
+#include "types/bluetooth/uuid.h"
 
 using bluetooth::Uuid;
 
 // NOTE:
 // Local re-implementation of functions to avoid testing of
 // unrelated functions/features.
-uint8_t BTM_ReadLocalDeviceName(char** p_name) {
-  return BTM_SUCCESS;
-}
+tBTM_STATUS BTM_ReadLocalDeviceName(char** p_name) { return BTM_SUCCESS; }
 uint8_t BTM_GetEirSupportedServices(uint32_t* p_eir_uuid, uint8_t** p,
                                     uint8_t max_num_uuid16,
                                     uint8_t* p_num_uuid16) {
   return BT_EIR_FLAGS_TYPE;
 }
-uint8_t BTM_WriteEIR(BT_HDR* p_buff) {
-  return BTM_SUCCESS;
-}
+tBTM_STATUS BTM_WriteEIR(BT_HDR* p_buff) { return BTM_SUCCESS; }
 
 class BtaCustUuid : public testing::Test {
  protected:

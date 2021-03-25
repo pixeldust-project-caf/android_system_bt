@@ -89,8 +89,8 @@ static const uint32_t COMMAND_PENDING_TIMEOUT_MS = 2000;
 static const uint32_t COMMAND_PENDING_MUTEX_ACQUIRE_TIMEOUT_MS = 500;
 static const uint32_t COMMAND_TIMEOUT_RESTART_MS = 5000;
 static const uint32_t ROOT_INFLAMMED_RESTART_MS = 5000;
-static const int HCI_UNKNOWN_COMMAND_TIMED_OUT = 0x00ffffff;
-static const int HCI_STARTUP_TIMED_OUT = 0x00eeeeee;
+[[maybe_unused]] constexpr int HCI_UNKNOWN_COMMAND_TIMED_OUT = 0x00ffffff;
+[[maybe_unused]] constexpr int HCI_STARTUP_TIMED_OUT = 0x00eeeeee;
 
 // Our interface
 static bool interface_created;
@@ -187,6 +187,10 @@ void hal_service_died() {
     }
     return;
   }
+  // The Bluetooth hal suddenly died and no root inflammation packet received.
+  // Record it with "Default" code.
+  bluetooth::common::LogBluetoothHalCrashReason(
+      RawAddress::kEmpty, 0x00 /*Default*/, 0x00 /*Default*/);
   abort();
 }
 
@@ -591,9 +595,14 @@ bool hci_is_root_inflammation_event_received() {
 }
 
 void handle_root_inflammation_event() {
-  LOG(ERROR) << __func__
-             << ": Root inflammation event! setting timer to restart.";
-  // TODO(ugoyu) Report to bluetooth metrics here
+  LOG(ERROR)
+      << __func__
+      << ": Root inflammation event! setting timer to restart. error_code: "
+      << loghex(root_inflamed_error_code)
+      << " vendor _error_code: " << loghex(root_inflamed_vendor_error_code);
+  bluetooth::common::LogBluetoothHalCrashReason(
+      RawAddress::kEmpty, root_inflamed_error_code,
+      root_inflamed_vendor_error_code);
   {
     // Try to stop hci command and startup timers
     std::unique_lock<std::recursive_timed_mutex> lock(

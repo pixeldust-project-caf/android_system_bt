@@ -126,7 +126,7 @@ cc_defaults {
         host: {
             srcs: [
                 ":BluetoothBtaaSources_host",
-                ":BluetoothHalSources_hci_rootcanal",
+                ":BluetoothHalSources_hci_host",
                 ":BluetoothOsSources_host",
             ],
         },
@@ -138,6 +138,7 @@ cc_defaults {
             ],
             shared_libs: [
                 "android.hardware.bluetooth@1.0",
+                "android.hardware.bluetooth@1.1",
                 "android.system.suspend.control-V1-ndk",
                 "libbinder_ndk",
                 "libcutils",
@@ -219,6 +220,7 @@ cc_binary {
         ":BluetoothFacade_hci_layer",
         ":BluetoothFacade_l2cap_layer",
         ":BluetoothFacade_neighbor",
+        ":BluetoothFacade_iso_layer",
         ":BluetoothFacade_security_layer",
         ":BluetoothFacade_shim_layer",
     ],
@@ -254,6 +256,9 @@ cc_binary {
         android: {
             shared_libs: [
                 "android.hardware.bluetooth@1.0",
+                "android.hardware.bluetooth@1.1",
+                "android.system.suspend.control-V1-ndk",
+                "libbinder_ndk",
                 "libhidlbase",
                 "libutils",
                 "libcutils",
@@ -290,7 +295,7 @@ cc_test {
         },
         host: {
             srcs: [
-                ":BluetoothHalTestSources_hci_rootcanal",
+                ":BluetoothHalTestSources_hci_host",
                 ":BluetoothOsTestSources_host",
             ],
         },
@@ -301,6 +306,9 @@ cc_test {
             ],
             shared_libs: [
                 "android.hardware.bluetooth@1.0",
+                "android.hardware.bluetooth@1.1",
+                "android.system.suspend.control-V1-ndk",
+                "libbinder_ndk",
                 "libhidlbase",
                 "libutils",
                 "libcutils",
@@ -363,6 +371,7 @@ cc_test {
         unit_test: true,
     },
     srcs: [
+        "hci/address.cc",
         ":BluetoothCommonSources",
         ":BluetoothPacketSources",
         ":BluetoothPacketParserTestPacketTestSources",
@@ -386,6 +395,7 @@ cc_test {
         android: {
             shared_libs: [
                 "android.hardware.bluetooth@1.0",
+                "android.hardware.bluetooth@1.1",
                 "libhidlbase",
                 "libutils",
                 "libcutils",
@@ -427,6 +437,9 @@ cc_defaults {
         android: {
             shared_libs: [
                 "android.hardware.bluetooth@1.0",
+                "android.hardware.bluetooth@1.1",
+                "android.system.suspend.control-V1-ndk",
+                "libbinder_ndk",
                 "libcutils",
                 "libhidlbase",
                 "libutils",
@@ -525,6 +538,22 @@ rust_library {
     srcs: ["rust/packets/lib.rs", ":BluetoothGeneratedPackets_rust"],
     edition: "2018",
     host_supported: true,
+    proc_macros: ["libnum_derive"],
+    rustlibs: [
+        "libbytes",
+        "libnum_traits",
+        "libthiserror",
+        "libbt_hci_custom_types",
+        "liblog_rust",
+    ],
+}
+
+rust_test_host {
+    name: "libbt_packets_test",
+    defaults: ["gd_rust_defaults"],
+    srcs: ["rust/packets/lib.rs", ":BluetoothGeneratedPackets_rust"],
+    test_suites: ["general-tests"],
+    edition: "2018",
     proc_macros: ["libnum_derive"],
     rustlibs: [
         "libbytes",
@@ -641,6 +670,7 @@ filegroup {
         "hci/facade/le_advertising_manager_facade.proto",
         "hci/facade/le_initiator_address_facade.proto",
         "hci/facade/le_scanning_manager_facade.proto",
+        "iso/facade.proto",
         "neighbor/facade/facade.proto",
         "l2cap/classic/facade.proto",
         "l2cap/le/facade.proto",
@@ -680,6 +710,8 @@ genrule {
         "hci/facade/le_initiator_address_facade.pb.h",
         "hci/facade/le_scanning_manager_facade.grpc.pb.h",
         "hci/facade/le_scanning_manager_facade.pb.h",
+        "iso/facade.grpc.pb.h",
+        "iso/facade.pb.h",
         "l2cap/classic/facade.grpc.pb.h",
         "l2cap/classic/facade.pb.h",
         "l2cap/le/facade.grpc.pb.h",
@@ -724,6 +756,8 @@ genrule {
         "hci/facade/le_initiator_address_facade.pb.cc",
         "hci/facade/le_scanning_manager_facade.grpc.pb.cc",
         "hci/facade/le_scanning_manager_facade.pb.cc",
+        "iso/facade.grpc.pb.cc",
+        "iso/facade.pb.cc",
         "l2cap/classic/facade.grpc.pb.cc",
         "l2cap/classic/facade.pb.cc",
         "l2cap/le/facade.grpc.pb.cc",
@@ -752,6 +786,7 @@ genrule {
         "touch $(genDir)/files/hal/__init__.py && " +
         "touch $(genDir)/files/hci/__init__.py && " +
         "touch $(genDir)/files/hci/facade/__init__.py && " +
+        "touch $(genDir)/files/iso/__init__.py && " +
         "touch $(genDir)/files/l2cap/classic/__init__.py && " +
         "touch $(genDir)/files/l2cap/le/__init__.py && " +
         "touch $(genDir)/files/neighbor/facade/__init__.py && " +
