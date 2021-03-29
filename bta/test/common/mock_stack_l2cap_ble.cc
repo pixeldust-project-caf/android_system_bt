@@ -26,6 +26,7 @@
 extern std::map<std::string, int> mock_function_count_map;
 
 #include "stack/l2cap/l2c_int.h"
+#include "types/hci_role.h"
 #include "types/raw_address.h"
 
 #ifndef UNUSED_ATTR
@@ -61,7 +62,7 @@ bool l2cble_create_conn(tL2C_LCB* p_lcb) {
 }
 hci_role_t L2CA_GetBleConnRole(const RawAddress& bd_addr) {
   mock_function_count_map[__func__]++;
-  return 0;
+  return HCI_ROLE_CENTRAL;
 }
 tL2CAP_LE_RESULT_CODE l2ble_sec_access_req(const RawAddress& bd_addr,
                                            uint16_t psm, bool is_originator,

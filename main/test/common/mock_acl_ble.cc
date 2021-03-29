@@ -34,13 +34,15 @@ extern std::map<std::string, int> mock_function_count_map;
 #include "stack/include/bt_types.h"
 #include "stack/include/hcidefs.h"
 #include "stack/include/l2cap_hci_link_interface.h"
+#include "types/ble_address_with_type.h"
+#include "types/hci_role.h"
 
 #ifndef UNUSED_ATTR
 #define UNUSED_ATTR
 #endif
 
 void acl_ble_connection_complete(const tBLE_BD_ADDR& address_with_type,
-                                 uint16_t handle, uint8_t role, bool match,
+                                 uint16_t handle, tHCI_ROLE role, bool match,
                                  uint16_t conn_interval, uint16_t conn_latency,
                                  uint16_t conn_timeout) {
   mock_function_count_map[__func__]++;
@@ -51,14 +53,14 @@ void acl_ble_connection_fail(const tBLE_BD_ADDR& address_with_type,
   mock_function_count_map[__func__]++;
 }
 void acl_ble_enhanced_connection_complete(
-    const tBLE_BD_ADDR& address_with_type, uint16_t handle, uint8_t role,
+    const tBLE_BD_ADDR& address_with_type, uint16_t handle, tHCI_ROLE role,
     bool match, uint16_t conn_interval, uint16_t conn_latency,
     uint16_t conn_timeout, const RawAddress& local_rpa,
     const RawAddress& peer_rpa, uint8_t peer_addr_type) {
   mock_function_count_map[__func__]++;
 }
 void acl_ble_enhanced_connection_complete_from_shim(
-    const tBLE_BD_ADDR& address_with_type, uint16_t handle, uint8_t role,
+    const tBLE_BD_ADDR& address_with_type, uint16_t handle, tHCI_ROLE role,
     uint16_t conn_interval, uint16_t conn_latency, uint16_t conn_timeout,
     const RawAddress& local_rpa, const RawAddress& peer_rpa,
     uint8_t peer_addr_type) {

@@ -455,6 +455,26 @@ void PacketDef::GenTestDefine(std::ostream& s) const {
   s << "}";
   s << "INSTANTIATE_TEST_SUITE_P(" << name_ << "_reflection, ";
   s << name_ << "ReflectionTest, testing::Values(__VA_ARGS__))";
+  int i = 0;
+  for (const auto& bytes : test_cases_) {
+    s << "\nuint8_t " << name_ << "_test_bytes_" << i << "[] = \"" << bytes << "\";";
+    s << "std::vector<uint8_t> " << name_ << "_test_vec_" << i << "(";
+    s << name_ << "_test_bytes_" << i << ",";
+    s << name_ << "_test_bytes_" << i << " + sizeof(";
+    s << name_ << "_test_bytes_" << i << ") - 1);";
+    i++;
+  }
+  if (!test_cases_.empty()) {
+    i = 0;
+    s << "\nDEFINE_AND_INSTANTIATE_" << name_ << "ReflectionTest(";
+    for (auto bytes : test_cases_) {
+      if (i > 0) {
+        s << ",";
+      }
+      s << name_ << "_test_vec_" << i++;
+    }
+    s << ");";
+  }
   s << "\n#endif";
 }
 
@@ -1248,11 +1268,27 @@ void PacketDef::GenRustBuilderTest(std::ostream& s) const {
       } else {
         s << lineage[i - 1]->name_ << "Child::" << lineage[i]->name_ << "(packet) => {";
         s << "let rebuilder = " << lineage[i]->name_ << "Builder {";
-        FieldList params = GetParamList().GetFieldsWithoutTypes({
-            BodyField::kFieldType,
-        });
+        FieldList params = GetParamList();
+        if (params.HasBody()) {
+          ERROR() << "Packets with body fields can't be auto-tested.  Test a child.";
+        }
         for (const auto param : params) {
-          s << param->GetName() << " : packet." << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "(),";
+          s << param->GetName() << " : packet.";
+          if (param->GetFieldType() == VectorField::kFieldType) {
+            s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "().to_vec(),";
+          } else if (param->GetFieldType() == ArrayField::kFieldType) {
+            const auto array_param = static_cast<const ArrayField*>(param);
+            const auto element_field = array_param->GetElementField();
+            if (element_field->GetFieldType() == StructField::kFieldType) {
+              s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "().to_vec(),";
+            } else {
+              s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "().clone(),";
+            }
+          } else if (param->GetFieldType() == StructField::kFieldType) {
+            s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "().clone(),";
+          } else {
+            s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "(),";
+          }
         }
         s << "};";
         s << "let rebuilder_base : " << lineage[0]->name_ << "Packet = rebuilder.into();";

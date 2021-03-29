@@ -48,6 +48,7 @@
 #include "stack/include/acl_hci_link_interface.h"
 #include "stack/include/btm_status.h"
 #include "stack/include/l2cap_security_interface.h"
+#include "stack/include/stack_metrics_logging.h"
 #include "stack/smp/smp_int.h"
 
 namespace {
@@ -1447,6 +1448,12 @@ static void btm_sec_check_upgrade(tBTM_SEC_DEV_REC* p_dev_rec,
 tBTM_STATUS btm_sec_l2cap_access_req_by_requirement(
     const RawAddress& bd_addr, uint16_t security_required, bool is_originator,
     tBTM_SEC_CALLBACK* p_callback, void* p_ref_data) {
+  LOG_DEBUG(
+      "Checking l2cap access requirements peer:%s security:0x%x "
+      "is_initiator:%s",
+      PRIVATE_ADDRESS(bd_addr), security_required,
+      logbool(is_originator).c_str());
+
   tBTM_STATUS rc = BTM_SUCCESS;
   bool chk_acp_auth_done = false;
   /* should check PSM range in LE connection oriented L2CAP connection */
@@ -1482,8 +1489,8 @@ tBTM_STATUS btm_sec_l2cap_access_req_by_requirement(
   /* we will process one after another */
   if ((p_dev_rec->p_callback) ||
       (btm_cb.pairing_state != BTM_PAIR_STATE_IDLE)) {
-    BTM_TRACE_EVENT("security_flags:x%x, sec_flags:x%x", security_required,
-                    p_dev_rec->sec_flags);
+    LOG_DEBUG("security_flags:x%x, sec_flags:x%x", security_required,
+              p_dev_rec->sec_flags);
     rc = BTM_CMD_STARTED;
     if ((btm_cb.security_mode == BTM_SEC_MODE_SERVICE) ||
         (BTM_SM4_KNOWN == p_dev_rec->sm4) ||
@@ -1967,7 +1974,7 @@ void btm_create_conn_cancel_complete(uint8_t* p) {
   STREAM_TO_BDADDR(bd_addr, p);
   BTM_TRACE_EVENT("btm_create_conn_cancel_complete(): in State: %s  status:%d",
                   btm_pair_state_descr(btm_cb.pairing_state), status);
-  bluetooth::common::LogLinkLayerConnectionEvent(
+  log_link_layer_connection_event(
       &bd_addr, bluetooth::common::kUnknownConnectionHandle,
       android::bluetooth::DIRECTION_OUTGOING, android::bluetooth::LINK_TYPE_ACL,
       android::bluetooth::hci::CMD_CREATE_CONNECTION_CANCEL,
@@ -2431,6 +2438,7 @@ void btm_io_capabilities_req(const RawAddress& p) {
   /* assume that the local IO capability does not change
    * loc_io_caps is initialized with the default value */
   evt_data.io_cap = btm_cb.devcb.loc_io_caps;
+  // TODO(optedoblivion): Inject OOB_DATA_PRESENT Flag
   evt_data.oob_data = BTM_OOB_NONE;
   evt_data.auth_req = BTM_AUTH_SP_NO;
 
@@ -3106,7 +3114,7 @@ void btm_sec_auth_complete(uint16_t handle, tHCI_STATUS status) {
         BTM_TRACE_DEBUG(
             "link encrypted afer dedic bonding can use SMP_BR_CHNL");
 
-        uint8_t role = HCI_ROLE_UNKNOWN;
+        tHCI_ROLE role = HCI_ROLE_UNKNOWN;
         BTM_GetRole(p_dev_rec->bd_addr, &role);
         if (role == HCI_ROLE_CENTRAL) {
           // Encryption is required to start SM over BR/EDR
@@ -3235,7 +3243,7 @@ void btm_sec_encrypt_change(uint16_t handle, tHCI_STATUS status,
       BTM_TRACE_DEBUG("%s: BR key is temporary, skip derivation of LE LTK",
                       __func__);
     }
-    uint8_t role = HCI_ROLE_UNKNOWN;
+    tHCI_ROLE role = HCI_ROLE_UNKNOWN;
     BTM_GetRole(p_dev_rec->bd_addr, &role);
     if (p_dev_rec->new_encryption_key_is_p256) {
       if (btm_sec_use_smp_br_chnl(p_dev_rec) && role == HCI_ROLE_CENTRAL &&
@@ -3574,8 +3582,7 @@ void btm_sec_connected(const RawAddress& bda, uint16_t handle,
   /* For now there are a some devices that do not like sending */
   /* commands events and data at the same time. */
   /* Set the packet types to the default allowed by the device */
-  btm_set_packet_types_from_address(bda, BT_TRANSPORT_BR_EDR,
-                                    acl_get_supported_packet_types());
+  btm_set_packet_types_from_address(bda, acl_get_supported_packet_types());
 
   /* Initialize security flags.  We need to do that because some            */
   /* authorization complete could have come after the connection is dropped */
@@ -3963,6 +3970,7 @@ static void btm_sec_pairing_timeout(UNUSED_ATTR void* data) {
       break;
 
     case BTM_PAIR_STATE_WAIT_LOCAL_IOCAPS:
+      // TODO(optedoblivion): Inject OOB_DATA_PRESENT Flag
       btsnd_hcic_io_cap_req_reply(p_cb->pairing_bda, btm_cb.devcb.loc_io_caps,
                                   BTM_OOB_NONE, auth_req);
       btm_sec_change_pairing_state(BTM_PAIR_STATE_IDLE);

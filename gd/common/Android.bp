@@ -14,6 +14,7 @@ filegroup {
         "metric_id_manager.cc",
         "strings.cc",
         "stop_watch.cc",
+        "metrics.cc",
     ],
 }
 

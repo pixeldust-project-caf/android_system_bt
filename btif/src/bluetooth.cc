@@ -60,6 +60,7 @@
 #include "btif_debug_conn.h"
 #include "btif_hf.h"
 #include "btif_keystore.h"
+#include "btif_metrics_logging.h"
 #include "btif_storage.h"
 #include "btsnoop.h"
 #include "btsnoop_mem.h"
@@ -307,12 +308,14 @@ static int create_bond(const RawAddress* bd_addr, int transport) {
 }
 
 static int create_bond_out_of_band(const RawAddress* bd_addr, int transport,
-                                   const bt_out_of_band_data_t* oob_data) {
+                                   const bt_oob_data_t* p192_data,
+                                   const bt_oob_data_t* p256_data) {
   if (!interface_ready()) return BT_STATUS_NOT_READY;
   if (btif_dm_pairing_is_busy()) return BT_STATUS_BUSY;
 
-  do_in_main_thread(FROM_HERE, base::BindOnce(btif_dm_create_bond_out_of_band,
-                                              *bd_addr, transport, *oob_data));
+  do_in_main_thread(FROM_HERE,
+                    base::BindOnce(btif_dm_create_bond_out_of_band, *bd_addr,
+                                   transport, *p192_data, *p256_data));
   return BT_STATUS_SUCCESS;
 }
 
@@ -547,8 +550,7 @@ static std::string obfuscate_address(const RawAddress& address) {
 }
 
 static int get_metric_id(const RawAddress& address) {
-  return bluetooth::common::MetricIdAllocator::GetInstance().AllocateId(
-      address);
+  return allocate_metric_id_from_metric_id_allocator(address);
 }
 
 static int set_dynamic_audio_buffer_size(int codec, int size) {
