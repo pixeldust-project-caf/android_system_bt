@@ -24,7 +24,16 @@ namespace activity_attribution {
 
 class ActivityAttributionCallbacks {
  public:
-  enum class Activity { UNKNOWN = 0, ADVERTISE, CONNECT, SCAN };
+  enum class Activity : uint8_t {
+    UNKNOWN = 0,
+    ADVERTISE,
+    CONNECT,
+    CONTROL,
+    SCAN,
+    HFP,
+    VENDOR
+  };
+
   virtual ~ActivityAttributionCallbacks() = default;
 
   /** Callback when Blutooth woke up the system */
@@ -34,6 +43,9 @@ class ActivityAttributionCallbacks {
 class ActivityAttributionInterface {
  public:
   virtual ~ActivityAttributionInterface() = default;
+
+  /** Init the interface. */
+  virtual void Init(void) = 0;
 
   /** Register JNI callbacks with the interface. */
   virtual void RegisterCallbacks(ActivityAttributionCallbacks* callbacks) = 0;

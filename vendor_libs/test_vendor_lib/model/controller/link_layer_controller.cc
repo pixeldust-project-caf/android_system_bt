@@ -68,6 +68,10 @@ ErrorCode LinkLayerController::SendCommandToRemoteByAddress(
   Address local_address = properties_.GetAddress();
 
   switch (opcode) {
+    case (OpCode::LE_READ_REMOTE_FEATURES):
+      SendLinkLayerPacket(model::packets::LeReadRemoteFeaturesBuilder::Create(
+          local_address, remote));
+      break;
     case (OpCode::REMOTE_NAME_REQUEST):
       // LMP features get requested with remote name requests.
       SendLinkLayerPacket(model::packets::ReadRemoteLmpFeaturesBuilder::Create(
@@ -257,6 +261,12 @@ void LinkLayerController::IncomingPacket(
       break;
     case model::packets::PacketType::LE_ENCRYPT_CONNECTION_RESPONSE:
       IncomingLeEncryptConnectionResponse(incoming);
+      break;
+    case (model::packets::PacketType::LE_READ_REMOTE_FEATURES):
+      IncomingLeReadRemoteFeatures(incoming);
+      break;
+    case (model::packets::PacketType::LE_READ_REMOTE_FEATURES_RESPONSE):
+      IncomingLeReadRemoteFeaturesResponse(incoming);
       break;
     case model::packets::PacketType::LE_SCAN:
       // TODO: Check Advertising flags and see if we are scannable.
@@ -946,7 +956,7 @@ void LinkLayerController::IncomingIsoConnectionResponsePacket(
   config.acl_connection_handle_ = response.GetRequesterAclHandle();
   config.cis_connection_handle_ = response.GetRequesterCisHandle();
   if (!connections_.HasPendingCisConnection(config.cis_connection_handle_)) {
-    LOG_INFO("Ignoring connection response with unknown CIS handle 0x%0hx",
+    LOG_INFO("Ignoring connection response with unknown CIS handle 0x%04hx",
              config.cis_connection_handle_);
     return;
   }
@@ -1260,6 +1270,41 @@ void LinkLayerController::IncomingLeEncryptConnectionResponse(
     send_event_(bluetooth::hci::EncryptionChangeBuilder::Create(
         status, handle, bluetooth::hci::EncryptionEnabled::ON));
   }
+}
+
+void LinkLayerController::IncomingLeReadRemoteFeatures(
+    model::packets::LinkLayerPacketView incoming) {
+  uint16_t handle =
+      connections_.GetHandleOnlyAddress(incoming.GetSourceAddress());
+  ErrorCode status = ErrorCode::SUCCESS;
+  if (handle == kReservedHandle) {
+    LOG_INFO("@%s: Unknown connection @%s",
+             incoming.GetDestinationAddress().ToString().c_str(),
+             incoming.GetSourceAddress().ToString().c_str());
+  }
+  SendLinkLayerPacket(
+      model::packets::LeReadRemoteFeaturesResponseBuilder::Create(
+          incoming.GetDestinationAddress(), incoming.GetSourceAddress(),
+          properties_.GetLeSupportedFeatures(), static_cast<uint8_t>(status)));
+}
+
+void LinkLayerController::IncomingLeReadRemoteFeaturesResponse(
+    model::packets::LinkLayerPacketView incoming) {
+  uint16_t handle =
+      connections_.GetHandleOnlyAddress(incoming.GetSourceAddress());
+  ErrorCode status = ErrorCode::SUCCESS;
+  auto response =
+      model::packets::LeReadRemoteFeaturesResponseView::Create(incoming);
+  if (handle == kReservedHandle) {
+    LOG_INFO("@%s: Unknown connection @%s",
+             incoming.GetDestinationAddress().ToString().c_str(),
+             incoming.GetSourceAddress().ToString().c_str());
+    status = ErrorCode::UNKNOWN_CONNECTION;
+  } else {
+    status = static_cast<ErrorCode>(response.GetStatus());
+  }
+  send_event_(bluetooth::hci::LeReadRemoteFeaturesCompleteBuilder::Create(
+      status, handle, response.GetFeatures()));
 }
 
 void LinkLayerController::IncomingLeScanPacket(
@@ -2454,24 +2499,48 @@ ErrorCode LinkLayerController::LeConnectionUpdate(
   return ErrorCode::SUCCESS;
 }
 
-void LinkLayerController::LeConnectListClear() { le_connect_list_.clear(); }
+ErrorCode LinkLayerController::LeConnectListClear() {
+  if (ConnectListBusy()) {
+    return ErrorCode::COMMAND_DISALLOWED;
+  }
 
-void LinkLayerController::LeResolvingListClear() { le_resolving_list_.clear(); }
+  le_connect_list_.clear();
+  return ErrorCode::SUCCESS;
+}
 
-void LinkLayerController::LeConnectListAddDevice(Address addr,
-                                                 uint8_t addr_type) {
+ErrorCode LinkLayerController::LeResolvingListClear() {
+  if (ResolvingListBusy()) {
+    return ErrorCode::COMMAND_DISALLOWED;
+  }
+
+  le_resolving_list_.clear();
+  return ErrorCode::SUCCESS;
+}
+
+ErrorCode LinkLayerController::LeConnectListAddDevice(Address addr,
+                                                      uint8_t addr_type) {
+  if (ConnectListBusy()) {
+    return ErrorCode::COMMAND_DISALLOWED;
+  }
   std::tuple<Address, uint8_t> new_tuple = std::make_tuple(addr, addr_type);
   for (auto dev : le_connect_list_) {
     if (dev == new_tuple) {
-      return;
+      return ErrorCode::SUCCESS;
     }
   }
+  if (LeConnectListFull()) {
+    return ErrorCode::MEMORY_CAPACITY_EXCEEDED;
+  }
   le_connect_list_.emplace_back(new_tuple);
+  return ErrorCode::SUCCESS;
 }
 
-void LinkLayerController::LeResolvingListAddDevice(
+ErrorCode LinkLayerController::LeResolvingListAddDevice(
     Address addr, uint8_t addr_type, std::array<uint8_t, kIrk_size> peerIrk,
     std::array<uint8_t, kIrk_size> localIrk) {
+  if (ResolvingListBusy()) {
+    return ErrorCode::COMMAND_DISALLOWED;
+  }
   std::tuple<Address, uint8_t, std::array<uint8_t, kIrk_size>,
              std::array<uint8_t, kIrk_size>>
       new_tuple = std::make_tuple(addr, addr_type, peerIrk, localIrk);
@@ -2479,10 +2548,14 @@ void LinkLayerController::LeResolvingListAddDevice(
     auto curr = le_connect_list_[i];
     if (std::get<0>(curr) == addr && std::get<1>(curr) == addr_type) {
       le_resolving_list_[i] = new_tuple;
-      return;
+      return ErrorCode::SUCCESS;
     }
   }
+  if (LeResolvingListFull()) {
+    return ErrorCode::MEMORY_CAPACITY_EXCEEDED;
+  }
   le_resolving_list_.emplace_back(new_tuple);
+  return ErrorCode::SUCCESS;
 }
 
 void LinkLayerController::LeSetPrivacyMode(uint8_t address_type, Address addr,
@@ -2515,9 +2588,11 @@ ErrorCode LinkLayerController::LeCreateCis(
   }
   for (auto& config : cis_config) {
     if (!connections_.HasHandle(config.acl_connection_handle_)) {
+      LOG_INFO("Unknown ACL handle %04x", config.acl_connection_handle_);
       return ErrorCode::UNKNOWN_CONNECTION;
     }
     if (!connections_.HasCisHandle(config.cis_connection_handle_)) {
+      LOG_INFO("Unknown CIS handle %04x", config.cis_connection_handle_);
       return ErrorCode::UNKNOWN_CONNECTION;
     }
   }
@@ -2525,7 +2600,7 @@ ErrorCode LinkLayerController::LeCreateCis(
     connections_.CreatePendingCis(config);
     auto own_address =
         connections_.GetOwnAddress(config.acl_connection_handle_);
-    auto peer_address = connections_.GetAddress(config.cis_connection_handle_);
+    auto peer_address = connections_.GetAddress(config.acl_connection_handle_);
     StreamParameters stream_parameters =
         connections_.GetStreamParameters(config.cis_connection_handle_);
     GroupParameters group_parameters =
@@ -2538,8 +2613,8 @@ ErrorCode LinkLayerController::LeCreateCis(
         group_parameters.framed, group_parameters.max_transport_latency_m_to_s,
         group_parameters.max_transport_latency_s_to_m,
         stream_parameters.stream_id, stream_parameters.max_sdu_m_to_s,
-        stream_parameters.max_sdu_s_to_m, config.acl_connection_handle_,
-        config.cis_connection_handle_));
+        stream_parameters.max_sdu_s_to_m, config.cis_connection_handle_,
+        config.acl_connection_handle_));
   }
   return ErrorCode::SUCCESS;
 }
@@ -2557,7 +2632,7 @@ ErrorCode LinkLayerController::LeAcceptCisRequest(uint16_t cis_handle) {
   SendLeLinkLayerPacket(model::packets::IsoConnectionResponseBuilder::Create(
       connections_.GetOwnAddress(acl_handle).GetAddress(),
       connections_.GetAddress(acl_handle).GetAddress(),
-      static_cast<uint8_t>(ErrorCode::SUCCESS), acl_handle, cis_handle));
+      static_cast<uint8_t>(ErrorCode::SUCCESS), cis_handle, acl_handle));
 
   return ErrorCode::SUCCESS;
 }
@@ -2759,28 +2834,49 @@ ErrorCode LinkLayerController::SetLeExtendedAdvertisingEnable(
   return ErrorCode::SUCCESS;
 }
 
-void LinkLayerController::LeConnectListRemoveDevice(Address addr,
-                                                    uint8_t addr_type) {
-  // TODO: Add checks to see if advertising, scanning, or a connection request
-  // with the connect list is ongoing.
+bool LinkLayerController::ConnectListBusy() {
+  if (le_connect_) LOG_INFO("le_connect_");
+  if (le_scan_enable_ != bluetooth::hci::OpCode::NONE)
+    LOG_INFO("le_scan_enable");
+  for (auto advertiser : advertisers_)
+    if (advertiser.IsEnabled()) {
+      LOG_INFO("Advertising");
+      return true;
+    }
+  return le_connect_ || le_scan_enable_ != bluetooth::hci::OpCode::NONE;
+}
+
+bool LinkLayerController::ResolvingListBusy() {
+  return ConnectListBusy();  // TODO: Add
+                             // HCI_LE_Periodic_Advertising_Create_Sync
+}
+
+ErrorCode LinkLayerController::LeConnectListRemoveDevice(Address addr,
+                                                         uint8_t addr_type) {
+  if (ConnectListBusy()) {
+    return ErrorCode::COMMAND_DISALLOWED;
+  }
   std::tuple<Address, uint8_t> erase_tuple = std::make_tuple(addr, addr_type);
   for (size_t i = 0; i < le_connect_list_.size(); i++) {
     if (le_connect_list_[i] == erase_tuple) {
       le_connect_list_.erase(le_connect_list_.begin() + i);
     }
   }
+  return ErrorCode::SUCCESS;
 }
 
-void LinkLayerController::LeResolvingListRemoveDevice(Address addr,
-                                                      uint8_t addr_type) {
-  // TODO: Add checks to see if advertising, scanning, or a connection request
-  // with the connect list is ongoing.
+ErrorCode LinkLayerController::LeResolvingListRemoveDevice(Address addr,
+                                                           uint8_t addr_type) {
+  if (ResolvingListBusy()) {
+    return ErrorCode::COMMAND_DISALLOWED;
+  }
   for (size_t i = 0; i < le_connect_list_.size(); i++) {
     auto curr = le_connect_list_[i];
     if (std::get<0>(curr) == addr && std::get<1>(curr) == addr_type) {
       le_resolving_list_.erase(le_resolving_list_.begin() + i);
     }
   }
+  return ErrorCode::SUCCESS;
 }
 
 bool LinkLayerController::LeConnectListContainsDevice(Address addr,
