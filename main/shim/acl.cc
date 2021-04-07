@@ -71,7 +71,6 @@ using PageNumber = uint8_t;
 using CreationTime = std::chrono::time_point<std::chrono::system_clock>;
 using TeardownTime = std::chrono::time_point<std::chrono::system_clock>;
 
-constexpr PageNumber kRemoteExtendedFeaturesPageZero = 0;
 constexpr char kBtmLogTag[] = "ACL";
 
 using SendDataUpwards = void (*const)(BT_HDR*);
@@ -307,7 +306,7 @@ class ShimAclConnection {
 
   void Shutdown() {
     Disconnect();
-    LOG_INFO("Shutdown ACL connection handle:0x%04x", handle_);
+    LOG_INFO("Shutdown and disconnect ACL connection handle:0x%04x", handle_);
   }
 
  protected:
@@ -379,7 +378,7 @@ class ClassicShimAclConnection
 
   void ReadRemoteControllerInformation() override {
     connection_->ReadRemoteVersionInformation();
-    connection_->ReadRemoteExtendedFeatures(kRemoteExtendedFeaturesPageZero);
+    connection_->ReadRemoteSupportedFeatures();
   }
 
   void OnConnectionPacketTypeChanged(uint16_t packet_type) override {
@@ -515,6 +514,13 @@ class ClassicShimAclConnection
                                             uint64_t features) override {
     TRY_POSTING_ON_MAIN(interface_.on_read_remote_extended_features_complete,
                         handle_, page_number, max_page_number, features);
+
+    // Supported features aliases to extended features page 0
+    if (page_number == 0 && !(features & ((uint64_t(1) << 63)))) {
+      LOG_DEBUG("Device does not support extended features");
+      return;
+    }
+
     if (page_number != max_page_number)
       connection_->ReadRemoteExtendedFeatures(page_number + 1);
   }
@@ -694,6 +700,27 @@ struct shim::legacy::Acl::impl {
       connection.second->Shutdown();
     }
     handle_to_le_connection_map_.clear();
+    promise.set_value();
+  }
+
+  void FinalShutdown(std::promise<void> promise) {
+    if (!handle_to_classic_connection_map_.empty()) {
+      for (auto& connection : handle_to_classic_connection_map_) {
+        connection.second->Shutdown();
+      }
+      handle_to_classic_connection_map_.clear();
+      LOG_INFO("Cleared all classic connections count:%zu",
+               handle_to_classic_connection_map_.size());
+    }
+
+    if (!handle_to_le_connection_map_.empty()) {
+      for (auto& connection : handle_to_le_connection_map_) {
+        connection.second->Shutdown();
+      }
+      handle_to_le_connection_map_.clear();
+      LOG_INFO("Cleared all le connections count:%zu",
+               handle_to_le_connection_map_.size());
+    }
     promise.set_value();
   }
 
@@ -1180,8 +1207,8 @@ void shim::legacy::Acl::OnLeConnectSuccess(
 
   TRY_POSTING_ON_MAIN(
       acl_interface_.connection.le.on_connected, legacy_address_with_type,
-      handle, static_cast<uint8_t>(connection_role), conn_interval,
-      conn_latency, conn_timeout, local_rpa, peer_rpa, peer_addr_type);
+      handle, ToLegacyRole(connection_role), conn_interval, conn_latency,
+      conn_timeout, local_rpa, peer_rpa, peer_addr_type);
 
   LOG_DEBUG("Connection successful le remote:%s handle:%hu initiator:%s",
             PRIVATE_ADDRESS(address_with_type), handle,
@@ -1321,6 +1348,26 @@ void shim::legacy::Acl::Shutdown() {
   } else {
     LOG_INFO("All ACL connections have been previously closed");
   }
+}
+
+void shim::legacy::Acl::FinalShutdown() {
+  std::promise<void> promise;
+  auto future = promise.get_future();
+  GetAclManager()->UnregisterCallbacks(this, std::move(promise));
+  future.wait();
+  LOG_DEBUG("Unregistered classic callbacks from gd acl manager");
+
+  promise = std::promise<void>();
+  future = promise.get_future();
+  GetAclManager()->UnregisterLeCallbacks(this, std::move(promise));
+  future.wait();
+  LOG_DEBUG("Unregistered le callbacks from gd acl manager");
+
+  promise = std::promise<void>();
+  future = promise.get_future();
+  handler_->CallOn(pimpl_.get(), &Acl::impl::FinalShutdown, std::move(promise));
+  future.wait();
+  LOG_INFO("Unregistered and cleared any orphaned ACL connections");
 }
 
 void shim::legacy::Acl::ClearAcceptList() {

@@ -50,7 +50,6 @@ cc_library_static {
         "model/setup/test_model.cc",
         ":BluetoothPacketSources",
         ":BluetoothHciClassSources",
-        ":BluetoothCommonSources",
     ],
     cflags: [
         "-fvisibility=hidden",
@@ -166,6 +165,7 @@ cc_binary_host {
         "libscriptedbeaconpayload-protos-lite",
         "libbt-rootcanal",
         "breakpad_client",
+        "libgflags",
     ],
     sanitize: {
         address: true,
