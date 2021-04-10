@@ -59,6 +59,7 @@ import android.bluetooth.BluetoothActivityEnergyInfo;
 import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.OobData;
+import android.content.AttributionSource;
 import android.os.ParcelUuid;
 import android.os.ParcelFileDescriptor;
 import android.os.ResultReceiver;
@@ -93,7 +94,7 @@ interface IBluetooth
     int getDiscoverableTimeout();
     boolean setDiscoverableTimeout(int timeout);
 
-    boolean startDiscovery(String callingPackage, String callingFeatureId);
+    boolean startDiscovery(in AttributionSource attributionSource);
     boolean cancelDiscovery();
     boolean isDiscovering();
     long getDiscoveryEndMillis();
