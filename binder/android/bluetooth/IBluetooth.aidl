@@ -53,6 +53,7 @@ package android.bluetooth;
 import android.bluetooth.IBluetoothCallback;
 import android.bluetooth.IBluetoothConnectionCallback;
 import android.bluetooth.IBluetoothMetadataListener;
+import android.bluetooth.IBluetoothOobDataCallback;
 import android.bluetooth.IBluetoothSocketManager;
 import android.bluetooth.IBluetoothStateChangeCallback;
 import android.bluetooth.BluetoothActivityEnergyInfo;
@@ -194,6 +195,7 @@ interface IBluetooth
     boolean unregisterBluetoothConnectionCallback(in IBluetoothConnectionCallback callback);
 
     boolean canBondWithoutDialog(in BluetoothDevice device);
+    void generateLocalOobData(in int transport, IBluetoothOobDataCallback callback);
 
     int getDeviceType(in BluetoothDevice device);
 
