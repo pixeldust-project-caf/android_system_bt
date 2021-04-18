@@ -40,9 +40,9 @@
 #include "btif_config_cache.h"
 #include "btif_config_transcode.h"
 #include "btif_keystore.h"
+#include "btif_metrics_logging.h"
 #include "common/address_obfuscator.h"
 #include "common/metric_id_allocator.h"
-#include "common/os_utils.h"
 #include "main/shim/config.h"
 #include "main/shim/shim.h"
 #include "osi/include/alarm.h"
@@ -93,9 +93,9 @@ static std::unique_ptr<config_t> btif_config_open(const char* filename);
 
 // Key attestation
 static bool config_checksum_pass(int check_bit) {
-  return ((get_niap_config_compare_result() & check_bit) == check_bit);
+  return ((get_common_criteria_config_compare_result() & check_bit) ==
+          check_bit);
 }
-static bool btif_is_niap_mode() { return is_bluetooth_uid() && is_niap_mode(); }
 static bool btif_in_encrypt_key_name_list(std::string key);
 
 static const int CONFIG_FILE_COMPARE_PASS = 1;
@@ -207,7 +207,7 @@ static void init_metric_id_allocator() {
       // there is one metric id under this mac_address
       int id = 0;
       btif_config_get_int(addr_str, BT_CONFIG_METRICS_ID_KEY, &id);
-      if (MetricIdAllocator::IsValidId(id)) {
+      if (is_valid_id_from_metric_id_allocator(id)) {
         paired_device_map[mac_address] = id;
         is_valid_id_found = true;
       }
@@ -227,16 +227,16 @@ static void init_metric_id_allocator() {
       [](const RawAddress& address, const int id) {
         return btif_config_remove(address.ToString(), BT_CONFIG_METRICS_ID_KEY);
       };
-  if (!MetricIdAllocator::GetInstance().Init(
-          paired_device_map, std::move(save_device_callback),
-          std::move(forget_device_callback))) {
+  if (!init_metric_id_allocator(paired_device_map,
+                                std::move(save_device_callback),
+                                std::move(forget_device_callback))) {
     LOG(FATAL) << __func__ << "Failed to initialize MetricIdAllocator";
   }
 
   // Add device_without_id
   for (auto& address : addresses_without_id) {
-    MetricIdAllocator::GetInstance().AllocateId(address);
-    MetricIdAllocator::GetInstance().SaveDevice(address);
+    allocate_metric_id_from_metric_id_allocator(address);
+    save_metric_id_from_metric_id_allocator(address);
   }
 }
 
@@ -366,7 +366,7 @@ static future_t* clean_up(void) {
     CHECK(bluetooth::shim::is_gd_stack_started_up());
     // GD storage module cleanup by itself
     std::unique_lock<std::recursive_mutex> lock(config_lock);
-    MetricIdAllocator::GetInstance().Close();
+    close_metric_id_allocator();
     return future_new_immediate(FUTURE_SUCCESS);
   }
   btif_config_flush();
@@ -376,7 +376,7 @@ static future_t* clean_up(void) {
 
   std::unique_lock<std::recursive_mutex> lock(config_lock);
   get_bluetooth_keystore_interface()->clear_map();
-  MetricIdAllocator::GetInstance().Close();
+  close_metric_id_allocator();
   btif_config_cache.Clear();
   return future_new_immediate(FUTURE_SUCCESS);
 }
@@ -555,7 +555,7 @@ bool btif_config_get_bin(const std::string& section, const std::string& key,
     sscanf(ptr, "%02hhx", &value[*length]);
   }
 
-  if (btif_is_niap_mode()) {
+  if (is_common_criteria_mode()) {
     if (!value_str_from_config->empty() && in_encrypt_key_name_list &&
         !is_key_encrypted) {
       get_bluetooth_keystore_interface()->set_encrypt_key_or_remove_key(
@@ -608,7 +608,7 @@ bool btif_config_set_bin(const std::string& section, const std::string& key,
   }
 
   std::string value_str;
-  if ((length > 0) && btif_is_niap_mode() &&
+  if ((length > 0) && is_common_criteria_mode() &&
       btif_in_encrypt_key_name_list(key)) {
     get_bluetooth_keystore_interface()->set_encrypt_key_or_remove_key(
         section + "-" + key, str);
@@ -652,7 +652,7 @@ bool btif_config_remove(const std::string& section, const std::string& key) {
     CHECK(bluetooth::shim::is_gd_stack_started_up());
     return bluetooth::shim::BtifConfigInterface::RemoveProperty(section, key);
   }
-  if (is_niap_mode() && btif_in_encrypt_key_name_list(key)) {
+  if (is_common_criteria_mode() && btif_in_encrypt_key_name_list(key)) {
     get_bluetooth_keystore_interface()->set_encrypt_key_or_remove_key(
         section + "-" + key, "");
   }
@@ -718,7 +718,7 @@ static void btif_config_write(UNUSED_ATTR uint16_t event,
   std::unique_lock<std::recursive_mutex> lock(config_lock);
   rename(CONFIG_FILE_PATH, CONFIG_BACKUP_PATH);
   config_save(btif_config_cache.PersistentSectionCopy(), CONFIG_FILE_PATH);
-  if (btif_is_niap_mode()) {
+  if (is_common_criteria_mode()) {
     get_bluetooth_keystore_interface()->set_encrypt_key_or_remove_key(
         CONFIG_FILE_PREFIX, CONFIG_FILE_HASH);
   }

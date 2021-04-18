@@ -63,6 +63,8 @@ extern bool btm_identity_addr_to_random_pseudo(RawAddress* bd_addr,
 extern void btm_ble_batchscan_init(void);
 extern void btm_ble_adv_filter_init(void);
 extern void btm_clear_all_pending_le_entry(void);
+extern const tBLE_BD_ADDR convert_to_address_with_type(
+    const RawAddress& bd_addr, const tBTM_SEC_DEV_REC* p_dev_rec);
 
 #define BTM_EXT_BLE_RMT_NAME_TIMEOUT_MS (30 * 1000)
 #define MIN_ADV_LENGTH 2
@@ -617,13 +619,13 @@ static void btm_ble_vendor_capability_vsc_cmpl_cback(
  * Returns          void
  *
  ******************************************************************************/
-extern void BTM_BleGetVendorCapabilities(tBTM_BLE_VSC_CB* p_cmn_vsc_cb) {
+void BTM_BleGetVendorCapabilities(tBTM_BLE_VSC_CB* p_cmn_vsc_cb) {
   if (NULL != p_cmn_vsc_cb) {
     *p_cmn_vsc_cb = btm_cb.cmn_ble_vsc_cb;
   }
 }
 
-extern void BTM_BleGetDynamicAudioBuffer(
+void BTM_BleGetDynamicAudioBuffer(
     tBTM_BT_DYNAMIC_AUDIO_BUFFER_CB p_dynamic_audio_buffer_cb[]) {
   BTM_TRACE_DEBUG("BTM_BleGetDynamicAudioBuffer");
 
@@ -647,8 +649,7 @@ extern void BTM_BleGetDynamicAudioBuffer(
  *
  ******************************************************************************/
 #if (BLE_VND_INCLUDED == TRUE)
-extern void BTM_BleReadControllerFeatures(
-    tBTM_BLE_CTRL_FEATURES_CBACK* p_vsc_cback) {
+void BTM_BleReadControllerFeatures(tBTM_BLE_CTRL_FEATURES_CBACK* p_vsc_cback) {
   if (btm_cb.cmn_ble_vsc_cb.values_read) return;
 
   BTM_TRACE_DEBUG("BTM_BleReadControllerFeatures");
@@ -658,7 +659,7 @@ extern void BTM_BleReadControllerFeatures(
                             btm_ble_vendor_capability_vsc_cmpl_cback);
 }
 #else
-extern void BTM_BleReadControllerFeatures(
+void BTM_BleReadControllerFeatures(
     UNUSED_ATTR tBTM_BLE_CTRL_FEATURES_CBACK* p_vsc_cback) {}
 #endif
 
@@ -723,7 +724,7 @@ bool BTM_BleConfigPrivacy(bool privacy_mode) {
  * Returns          Max multi adv instance count
  *
  ******************************************************************************/
-extern uint8_t BTM_BleMaxMultiAdvInstanceCount(void) {
+uint8_t BTM_BleMaxMultiAdvInstanceCount(void) {
   if (bluetooth::shim::is_gd_shim_enabled()) {
     return bluetooth::shim::BTM_BleMaxMultiAdvInstanceCount();
   }
@@ -2493,7 +2494,23 @@ void btm_ble_update_mode_operation(uint8_t link_role, const RawAddress* bd_addr,
   /* in case of disconnected, we must cancel bgconn and restart
      in order to add back device to acceptlist in order to reconnect */
   if (bd_addr != nullptr) {
-    btm_ble_bgconn_cancel_if_disconnected(*bd_addr);
+    const RawAddress bda(*bd_addr);
+    if (bluetooth::shim::is_gd_acl_enabled()) {
+      if (acl_check_and_clear_ignore_auto_connect_after_disconnect(bda)) {
+        LOG_DEBUG(
+            "Local disconnect initiated so skipping re-add to acceptlist "
+            "device:%s",
+            PRIVATE_ADDRESS(bda));
+      } else {
+        if (!bluetooth::shim::ACL_AcceptLeConnectionFrom(
+                convert_to_address_with_type(bda, btm_find_dev(bda)))) {
+          LOG_ERROR("Unable to add to acceptlist as it is full:%s",
+                    PRIVATE_ADDRESS(bda));
+        }
+      }
+    } else {
+      btm_ble_bgconn_cancel_if_disconnected(bda);
+    }
   }
 
   /* when no connection is attempted, and controller is not rejecting last

@@ -135,6 +135,10 @@ inline std::string bt_status_text(const bt_status_t& status) {
   }
 }
 
+/** Bluetooth HCI Error Codes */
+/** Corresponding to [Vol 2] Part D, "Error Codes" of Core_v5.1 specs */
+typedef uint8_t bt_hci_error_code_t;
+
 /** Bluetooth PinKey Code */
 typedef struct { uint8_t pin[16]; } __attribute__((packed)) bt_pin_code_t;
 
@@ -328,17 +332,32 @@ typedef struct {
   void* val;
 } bt_property_t;
 
-/** Bluetooth Out Of Band data for bonding */
+/** Represents the actual Out of Band data itself */
 typedef struct {
-  uint8_t le_bt_dev_addr[7]; /* LE Bluetooth Device Address */
-  uint8_t c192[16];          /* Simple Pairing Hash C-192 */
-  uint8_t r192[16];          /* Simple Pairing Randomizer R-192 */
-  uint8_t c256[16];          /* Simple Pairing Hash C-256 */
-  uint8_t r256[16];          /* Simple Pairing Randomizer R-256 */
-  uint8_t sm_tk[16];         /* Security Manager TK Value */
-  uint8_t le_sc_c[16];       /* LE Secure Connections Confirmation Value */
-  uint8_t le_sc_r[16];       /* LE Secure Connections Random Value */
-} bt_out_of_band_data_t;
+  // Both
+  uint8_t address[7]; /* Bluetooth Device Address (6) plus Address Type (1) */
+  uint8_t c[16];      /* Simple Pairing Hash C-192/256 (Classic or LE) */
+  uint8_t r[16];      /* Simple Pairing Randomizer R-192/256 (Classic or LE) */
+  uint8_t device_name[256]; /* Name of the device */
+
+  // Classic
+  uint8_t oob_data_length[2]; /* Classic only data Length. Value includes this
+                                 in length */
+  uint8_t class_of_device[2]; /* Class of Device (Classic or LE) */
+
+  // LE
+  uint8_t le_device_role;   /* Supported and preferred role of device */
+  uint8_t sm_tk[16];        /* Security Manager TK Value (LE Only) */
+  uint8_t le_flags;         /* LE Flags for discoverability and features */
+  uint8_t le_appearance[2]; /* For the appearance of the device */
+} bt_oob_data_t;
+
+/** Bundle that can contain 1 or both of P192 and P256 */
+// typedef struct {
+//  uint8_t address[7];       /* Bluetooth Device Address (6) plus Address Type
+//  (1) */ bt_oob_data_t p192_data;  /* P192 Data or NULL */ bt_oob_data_t
+//  p256_data;  /* P256 Data or NULL */
+//} bt_oob_data_bundle_t;
 
 /** Bluetooth Device Type */
 typedef enum {
@@ -346,6 +365,7 @@ typedef enum {
   BT_DEVICE_DEVTYPE_BLE,
   BT_DEVICE_DEVTYPE_DUAL
 } bt_device_type_t;
+
 /** Bluetooth Bond state */
 typedef enum {
   BT_BOND_STATE_NONE,
@@ -423,7 +443,8 @@ typedef void (*bond_state_changed_callback)(bt_status_t status,
 /** Bluetooth ACL connection state changed callback */
 typedef void (*acl_state_changed_callback)(bt_status_t status,
                                            RawAddress* remote_bd_addr,
-                                           bt_acl_state_t state);
+                                           bt_acl_state_t state,
+                                           bt_hci_error_code_t hci_reason);
 
 /** Bluetooth link quality report callback */
 typedef void (*link_quality_report_callback)(
@@ -532,14 +553,15 @@ typedef struct {
    * The |start_restricted| flag inits the adapter in restricted mode. In
    * restricted mode, bonds that are created are marked as restricted in the
    * config file. These devices are deleted upon leaving restricted mode.
-   * The |is_niap_mode| flag inits the adapter in NIAP mode.
-   * The |config_compare_result| flag show the config checksum check result if
-   * is in NIAP mode.
-   * The |init_flags| are config flags that cannot change during run.
-   * The |is_atv| flag indicates whether the local device is an Android TV
+   * The |is_common_criteria_mode| flag inits the adapter in commom criteria
+   * mode. The |config_compare_result| flag show the config checksum check
+   * result if is in common criteria mode. The |init_flags| are config flags
+   * that cannot change during run. The |is_atv| flag indicates whether the
+   * local device is an Android TV
    */
-  int (*init)(bt_callbacks_t* callbacks, bool guest_mode, bool is_niap_mode,
-              int config_compare_result, const char** init_flags, bool is_atv);
+  int (*init)(bt_callbacks_t* callbacks, bool guest_mode,
+              bool is_common_criteria_mode, int config_compare_result,
+              const char** init_flags, bool is_atv);
 
   /** Enable Bluetooth. */
   int (*enable)();
@@ -591,7 +613,8 @@ typedef struct {
 
   /** Create Bluetooth Bond using out of band data */
   int (*create_bond_out_of_band)(const RawAddress* bd_addr, int transport,
-                                 const bt_out_of_band_data_t* oob_data);
+                                 const bt_oob_data_t* p192_data,
+                                 const bt_oob_data_t* p256_data);
 
   /** Remove Bond */
   int (*remove_bond)(const RawAddress* bd_addr);

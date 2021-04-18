@@ -164,7 +164,7 @@ void Stack::StartEverything() {
     L2CA_UseLegacySecurityModule();
   }
   if (common::init_flags::btaa_hci_is_enabled()) {
-    bluetooth::shim::get_activity_attribution_instance()->Init();
+    bluetooth::shim::init_activity_attribution();
   }
 }
 
@@ -193,8 +193,13 @@ void Stack::Stop() {
   if (!common::init_flags::gd_core_is_enabled()) {
     bluetooth::shim::hci_on_shutting_down();
   }
-  delete acl_;
-  acl_ = nullptr;
+
+  // Make sure gd acl flag is enabled and we started it up
+  if (common::init_flags::gd_acl_is_enabled() && acl_ != nullptr) {
+    acl_->FinalShutdown();
+    delete acl_;
+    acl_ = nullptr;
+  }
 
   ASSERT_LOG(is_running_, "%s Gd stack not running", __func__);
   is_running_ = false;

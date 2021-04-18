@@ -17,7 +17,7 @@
 #define LOG_TAG "bt_shim_activity_attribution"
 #include "activity_attribution.h"
 
-#include "btif_common.h"
+#include "btif/include/btif_common.h"
 #include "gd/btaa/activity_attribution.h"
 #include "helpers.h"
 #include "main/shim/entry.h"
@@ -54,6 +54,23 @@ class ActivityAttributionInterfaceImpl
                               bluetooth::ToRawAddress(address)));
   }
 
+  void OnActivityLogsReady(
+      const std::vector<BtaaAggregationEntry> logs) override {
+    std::vector<ActivityAttributionCallbacks::BtaaAggregationEntry>
+        callback_logs;
+    for (auto& it : logs) {
+      ActivityAttributionCallbacks::BtaaAggregationEntry entry{
+          bluetooth::ToRawAddress(it.address),
+          (ActivityAttributionCallbacks::Activity)it.activity, it.wakeup_count,
+          it.byte_count, it.wakelock_duration};
+      callback_logs.push_back(entry);
+    }
+    do_in_jni_thread(
+        FROM_HERE,
+        base::Bind(&ActivityAttributionCallbacks::OnActivityLogsReady,
+                   base::Unretained(callbacks), callback_logs));
+  }
+
  private:
   // Private constructor to prevent construction.
   ActivityAttributionInterfaceImpl() {}
@@ -64,4 +81,8 @@ class ActivityAttributionInterfaceImpl
 ActivityAttributionInterface*
 bluetooth::shim::get_activity_attribution_instance() {
   return ActivityAttributionInterfaceImpl::GetInstance();
+}
+
+void bluetooth::shim::init_activity_attribution() {
+  bluetooth::shim::get_activity_attribution_instance()->Init();
 }

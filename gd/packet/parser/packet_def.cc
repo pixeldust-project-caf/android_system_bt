@@ -16,6 +16,7 @@
 
 #include "packet_def.h"
 
+#include <iomanip>
 #include <list>
 #include <set>
 
@@ -395,7 +396,7 @@ void PacketDef::GenTestingFromView(std::ostream& s) const {
   FieldList params = GetParamList().GetFieldsWithoutTypes({
       BodyField::kFieldType,
   });
-  for (int i = 0; i < params.size(); i++) {
+  for (std::size_t i = 0; i < params.size(); i++) {
     params[i]->GenBuilderParameterFromView(s);
     if (i != params.size() - 1) {
       s << ", ";
@@ -454,6 +455,26 @@ void PacketDef::GenTestDefine(std::ostream& s) const {
   s << "}";
   s << "INSTANTIATE_TEST_SUITE_P(" << name_ << "_reflection, ";
   s << name_ << "ReflectionTest, testing::Values(__VA_ARGS__))";
+  int i = 0;
+  for (const auto& bytes : test_cases_) {
+    s << "\nuint8_t " << name_ << "_test_bytes_" << i << "[] = \"" << bytes << "\";";
+    s << "std::vector<uint8_t> " << name_ << "_test_vec_" << i << "(";
+    s << name_ << "_test_bytes_" << i << ",";
+    s << name_ << "_test_bytes_" << i << " + sizeof(";
+    s << name_ << "_test_bytes_" << i << ") - 1);";
+    i++;
+  }
+  if (!test_cases_.empty()) {
+    i = 0;
+    s << "\nDEFINE_AND_INSTANTIATE_" << name_ << "ReflectionTest(";
+    for (auto bytes : test_cases_) {
+      if (i > 0) {
+        s << ",";
+      }
+      s << name_ << "_test_vec_" << i++;
+    }
+    s << ");";
+  }
   s << "\n#endif";
 }
 
@@ -498,7 +519,7 @@ void PacketDef::GenBuilderCreate(std::ostream& s) const {
   s << "static std::unique_ptr<" << name_ << "Builder> Create(";
 
   auto params = GetParamList();
-  for (int i = 0; i < params.size(); i++) {
+  for (std::size_t i = 0; i < params.size(); i++) {
     params[i]->GenBuilderParameter(s);
     if (i != params.size() - 1) {
       s << ", ";
@@ -514,7 +535,7 @@ void PacketDef::GenBuilderCreate(std::ostream& s) const {
       BodyField::kFieldType,
   });
   // Add the parameters.
-  for (int i = 0; i < params.size(); i++) {
+  for (std::size_t i = 0; i < params.size(); i++) {
     if (params[i]->BuilderParameterMustBeMoved()) {
       s << "std::move(" << params[i]->GetName() << ")";
     } else {
@@ -630,7 +651,7 @@ void PacketDef::GenBuilderParameterChecker(std::ostream& s) const {
 
   // Generate function arguments.
   s << "void CheckParameterValues(";
-  for (int i = 0; i < params_to_validate.size(); i++) {
+  for (std::size_t i = 0; i < params_to_validate.size(); i++) {
     params_to_validate[i]->GenBuilderParameter(s);
     if (i != params_to_validate.size() - 1) {
       s << ", ";
@@ -653,7 +674,7 @@ void PacketDef::GenBuilderConstructor(std::ostream& s) const {
       PayloadField::kFieldType,
       BodyField::kFieldType,
   });
-  for (int i = 0; i < params.size(); i++) {
+  for (std::size_t i = 0; i < params.size(); i++) {
     params[i]->GenBuilderParameter(s);
     if (i != params.size() - 1) {
       s << ", ";
@@ -677,7 +698,7 @@ void PacketDef::GenBuilderConstructor(std::ostream& s) const {
 
     // Go through all the fields and replace constrained fields with fixed values
     // when calling the parent constructor.
-    for (int i = 0; i < parent_params.size(); i++) {
+    for (std::size_t i = 0; i < parent_params.size(); i++) {
       const auto& field = parent_params[i];
       const auto& constraint = parent_constraints_.find(field->GetName());
       if (constraint != parent_constraints_.end()) {
@@ -711,7 +732,7 @@ void PacketDef::GenBuilderConstructor(std::ostream& s) const {
   if (parent_ != nullptr && saved_params.size() > 0) {
     s << ",";
   }
-  for (int i = 0; i < saved_params.size(); i++) {
+  for (std::size_t i = 0; i < saved_params.size(); i++) {
     const auto& saved_param_name = saved_params[i]->GetName();
     if (saved_params[i]->BuilderParameterMustBeMoved()) {
       s << saved_param_name << "_(std::move(" << saved_param_name << "))";
@@ -728,7 +749,7 @@ void PacketDef::GenBuilderConstructor(std::ostream& s) const {
 
   if (params_to_validate.size() > 0) {
     s << "CheckParameterValues(";
-    for (int i = 0; i < params_to_validate.size(); i++) {
+    for (std::size_t i = 0; i < params_to_validate.size(); i++) {
       s << params_to_validate[i]->GetName() << "_";
       if (i != params_to_validate.size() - 1) {
         s << ", ";
@@ -834,8 +855,8 @@ bool PacketDef::GenRustStructFieldNameAndType(std::ostream& s) const {
   if (fields.size() == 0) {
     return false;
   }
-  for (int i = 0; i < fields.size(); i++) {
-    fields[i]->GenRustNameAndType(s);
+  for (const auto& field : fields) {
+    field->GenRustNameAndType(s);
     s << ", ";
   }
   return true;
@@ -851,8 +872,8 @@ void PacketDef::GenRustStructFieldNames(std::ostream& s) const {
       PayloadField::kFieldType,
       FixedScalarField::kFieldType,
   });
-  for (int i = 0; i < fields.size(); i++) {
-    s << fields[i]->GetName();
+  for (const auto field : fields) {
+    s << field->GetName();
     s << ", ";
   }
 }
@@ -986,9 +1007,9 @@ void PacketDef::GenRustStructImpls(std::ostream& s) const {
   });
 
   if (fields.size() > 0) {
-    for (int i = 0; i < fields.size(); i++) {
-      auto field_type = fields[i]->GetFieldType();
-      s << fields[i]->GetName();
+    for (const auto& field : fields) {
+      auto field_type = field->GetFieldType();
+      s << field->GetName();
       s << ", ";
     }
   }
@@ -1217,12 +1238,89 @@ void PacketDef::GenRustBuilderStructImpls(std::ostream& s) const {
   s << "}\n";
 
   s << "}\n";
-  lineage = GetAncestors();
-  for (auto it = lineage.begin(); it != lineage.end(); it++) {
-    auto def = *it;
-    s << "impl Into<" << def->name_ << "Packet> for " << name_ << "Builder {";
-    s << " fn into(self) -> " << def->name_ << "Packet { self.build().into() }";
+  for (const auto ancestor : GetAncestors()) {
+    s << "impl Into<" << ancestor->name_ << "Packet> for " << name_ << "Builder {";
+    s << " fn into(self) -> " << ancestor->name_ << "Packet { self.build().into() }";
     s << "}\n";
+  }
+}
+
+void PacketDef::GenRustBuilderTest(std::ostream& s) const {
+  auto lineage = GetAncestors();
+  lineage.push_back(this);
+  if (!lineage.empty() && !test_cases_.empty()) {
+    s << "macro_rules! " << util::CamelCaseToUnderScore(name_) << "_builder_tests { ";
+    s << "($($name:ident: $byte_string:expr,)*) => {";
+    s << "$(";
+    s << "\n#[test]\n";
+    s << "pub fn $name() { ";
+    s << "let raw_bytes = $byte_string;";
+    for (size_t i = 0; i < lineage.size(); i++) {
+      s << "/* (" << i << ") */\n";
+      if (i == 0) {
+        s << "match " << lineage[i]->name_ << "Packet::parse(raw_bytes) {";
+        s << "Ok(" << util::CamelCaseToUnderScore(lineage[i]->name_) << "_packet) => {";
+        s << "match " << util::CamelCaseToUnderScore(lineage[i]->name_) << "_packet.specialize() {";
+      } else if (i != lineage.size() - 1) {
+        s << lineage[i - 1]->name_ << "Child::" << lineage[i]->name_ << "(";
+        s << util::CamelCaseToUnderScore(lineage[i]->name_) << "_packet) => {";
+        s << "match " << util::CamelCaseToUnderScore(lineage[i]->name_) << "_packet.specialize() {";
+      } else {
+        s << lineage[i - 1]->name_ << "Child::" << lineage[i]->name_ << "(packet) => {";
+        s << "let rebuilder = " << lineage[i]->name_ << "Builder {";
+        FieldList params = GetParamList();
+        if (params.HasBody()) {
+          ERROR() << "Packets with body fields can't be auto-tested.  Test a child.";
+        }
+        for (const auto param : params) {
+          s << param->GetName() << " : packet.";
+          if (param->GetFieldType() == VectorField::kFieldType) {
+            s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "().to_vec(),";
+          } else if (param->GetFieldType() == ArrayField::kFieldType) {
+            const auto array_param = static_cast<const ArrayField*>(param);
+            const auto element_field = array_param->GetElementField();
+            if (element_field->GetFieldType() == StructField::kFieldType) {
+              s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "().to_vec(),";
+            } else {
+              s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "().clone(),";
+            }
+          } else if (param->GetFieldType() == StructField::kFieldType) {
+            s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "().clone(),";
+          } else {
+            s << util::CamelCaseToUnderScore(param->GetGetterFunctionName()) << "(),";
+          }
+        }
+        s << "};";
+        s << "let rebuilder_base : " << lineage[0]->name_ << "Packet = rebuilder.into();";
+        s << "let rebuilder_bytes : &[u8] = &rebuilder_base.to_bytes();";
+        s << "assert_eq!(rebuilder_bytes, raw_bytes);";
+        s << "}";
+      }
+    }
+    for (size_t i = 1; i < lineage.size(); i++) {
+      s << "_ => {";
+      s << "println!(\"Couldn't parse " << util::CamelCaseToUnderScore(lineage[lineage.size() - i]->name_);
+      s << "{:02x?}\", " << util::CamelCaseToUnderScore(lineage[lineage.size() - i - 1]->name_) << "_packet); ";
+      s << "}}}";
+    }
+
+    s << ",";
+    s << "Err(e) => panic!(\"could not parse " << lineage[0]->name_ << ": {:?} {:02x?}\", e, raw_bytes),";
+    s << "}";
+    s << "}";
+    s << ")*";
+    s << "}";
+    s << "}";
+
+    s << util::CamelCaseToUnderScore(name_) << "_builder_tests! { ";
+    int number = 0;
+    for (const auto& test_case : test_cases_) {
+      s << util::CamelCaseToUnderScore(name_) << "_builder_test_";
+      s << std::setfill('0') << std::setw(2) << number++ << ": ";
+      s << "b\"" << test_case << "\",";
+    }
+    s << "}";
+    s << "\n";
   }
 }
 
@@ -1232,4 +1330,5 @@ void PacketDef::GenRustDef(std::ostream& s) const {
   GenRustStructImpls(s);
   GenRustAccessStructImpls(s);
   GenRustBuilderStructImpls(s);
+  GenRustBuilderTest(s);
 }

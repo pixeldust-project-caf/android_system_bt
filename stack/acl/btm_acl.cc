@@ -63,6 +63,7 @@
 #include "stack/include/hcimsgs.h"
 #include "stack/include/l2cap_acl_interface.h"
 #include "stack/include/sco_hci_link_interface.h"
+#include "types/hci_role.h"
 #include "types/raw_address.h"
 
 void gatt_find_in_device_record(const RawAddress& bd_addr,
@@ -83,7 +84,7 @@ struct StackAclBtmAcl {
   void btm_read_remote_features(uint16_t handle);
   void btm_set_default_link_policy(tLINK_POLICY settings);
   void btm_acl_role_changed(tHCI_STATUS hci_status, const RawAddress& bd_addr,
-                            uint8_t new_role);
+                            tHCI_ROLE new_role);
   void hci_start_role_switch_to_central(tACL_CONN& p_acl);
   void set_default_packet_types_supported(uint16_t packet_types_supported) {
     btm_cb.acl_cb_.btm_acl_pkt_types_supported = packet_types_supported;
@@ -103,18 +104,18 @@ typedef struct {
   uint16_t hci_len;
 } __attribute__((packed)) acl_header_t;
 
-#define BTM_MAX_SW_ROLE_FAILED_ATTEMPTS 3
+constexpr uint8_t BTM_MAX_SW_ROLE_FAILED_ATTEMPTS = 3;
 
 /* Define masks for supported and exception 2.0 ACL packet types
  */
-#define BTM_ACL_SUPPORTED_PKTS_MASK                                           \
-  (HCI_PKT_TYPES_MASK_DM1 | HCI_PKT_TYPES_MASK_DH1 | HCI_PKT_TYPES_MASK_DM3 | \
-   HCI_PKT_TYPES_MASK_DH3 | HCI_PKT_TYPES_MASK_DM5 | HCI_PKT_TYPES_MASK_DH5)
+constexpr uint16_t BTM_ACL_SUPPORTED_PKTS_MASK =
+    (HCI_PKT_TYPES_MASK_DM1 | HCI_PKT_TYPES_MASK_DH1 | HCI_PKT_TYPES_MASK_DM3 |
+     HCI_PKT_TYPES_MASK_DH3 | HCI_PKT_TYPES_MASK_DM5 | HCI_PKT_TYPES_MASK_DH5);
 
-#define BTM_ACL_EXCEPTION_PKTS_MASK                            \
-  (HCI_PKT_TYPES_MASK_NO_2_DH1 | HCI_PKT_TYPES_MASK_NO_3_DH1 | \
-   HCI_PKT_TYPES_MASK_NO_2_DH3 | HCI_PKT_TYPES_MASK_NO_3_DH3 | \
-   HCI_PKT_TYPES_MASK_NO_2_DH5 | HCI_PKT_TYPES_MASK_NO_3_DH5)
+constexpr uint16_t BTM_ACL_EXCEPTION_PKTS_MASK =
+    (HCI_PKT_TYPES_MASK_NO_2_DH1 | HCI_PKT_TYPES_MASK_NO_3_DH1 |
+     HCI_PKT_TYPES_MASK_NO_2_DH3 | HCI_PKT_TYPES_MASK_NO_3_DH3 |
+     HCI_PKT_TYPES_MASK_NO_2_DH5 | HCI_PKT_TYPES_MASK_NO_3_DH5);
 
 inline bool IsEprAvailable(const tACL_CONN& p_acl) {
   if (!p_acl.peer_lmp_feature_valid[0]) {
@@ -154,7 +155,7 @@ void NotifyAclLinkDown(tACL_CONN& p_acl) {
   }
 }
 
-void NotifyAclRoleSwitchComplete(const RawAddress& bda, uint8_t new_role,
+void NotifyAclRoleSwitchComplete(const RawAddress& bda, tHCI_ROLE new_role,
                                  tHCI_STATUS hci_status) {
   BTA_dm_report_role_change(bda, new_role, hci_status);
 }
@@ -354,8 +355,7 @@ tACL_CONN* StackAclBtmAcl::acl_allocate_connection() {
 }
 
 void btm_acl_created(const RawAddress& bda, uint16_t hci_handle,
-                     uint8_t link_role, tBT_TRANSPORT transport) {
-
+                     tHCI_ROLE link_role, tBT_TRANSPORT transport) {
   tACL_CONN* p_acl = internal_.btm_bda_to_acl(bda, transport);
   if (p_acl != (tACL_CONN*)NULL) {
     p_acl->hci_handle = hci_handle;
@@ -400,8 +400,9 @@ void btm_acl_created(const RawAddress& bda, uint16_t hci_handle,
   /* if BR/EDR do something more */
   if (transport == BT_TRANSPORT_BR_EDR) {
     btsnd_hcic_read_rmt_clk_offset(hci_handle);
-    if (!bluetooth::shim::is_gd_l2cap_enabled()) {
-      // GD L2cap reads this automatically
+    if (!bluetooth::shim::is_gd_l2cap_enabled() &&
+        !bluetooth::shim::is_gd_acl_enabled()) {
+      // GD L2cap and GD Acl read this automatically
       btsnd_hcic_rmt_ver_req(hci_handle);
     }
   }
@@ -480,7 +481,7 @@ void btm_acl_update_inquiry_status(uint8_t status) {
   BTIF_dm_report_inquiry_status_change(status);
 }
 
-tBTM_STATUS BTM_GetRole(const RawAddress& remote_bd_addr, uint8_t* p_role) {
+tBTM_STATUS BTM_GetRole(const RawAddress& remote_bd_addr, tHCI_ROLE* p_role) {
   if (p_role == nullptr) {
     return BTM_ILLEGAL_VALUE;
   }
@@ -1205,7 +1206,7 @@ uint16_t BTM_GetNumAclLinks(void) {
  * Returns          true if connection is up, else false.
  *
  ******************************************************************************/
-uint16_t btm_get_acl_disc_reason_code(void) {
+tHCI_REASON btm_get_acl_disc_reason_code(void) {
   return btm_cb.acl_cb_.get_disconnect_reason();
 }
 
@@ -1365,7 +1366,7 @@ void btm_rejectlist_role_change_device(const RawAddress& bd_addr,
  ******************************************************************************/
 void StackAclBtmAcl::btm_acl_role_changed(tHCI_STATUS hci_status,
                                           const RawAddress& bd_addr,
-                                          uint8_t new_role) {
+                                          tHCI_ROLE new_role) {
   tACL_CONN* p_acl = internal_.btm_bda_to_acl(bd_addr, BT_TRANSPORT_BR_EDR);
   if (p_acl == nullptr) {
     LOG_WARN("Unable to find active acl");
@@ -1423,7 +1424,7 @@ void StackAclBtmAcl::btm_acl_role_changed(tHCI_STATUS hci_status,
 }
 
 void btm_acl_role_changed(tHCI_STATUS hci_status, const RawAddress& bd_addr,
-                          uint8_t new_role) {
+                          tHCI_ROLE new_role) {
   if (hci_status == HCI_SUCCESS) {
     l2c_link_role_changed(&bd_addr, new_role, hci_status);
   } else {
@@ -1467,22 +1468,14 @@ tBTM_STATUS StackAclBtmAcl::btm_set_packet_types(tACL_CONN* p,
 }
 
 void btm_set_packet_types_from_address(const RawAddress& bd_addr,
-                                       tBT_TRANSPORT transport,
                                        uint16_t pkt_types) {
-  if (transport == BT_TRANSPORT_LE) {
-    LOG_WARN("Unable to set packet types on le transport");
-    return;
-  }
-  tACL_CONN* p_acl_cb = internal_.btm_bda_to_acl(bd_addr, transport);
-  if (p_acl_cb == nullptr) {
+  tACL_CONN* p_acl = internal_.btm_bda_to_acl(bd_addr, BT_TRANSPORT_BR_EDR);
+  if (p_acl == nullptr) {
     LOG_WARN("Unable to find active acl");
     return;
   }
-  if (p_acl_cb->is_transport_ble()) {
-    LOG_DEBUG("Unable to set packet types on provided le acl");
-    return;
-  }
-  tBTM_STATUS status = internal_.btm_set_packet_types(p_acl_cb, pkt_types);
+
+  tBTM_STATUS status = internal_.btm_set_packet_types(p_acl, pkt_types);
   if (status != BTM_CMD_STARTED) {
     LOG_ERROR("Unable to set packet types from address");
   }
@@ -1895,9 +1888,10 @@ void btm_read_failed_contact_counter_complete(uint8_t* p) {
       STREAM_TO_UINT16(handle, p);
 
       STREAM_TO_UINT16(result.failed_contact_counter, p);
-      LOG_DEBUG("Failed contact counter complete: counter %u, hci status:%s",
-                result.failed_contact_counter,
-                RoleText(result.hci_status).c_str());
+      LOG_DEBUG(
+          "Failed contact counter complete: counter %u, hci status:%s",
+          result.failed_contact_counter,
+          hci_status_code_text(to_hci_status_code(result.hci_status)).c_str());
 
       tACL_CONN* p_acl_cb = internal_.acl_get_connection_from_handle(handle);
       if (p_acl_cb != nullptr) {
@@ -2866,4 +2860,18 @@ bool ACL_SupportTransparentSynchronousData(const RawAddress& bd_addr) {
   }
 
   return HCI_LMP_TRANSPNT_SUPPORTED(p_acl->peer_lmp_feature_pages[0]);
+}
+
+void acl_add_to_ignore_auto_connect_after_disconnect(
+    const RawAddress& bd_addr) {
+  btm_cb.acl_cb_.AddToIgnoreAutoConnectAfterDisconnect(bd_addr);
+}
+
+bool acl_check_and_clear_ignore_auto_connect_after_disconnect(
+    const RawAddress& bd_addr) {
+  return btm_cb.acl_cb_.CheckAndClearIgnoreAutoConnectAfterDisconnect(bd_addr);
+}
+
+void acl_clear_all_ignore_auto_connect_after_disconnect() {
+  btm_cb.acl_cb_.ClearAllIgnoreAutoConnectAfterDisconnect();
 }

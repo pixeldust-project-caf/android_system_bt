@@ -24,13 +24,14 @@
 #ifndef BTA_SYS_H
 #define BTA_SYS_H
 
-#include "bt_common.h"
-#include "bt_target.h"
+#include <base/time/time.h>
+#include <cstdint>
+
+#include "bt_target.h"  // Must be first to define build configuration
+
 #include "osi/include/alarm.h"
 #include "stack/include/hci_error_code.h"
-
-#include <base/logging.h>
-#include <base/threading/thread.h>
+#include "types/hci_role.h"
 
 /*****************************************************************************
  *  Constants and data types
@@ -44,6 +45,11 @@ typedef bool(tBTA_SYS_EVT_HDLR)(BT_HDR* p_msg);
 
 /* disable function type */
 typedef void(tBTA_SYS_DISABLE)(void);
+
+template <typename T, typename U>
+inline const T* Specialize(U* u) {
+  return const_cast<const T*>(reinterpret_cast<T*>(u));
+}
 
 #ifndef BTA_DM_NUM_JV_ID
 #define BTA_DM_NUM_JV_ID 2
@@ -233,7 +239,7 @@ extern void bta_sys_chg_ssr_config(uint8_t id, uint8_t app_id,
 
 extern void bta_sys_role_chg_register(tBTA_SYS_CONN_CBACK* p_cback);
 extern void bta_sys_notify_role_chg(const RawAddress& peer_addr,
-                                    uint8_t new_role, tHCI_STATUS hci_status);
+                                    tHCI_ROLE new_role, tHCI_STATUS hci_status);
 extern void bta_sys_collision_register(uint8_t bta_id,
                                        tBTA_SYS_CONN_CBACK* p_cback);
 extern void bta_sys_notify_collision(const RawAddress& peer_addr);

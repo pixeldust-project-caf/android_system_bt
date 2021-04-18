@@ -24,18 +24,30 @@
 #include <stdio.h>
 #include <unordered_set>
 
-#include "btif_common.h"
+#include "btif/include/btif_common.h"
 #include "gd/hci/address.h"
 #include "gd/hci/le_scanning_manager.h"
+#include "gd/storage/device.h"
+#include "gd/storage/le_device.h"
+#include "gd/storage/storage_module.h"
 #include "main/shim/entry.h"
+#include "main/shim/helpers.h"
 
+#include "advertise_data_parser.h"
 #include "stack/btm/btm_int_types.h"
+
+using bluetooth::ToRawAddress;
+using bluetooth::ToGdAddress;
 
 extern void btm_ble_process_adv_pkt_cont_for_inquiry(
     uint16_t event_type, uint8_t address_type, const RawAddress& raw_address,
     uint8_t primary_phy, uint8_t secondary_phy, uint8_t advertising_sid,
     int8_t tx_power, int8_t rssi, uint16_t periodic_adv_int,
     std::vector<uint8_t> advertising_data);
+
+extern void btif_dm_update_ble_remote_properties(const RawAddress& bd_addr,
+                                                 BD_NAME bd_name,
+                                                 tBT_DEVICE_TYPE dev_type);
 
 class BleScannerInterfaceImpl : public BleScannerInterface,
                                 public bluetooth::hci::ScanningCallback {
@@ -63,6 +75,7 @@ class BleScannerInterfaceImpl : public BleScannerInterface,
   void Scan(bool start) {
     LOG(INFO) << __func__ << " in shim layer";
     bluetooth::shim::GetScanning()->Scan(start);
+    init_address_cache();
   }
 
   /** Setup scan filter params */
@@ -209,8 +222,13 @@ class BleScannerInterfaceImpl : public BleScannerInterface,
                     int8_t tx_power, int8_t rssi,
                     uint16_t periodic_advertising_interval,
                     std::vector<uint8_t> advertising_data) {
-    RawAddress raw_address;
-    RawAddress::FromString(address.ToString(), raw_address);
+    RawAddress raw_address = ToRawAddress(address);
+
+    do_in_jni_thread(
+        FROM_HERE,
+        base::BindOnce(&BleScannerInterfaceImpl::handle_remote_properties,
+                       base::Unretained(this), raw_address, address_type,
+                       advertising_data));
 
     do_in_jni_thread(
         FROM_HERE,
@@ -261,9 +279,7 @@ class BleScannerInterfaceImpl : public BleScannerInterface,
       ApcfCommand apcf_command) {
     advertising_packet_content_filter_command.filter_type =
         static_cast<bluetooth::hci::ApcfFilterType>(apcf_command.type);
-    bluetooth::hci::Address address;
-    bluetooth::hci::Address::FromString(apcf_command.address.ToString(),
-                                        address);
+    bluetooth::hci::Address address = ToGdAddress(apcf_command.address);
     advertising_packet_content_filter_command.address = address;
     advertising_packet_content_filter_command.application_address_type =
         static_cast<bluetooth::hci::ApcfApplicationAddressType>(
@@ -324,6 +340,100 @@ class BleScannerInterfaceImpl : public BleScannerInterface,
         apcf_command.data_mask.begin(), apcf_command.data_mask.end());
     return true;
   }
+
+  void handle_remote_properties(RawAddress bd_addr, tBLE_ADDR_TYPE addr_type,
+                                std::vector<uint8_t> advertising_data) {
+    // skip anonymous advertisment
+    if (addr_type == BLE_ADDR_ANONYMOUS) {
+      return;
+    }
+
+    auto device_type = bluetooth::hci::DeviceType::LE;
+    uint8_t flag_len;
+    const uint8_t* p_flag = AdvertiseDataParser::GetFieldByType(
+        advertising_data, BTM_BLE_AD_TYPE_FLAG, &flag_len);
+    if (p_flag != NULL && flag_len != 0) {
+      if ((BTM_BLE_BREDR_NOT_SPT & *p_flag) == 0) {
+        device_type = bluetooth::hci::DeviceType::DUAL;
+      }
+    }
+
+    uint8_t remote_name_len;
+    const uint8_t* p_eir_remote_name = AdvertiseDataParser::GetFieldByType(
+        advertising_data, BTM_EIR_COMPLETE_LOCAL_NAME_TYPE, &remote_name_len);
+
+    if (p_eir_remote_name == NULL) {
+      p_eir_remote_name = AdvertiseDataParser::GetFieldByType(
+          advertising_data, BT_EIR_SHORTENED_LOCAL_NAME_TYPE, &remote_name_len);
+    }
+
+    // update device name
+    if ((addr_type != BLE_ADDR_RANDOM) || (p_eir_remote_name)) {
+      if (!find_address_cache(bd_addr)) {
+        add_address_cache(bd_addr);
+
+        if (p_eir_remote_name) {
+          if (remote_name_len > BD_NAME_LEN + 1 ||
+              (remote_name_len == BD_NAME_LEN + 1 &&
+               p_eir_remote_name[BD_NAME_LEN] != '\0')) {
+            LOG_INFO("%s dropping invalid packet - device name too long: %d",
+                     __func__, remote_name_len);
+            return;
+          }
+
+          bt_bdname_t bdname;
+          memcpy(bdname.name, p_eir_remote_name, remote_name_len);
+          if (remote_name_len < BD_NAME_LEN + 1)
+            bdname.name[remote_name_len] = '\0';
+
+          btif_dm_update_ble_remote_properties(bd_addr, bdname.name,
+                                               device_type);
+        }
+      }
+    }
+
+    auto* storage_module = bluetooth::shim::GetStorage();
+    bluetooth::hci::Address address = ToGdAddress(bd_addr);
+
+    // update device type
+    auto mutation = storage_module->Modify();
+    bluetooth::storage::Device device =
+        storage_module->GetDeviceByLegacyKey(address);
+    mutation.Add(device.SetDeviceType(device_type));
+    mutation.Commit();
+
+    // update address type
+    auto mutation2 = storage_module->Modify();
+    bluetooth::storage::LeDevice le_device = device.Le();
+    mutation2.Add(
+        le_device.SetAddressType((bluetooth::hci::AddressType)addr_type));
+    mutation2.Commit();
+  }
+
+  void add_address_cache(const RawAddress& p_bda) {
+    // Remove the oldest entries
+    while (remote_bdaddr_cache_.size() >= remote_bdaddr_cache_max_size_) {
+      const RawAddress& raw_address = remote_bdaddr_cache_ordered_.front();
+      remote_bdaddr_cache_.erase(raw_address);
+      remote_bdaddr_cache_ordered_.pop();
+    }
+    remote_bdaddr_cache_.insert(p_bda);
+    remote_bdaddr_cache_ordered_.push(p_bda);
+  }
+
+  bool find_address_cache(const RawAddress& p_bda) {
+    return (remote_bdaddr_cache_.find(p_bda) != remote_bdaddr_cache_.end());
+  }
+
+  void init_address_cache(void) {
+    remote_bdaddr_cache_.clear();
+    remote_bdaddr_cache_ordered_ = {};
+  }
+
+  // all access to this variable should be done on the jni thread
+  std::set<RawAddress> remote_bdaddr_cache_;
+  std::queue<RawAddress> remote_bdaddr_cache_ordered_;
+  const size_t remote_bdaddr_cache_max_size_ = 1024;
 };
 
 BleScannerInterfaceImpl* bt_le_scanner_instance = nullptr;

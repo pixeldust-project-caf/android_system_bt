@@ -17,6 +17,7 @@
 #pragma once
 
 #include <functional>
+#include <future>
 #include <memory>
 
 #include "common/bidi_queue.h"
@@ -37,6 +38,10 @@ namespace security {
 class SecurityModule;
 }
 namespace shim {
+namespace legacy {
+class Acl;
+}
+
 class Btm;
 void L2CA_UseLegacySecurityModule();
 bool L2CA_SetAclPriority(uint16_t, bool);
@@ -46,6 +51,7 @@ namespace hci {
 
 class AclManager : public Module {
  friend class bluetooth::shim::Btm;
+ friend class bluetooth::shim::legacy::Acl;
  friend void bluetooth::shim::L2CA_UseLegacySecurityModule();
  friend bool bluetooth::shim::L2CA_SetAclPriority(uint16_t, bool);
 
@@ -60,9 +66,11 @@ public:
  // Should register only once when user module starts.
  // Generates OnConnectSuccess when an incoming connection is established.
  virtual void RegisterCallbacks(acl_manager::ConnectionCallbacks* callbacks, os::Handler* handler);
+ virtual void UnregisterCallbacks(acl_manager::ConnectionCallbacks* callbacks, std::promise<void> promise);
 
  // Should register only once when user module starts.
  virtual void RegisterLeCallbacks(acl_manager::LeConnectionCallbacks* callbacks, os::Handler* handler);
+ virtual void UnregisterLeCallbacks(acl_manager::LeConnectionCallbacks* callbacks, std::promise<void> promise);
 
  // Generates OnConnectSuccess if connected, or OnConnectFail otherwise
  virtual void CreateConnection(Address address);

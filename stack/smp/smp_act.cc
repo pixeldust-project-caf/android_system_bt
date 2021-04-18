@@ -47,7 +47,7 @@ const tSMP_ACT smp_distribute_act[] = {
 };
 
 static bool pts_test_send_authentication_complete_failure(tSMP_CB* p_cb) {
-  uint8_t reason = p_cb->cert_failure;
+  tSMP_STATUS reason = p_cb->cert_failure;
   if (reason == SMP_PAIR_AUTH_FAIL || reason == SMP_PAIR_FAIL_UNKNOWN ||
       reason == SMP_PAIR_NOT_SUPPORT || reason == SMP_PASSKEY_ENTRY_FAIL ||
       reason == SMP_REPEATED_ATTEMPTS) {
@@ -98,7 +98,7 @@ static void smp_update_key_mask(tSMP_CB* p_cb, uint8_t key_type, bool recv) {
  ******************************************************************************/
 void smp_send_app_cback(tSMP_CB* p_cb, tSMP_INT_DATA* p_data) {
   tSMP_EVT_DATA cb_data;
-  tSMP_STATUS callback_rc;
+  tBTM_STATUS callback_rc;
   uint8_t remote_lmp_version = 0;
   if (p_cb->p_callback && p_cb->cb_evt != 0) {
     switch (p_cb->cb_evt) {
@@ -132,13 +132,14 @@ void smp_send_app_cback(tSMP_CB* p_cb, tSMP_INT_DATA* p_data) {
         break;
 
       default:
+        LOG_ERROR("Unexpected event:%hhu", p_cb->cb_evt);
         break;
     }
 
     callback_rc =
         (*p_cb->p_callback)(p_cb->cb_evt, p_cb->pairing_bda, &cb_data);
 
-    if (callback_rc == SMP_SUCCESS) {
+    if (callback_rc == BTM_SUCCESS) {
       switch (p_cb->cb_evt) {
         case SMP_IO_CAP_REQ_EVT:
           p_cb->loc_auth_req = cb_data.io_req.auth_req;
@@ -218,6 +219,9 @@ void smp_send_app_cback(tSMP_CB* p_cb, tSMP_INT_DATA* p_data) {
 
           smp_br_state_machine_event(p_cb, SMP_BR_KEYS_RSP_EVT, NULL);
           break;
+
+        default:
+          LOG_ERROR("Unexpected event: %hhu", p_cb->cb_evt);
       }
     }
   }
@@ -429,7 +433,7 @@ void smp_proc_sec_req(tSMP_CB* p_cb, tSMP_INT_DATA* p_data) {
 
   SMP_TRACE_DEBUG("%s: auth_req=0x%x", __func__, auth_req);
 
-  p_cb->cb_evt = 0;
+  p_cb->cb_evt = SMP_EVT_NONE;
 
   btm_ble_link_sec_check(p_cb->pairing_bda, auth_req, &sec_req_act);
 
@@ -690,6 +694,16 @@ void smp_process_pairing_public_key(tSMP_CB* p_cb, tSMP_INT_DATA* p_data) {
   Point pt;
   memcpy(pt.x, p_cb->peer_publ_key.x, BT_OCTET32_LEN);
   memcpy(pt.y, p_cb->peer_publ_key.y, BT_OCTET32_LEN);
+
+  if (!memcmp(p_cb->peer_publ_key.x, p_cb->loc_publ_key.x, BT_OCTET32_LEN) &&
+      !memcmp(p_cb->peer_publ_key.y, p_cb->loc_publ_key.y, BT_OCTET32_LEN)) {
+    android_errorWriteLog(0x534e4554, "174886838");
+    SMP_TRACE_WARNING("Remote and local public keys can't match");
+    tSMP_INT_DATA smp;
+    smp.status = SMP_PAIR_AUTH_FAIL;
+    smp_sm_event(p_cb, SMP_AUTH_CMPL_EVT, &smp);
+    return;
+  }
 
   if (!ECC_ValidatePoint(pt)) {
     android_errorWriteLog(0x534e4554, "72377774");
@@ -1946,8 +1960,11 @@ void smp_link_encrypted(const RawAddress& bda, uint8_t encr_enable) {
       btm_ble_update_sec_key_size(bda, p_cb->loc_enc_size);
     }
 
-    tSMP_INT_DATA smp_int_data;
-    smp_int_data.status = encr_enable;
+    tSMP_INT_DATA smp_int_data = {
+        // TODO This is not a tSMP_STATUS
+        .status = static_cast<tSMP_STATUS>(encr_enable),
+    };
+
     smp_sm_event(&smp_cb, SMP_ENCRYPTED_EVT, &smp_int_data);
   }
 }

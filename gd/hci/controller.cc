@@ -514,7 +514,7 @@ struct Controller::impl {
     uint16_t bit_index = index % 10;                                           \
     bool supported = local_supported_commands_[byte_index] & (1 << bit_index); \
     if (!supported) {                                                          \
-      LOG_WARN("unsupported command opcode: 0x%04x", (uint16_t)OpCode::name);  \
+      LOG_DEBUG("unsupported command opcode: 0x%04x", (uint16_t)OpCode::name); \
     }                                                                          \
     return supported;                                                          \
   }
@@ -745,6 +745,7 @@ struct Controller::impl {
       OP_CODE_MAPPING(LE_READ_BUFFER_SIZE_V2)
       OP_CODE_MAPPING(LE_READ_ISO_TX_SYNC)
       OP_CODE_MAPPING(LE_SET_CIG_PARAMETERS)
+      OP_CODE_MAPPING(LE_SET_CIG_PARAMETERS_TEST)
       OP_CODE_MAPPING(LE_CREATE_CIS)
       OP_CODE_MAPPING(LE_REMOVE_CIG)
       OP_CODE_MAPPING(LE_ACCEPT_CIS_REQUEST)

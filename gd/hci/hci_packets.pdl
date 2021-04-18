@@ -246,7 +246,7 @@ enum OpCode : 16 {
   READ_LOCAL_SUPPORTED_CODECS_V1 = 0x100B,
   READ_LOCAL_SUPPORTED_CODECS_V2 = 0x100D,
   READ_LOCAL_SUPPORTED_CODEC_CAPABILITIES = 0x100E,
-  READ_LOCAL_SUPPORTED_CONTROLLER_DELAY = 0X100F,
+  READ_LOCAL_SUPPORTED_CONTROLLER_DELAY = 0x100F,
 
   // STATUS_PARAMETERS
   READ_FAILED_CONTACT_COUNTER = 0x1401,
@@ -343,34 +343,35 @@ enum OpCode : 16 {
   LE_READ_RF_PATH_COMPENSATION_POWER = 0x204C,
   LE_WRITE_RF_PATH_COMPENSATION_POWER = 0x204D,
   LE_SET_PRIVACY_MODE = 0x204E,
-  LE_SET_PERIODIC_ADVERTISING_RECEIVE_ENABLE = 0X2059,
-  LE_PERIODIC_ADVERTISING_SYNC_TRANSFER = 0X205A,
-  LE_PERIODIC_ADVERTISING_SET_INFO_TRANSFER = 0X205B,
-  LE_SET_PERIODIC_ADVERTISING_SYNC_TRANSFER_PARAMETERS = 0X205C,
-  LE_SET_DEFAULT_PERIODIC_ADVERTISING_SYNC_TRANSFER_PARAMETERS = 0X205D,
+  LE_SET_PERIODIC_ADVERTISING_RECEIVE_ENABLE = 0x2059,
+  LE_PERIODIC_ADVERTISING_SYNC_TRANSFER = 0x205A,
+  LE_PERIODIC_ADVERTISING_SET_INFO_TRANSFER = 0x205B,
+  LE_SET_PERIODIC_ADVERTISING_SYNC_TRANSFER_PARAMETERS = 0x205C,
+  LE_SET_DEFAULT_PERIODIC_ADVERTISING_SYNC_TRANSFER_PARAMETERS = 0x205D,
   LE_GENERATE_DHKEY_COMMAND = 0x205E,
-  LE_MODIFY_SLEEP_CLOCK_ACCURACY = 0X205F,
+  LE_MODIFY_SLEEP_CLOCK_ACCURACY = 0x205F,
   LE_READ_BUFFER_SIZE_V2 = 0x2060,
-  LE_READ_ISO_TX_SYNC = 0X2061,
-  LE_SET_CIG_PARAMETERS = 0X2062,
-  LE_CREATE_CIS = 0X2064,
-  LE_REMOVE_CIG = 0X2065,
-  LE_ACCEPT_CIS_REQUEST = 0X2066,
-  LE_REJECT_CIS_REQUEST = 0X2067,
-  LE_CREATE_BIG = 0X2068,
-  LE_TERMINATE_BIG = 0X206A,
-  LE_BIG_CREATE_SYNC = 0X206B,
-  LE_BIG_TERMINATE_SYNC = 0X206C,
-  LE_REQUEST_PEER_SCA = 0X206D,
-  LE_SETUP_ISO_DATA_PATH = 0X206E,
-  LE_REMOVE_ISO_DATA_PATH = 0X206F,
-  LE_SET_HOST_FEATURE = 0X2074,
-  LE_READ_ISO_LINK_QUALITY = 0X2075,
-  LE_ENHANCED_READ_TRANSMIT_POWER_LEVEL = 0X2076,
-  LE_READ_REMOTE_TRANSMIT_POWER_LEVEL = 0X2077,
-  LE_SET_PATH_LOSS_REPORTING_PARAMETERS = 0X2078,
-  LE_SET_PATH_LOSS_REPORTING_ENABLE = 0X2079,
-  LE_SET_TRANSMIT_POWER_REPORTING_ENABLE = 0X207A,
+  LE_READ_ISO_TX_SYNC = 0x2061,
+  LE_SET_CIG_PARAMETERS = 0x2062,
+  LE_SET_CIG_PARAMETERS_TEST = 0x2063,
+  LE_CREATE_CIS = 0x2064,
+  LE_REMOVE_CIG = 0x2065,
+  LE_ACCEPT_CIS_REQUEST = 0x2066,
+  LE_REJECT_CIS_REQUEST = 0x2067,
+  LE_CREATE_BIG = 0x2068,
+  LE_TERMINATE_BIG = 0x206A,
+  LE_BIG_CREATE_SYNC = 0x206B,
+  LE_BIG_TERMINATE_SYNC = 0x206C,
+  LE_REQUEST_PEER_SCA = 0x206D,
+  LE_SETUP_ISO_DATA_PATH = 0x206E,
+  LE_REMOVE_ISO_DATA_PATH = 0x206F,
+  LE_SET_HOST_FEATURE = 0x2074,
+  LE_READ_ISO_LINK_QUALITY = 0x2075,
+  LE_ENHANCED_READ_TRANSMIT_POWER_LEVEL = 0x2076,
+  LE_READ_REMOTE_TRANSMIT_POWER_LEVEL = 0x2077,
+  LE_SET_PATH_LOSS_REPORTING_PARAMETERS = 0x2078,
+  LE_SET_PATH_LOSS_REPORTING_ENABLE = 0x2079,
+  LE_SET_TRANSMIT_POWER_REPORTING_ENABLE = 0x207A,
 
   // VENDOR_SPECIFIC
   LE_GET_VENDOR_CAPABILITIES = 0xFD53,
@@ -613,6 +614,7 @@ enum OpCodeIndex : 16 {
   LE_READ_BUFFER_SIZE_V2 = 415,
   LE_READ_ISO_TX_SYNC = 416,
   LE_SET_CIG_PARAMETERS = 417,
+  LE_SET_CIG_PARAMETERS_TEST = 418,
   LE_CREATE_CIS = 421,
   LE_REMOVE_CIG = 422,
   LE_ACCEPT_CIS_REQUEST = 423,
@@ -744,21 +746,21 @@ enum SubeventCode : 8 {
   SCAN_TIMEOUT = 0x11,
   ADVERTISING_SET_TERMINATED = 0x12,
   SCAN_REQUEST_RECEIVED = 0x13,
-  CHANNEL_SELECTION_ALGORITHM = 0X14,
-  CONNECTIONLESS_IQ_REPORT = 0X15,
-  CONNECTION_IQ_REPORT = 0X16,
-  CTE_REQUEST_FAILED = 0X17,
-  PERIODIC_ADVERTISING_SYNC_TRANSFER_RECEIVED = 0X18,
-  CIS_ESTABLISHED = 0X19,
-  CIS_REQUEST = 0X1A,
-  CREATE_BIG_COMPLETE = 0X1B,
-  TERMINATE_BIG_COMPLETE = 0X1C,
-  BIG_SYNC_ESTABLISHED = 0X1D,
-  BIG_SYNC_LOST = 0X1E,
-  REQUEST_PEER_SCA_COMPLETE = 0X1F,
-  PATH_LOSS_THRESHOLD = 0X20,
-  TRANSMIT_POWER_REPORTING = 0X21,
-  BIG_INFO_ADVERTISING_REPORT = 0X22,
+  CHANNEL_SELECTION_ALGORITHM = 0x14,
+  CONNECTIONLESS_IQ_REPORT = 0x15,
+  CONNECTION_IQ_REPORT = 0x16,
+  CTE_REQUEST_FAILED = 0x17,
+  PERIODIC_ADVERTISING_SYNC_TRANSFER_RECEIVED = 0x18,
+  CIS_ESTABLISHED = 0x19,
+  CIS_REQUEST = 0x1A,
+  CREATE_BIG_COMPLETE = 0x1B,
+  TERMINATE_BIG_COMPLETE = 0x1C,
+  BIG_SYNC_ESTABLISHED = 0x1D,
+  BIG_SYNC_LOST = 0x1E,
+  REQUEST_PEER_SCA_COMPLETE = 0x1F,
+  PATH_LOSS_THRESHOLD = 0x20,
+  TRANSMIT_POWER_REPORTING = 0x21,
+  BIG_INFO_ADVERTISING_REPORT = 0x22,
 }
 
 // Vendor specific events
@@ -820,13 +822,13 @@ enum ErrorCode: 8 {
 
 // Events that are defined with their respective commands
 
-packet CommandComplete : Event (event_code = COMMAND_COMPLETE){
+packet CommandComplete : Event (event_code = COMMAND_COMPLETE) {
   num_hci_command_packets : 8,
   command_op_code : OpCode,
   _payload_,
 }
 
-packet CommandStatus : Event (event_code = COMMAND_STATUS){
+packet CommandStatus : Event (event_code = COMMAND_STATUS) {
   status : ErrorCode, // SUCCESS means PENDING
   num_hci_command_packets : 8,
   command_op_code : OpCode,
@@ -834,7 +836,7 @@ packet CommandStatus : Event (event_code = COMMAND_STATUS){
 }
 
   // Credits
-packet NoCommandComplete : CommandComplete (command_op_code = NONE){
+packet NoCommandComplete : CommandComplete (command_op_code = NONE) {
 }
 
 struct Lap { // Lower Address Part
@@ -850,14 +852,30 @@ packet Inquiry : DiscoveryCommand (op_code = INQUIRY) {
   num_responses : 8, // 0x00 unlimited
 }
 
+test Inquiry {
+  "\x01\x04\x05\x33\x8b\x9e\xaa\xbb",
+}
+
 packet InquiryStatus : CommandStatus (command_op_code = INQUIRY) {
+}
+
+test InquiryStatus {
+  "\x0f\x04\x00\x01\x01\x04",
 }
 
 packet InquiryCancel : DiscoveryCommand (op_code = INQUIRY_CANCEL) {
 }
 
+test InquiryCancel {
+  "\x02\x04\x00",
+}
+
 packet InquiryCancelComplete : CommandComplete (command_op_code = INQUIRY_CANCEL) {
   status : ErrorCode,
+}
+
+test InquiryCancelComplete {
+  "\x0e\x04\x01\x02\x04\x00",
 }
 
 packet PeriodicInquiryMode : DiscoveryCommand (op_code = PERIODIC_INQUIRY_MODE) {
@@ -868,15 +886,31 @@ packet PeriodicInquiryMode : DiscoveryCommand (op_code = PERIODIC_INQUIRY_MODE) 
   num_responses : 8, // 0x00 unlimited
 }
 
+test PeriodicInquiryMode {
+  "\x03\x04\x09\x12\x34\x56\x78\x11\x8b\x9e\x9a\xbc",
+}
+
 packet PeriodicInquiryModeComplete : CommandComplete (command_op_code = PERIODIC_INQUIRY_MODE) {
   status : ErrorCode,
+}
+
+test PeriodicInquiryModeComplete {
+  "\x0e\x04\x01\x03\x04\x00",
 }
 
 packet ExitPeriodicInquiryMode : DiscoveryCommand (op_code = EXIT_PERIODIC_INQUIRY_MODE) {
 }
 
+test ExitPeriodicInquiryMode {
+  "\x04\x04\x00",
+}
+
 packet ExitPeriodicInquiryModeComplete : CommandComplete (command_op_code = EXIT_PERIODIC_INQUIRY_MODE) {
   status : ErrorCode,
+}
+
+test ExitPeriodicInquiryModeComplete {
+  "\x0e\x04\x01\x04\x04\x00",
 }
 
 enum PageScanRepetitionMode : 8 {
@@ -1272,7 +1306,7 @@ struct ScoCodingFormat {
 
 enum ScoPcmDataFormat : 8 {
   NOT_USED = 0x00,
-  ONES_COMPLEMENT = 0X01,
+  ONES_COMPLEMENT = 0x01,
   TWOS_COMPLEMENT = 0x02,
   SIGN_MAGNITUDE = 0x03,
   UNSIGNED = 0x04,
@@ -1314,8 +1348,8 @@ packet EnhancedSetupSynchronousConnection : ScoConnectionCommand (op_code = ENHA
   // Next two items
   // [0x00000000, 0xFFFFFFFE] Bandwidth in octets per second.
   // [0xFFFFFFFF]: Don't care
-  transmit_bandwidth : 32,
-  receive_bandwidth : 32,
+  transmit_bandwidth_octets_per_second : 32,
+  receive_bandwidth_octets_per_second : 32,
   transmit_coding_format : ScoCodingFormat,
   receive_coding_format : ScoCodingFormat,
   // Next two items
@@ -1325,8 +1359,8 @@ packet EnhancedSetupSynchronousConnection : ScoConnectionCommand (op_code = ENHA
   receive_codec_frame_size : 16,
   // Next two items
   // Host to Controller nominal data rate in octets per second.
-  input_bandwidth : 32,
-  output_bandwidth : 32,
+  input_bandwidth_octets_per_second : 32,
+  output_bandwidth_octets_per_second : 32,
   input_coding_format : ScoCodingFormat,
   output_coding_format : ScoCodingFormat,
   // Next two items
@@ -1599,8 +1633,17 @@ packet SetEventMaskComplete : CommandComplete (command_op_code = SET_EVENT_MASK)
 packet Reset : Command (op_code = RESET) {
 }
 
+test Reset {
+  "\x03\x0c\x00",
+}
+
 packet ResetComplete : CommandComplete (command_op_code = RESET) {
   status : ErrorCode,
+}
+
+test ResetComplete {
+  "\x0e\x04\x01\x03\x0c\x00",
+  "\x0e\x04\x01\x03\x0c\x01", // unknown command
 }
 
 enum FilterType : 8 {
@@ -1783,17 +1826,33 @@ packet WriteConnectionAcceptTimeoutComplete : CommandComplete (command_op_code =
 packet ReadPageTimeout : DiscoveryCommand (op_code = READ_PAGE_TIMEOUT) {
 }
 
+test ReadPageTimeout {
+  "\x17\x0c\x00",
+}
+
 packet ReadPageTimeoutComplete : CommandComplete (command_op_code = READ_PAGE_TIMEOUT) {
   status : ErrorCode,
   page_timeout : 16,
+}
+
+test ReadPageTimeoutComplete {
+  "\x0e\x06\x01\x17\x0c\x00\x11\x22",
 }
 
 packet WritePageTimeout : DiscoveryCommand (op_code = WRITE_PAGE_TIMEOUT) {
   page_timeout : 16,
 }
 
+test WritePageTimeout {
+  "\x18\x0c\x02\x00\x20",
+}
+
 packet WritePageTimeoutComplete : CommandComplete (command_op_code = WRITE_PAGE_TIMEOUT) {
   status : ErrorCode,
+}
+
+test WritePageTimeoutComplete {
+  "\x0e\x04\x01\x18\x0c\x00",
 }
 
 enum ScanEnable : 8 {
@@ -1840,10 +1899,18 @@ packet WritePageScanActivityComplete : CommandComplete (command_op_code = WRITE_
 packet ReadInquiryScanActivity : DiscoveryCommand (op_code = READ_INQUIRY_SCAN_ACTIVITY) {
 }
 
+test ReadInquiryScanActivity {
+  "\x1d\x0c\x00",
+}
+
 packet ReadInquiryScanActivityComplete : CommandComplete (command_op_code = READ_INQUIRY_SCAN_ACTIVITY) {
   status : ErrorCode,
   inquiry_scan_interval : 16, // Range: 0x0012 to 0x1000; only even values are valid * 0x625 ms
   inquiry_scan_window : 16, // Range: 0x0011 to 0x1000
+}
+
+test ReadInquiryScanActivityComplete {
+  "\x0e\x08\x01\x1d\x0c\x00\xaa\xbb\xcc\xdd",
 }
 
 packet WriteInquiryScanActivity : DiscoveryCommand (op_code = WRITE_INQUIRY_SCAN_ACTIVITY) {
@@ -1851,8 +1918,16 @@ packet WriteInquiryScanActivity : DiscoveryCommand (op_code = WRITE_INQUIRY_SCAN
   inquiry_scan_window : 16, // Range: 0x0011 to 0x1000
 }
 
+test WriteInquiryScanActivity {
+  "\x1e\x0c\x04\x00\x08\x12\x00",
+}
+
 packet WriteInquiryScanActivityComplete : CommandComplete (command_op_code = WRITE_INQUIRY_SCAN_ACTIVITY) {
   status : ErrorCode,
+}
+
+test WriteInquiryScanActivityComplete {
+  "\x0e\x04\x01\x1e\x0c\x00",
 }
 
 enum AuthenticationEnable : 8 {
@@ -2025,8 +2100,16 @@ packet HostBufferSize : Command (op_code = HOST_BUFFER_SIZE) {
   host_total_num_synchronous_data_packets : 16,
 }
 
+test HostBufferSize {
+  "\x33\x0c\x07\x9b\x06\xff\x14\x00\x0a\x00",
+}
+
 packet HostBufferSizeComplete : CommandComplete (command_op_code = HOST_BUFFER_SIZE) {
   status : ErrorCode,
+}
+
+test HostBufferSizeComplete {
+  "\x0e\x04\x01\x33\x0c\x00",
 }
 
 struct CompletedPackets {
@@ -2071,12 +2154,24 @@ packet WriteLinkSupervisionTimeoutComplete : CommandComplete (command_op_code = 
 packet ReadNumberOfSupportedIac : DiscoveryCommand (op_code = READ_NUMBER_OF_SUPPORTED_IAC) {
 }
 
+test ReadNumberOfSupportedIac {
+  "\x38\x0c\x00",
+}
+
 packet ReadNumberOfSupportedIacComplete : CommandComplete (command_op_code = READ_NUMBER_OF_SUPPORTED_IAC) {
   status : ErrorCode,
   num_support_iac : 8,
 }
 
+test ReadNumberOfSupportedIacComplete {
+  "\x0e\x05\x01\x38\x0c\x00\x99",
+}
+
 packet ReadCurrentIacLap : DiscoveryCommand (op_code = READ_CURRENT_IAC_LAP) {
+}
+
+test ReadCurrentIacLap {
+  "\x39\x0c\x00",
 }
 
 packet ReadCurrentIacLapComplete : CommandComplete (command_op_code = READ_CURRENT_IAC_LAP) {
@@ -2085,13 +2180,25 @@ packet ReadCurrentIacLapComplete : CommandComplete (command_op_code = READ_CURRE
   laps_to_read : Lap[],
 }
 
+test ReadCurrentIacLapComplete {
+  "\x0e\x0b\x01\x39\x0c\x00\x02\x11\x8b\x9e\x22\x8b\x9e",
+}
+
 packet WriteCurrentIacLap : DiscoveryCommand (op_code = WRITE_CURRENT_IAC_LAP) {
   _count_(laps_to_write) : 8,
   laps_to_write : Lap[],
 }
 
+test WriteCurrentIacLap {
+  "\x3a\x0c\x07\x02\x11\x8b\x9e\x22\x8b\x9e",
+}
+
 packet WriteCurrentIacLapComplete : CommandComplete (command_op_code = WRITE_CURRENT_IAC_LAP) {
   status : ErrorCode,
+}
+
+test WriteCurrentIacLapComplete {
+  "\x0e\x04\x01\x3a\x0c\x00",
 }
 
 packet SetAfhHostChannelClassification : Command (op_code = SET_AFH_HOST_CHANNEL_CLASSIFICATION) {
@@ -2199,7 +2306,7 @@ packet ReadExtendedInquiryResponseComplete : CommandComplete (command_op_code = 
 packet WriteExtendedInquiryResponse : Command (op_code = WRITE_EXTENDED_INQUIRY_RESPONSE) {
   fec_required : FecRequired,
   extended_inquiry_response : GapData[],
-  _padding_[244], // Zero padding to be 240 octets (GapData[]) + 2 (opcode) + 1 (size) + 1 (FecRequired)
+  _padding_[240], // Zero padding GapData[] to be 240 octets
 }
 
 packet WriteExtendedInquiryResponseComplete : CommandComplete (command_op_code = WRITE_EXTENDED_INQUIRY_RESPONSE) {
@@ -2226,8 +2333,16 @@ packet WriteSimplePairingMode : SecurityCommand (op_code = WRITE_SIMPLE_PAIRING_
   simple_pairing_mode : Enable,
 }
 
+test WriteSimplePairingMode {
+  "\x56\x0c\x01\x01",
+}
+
 packet WriteSimplePairingModeComplete : CommandComplete (command_op_code = WRITE_SIMPLE_PAIRING_MODE) {
   status : ErrorCode,
+}
+
+test WriteSimplePairingModeComplete {
+  "\x0e\x04\x01\x56\x0c\x00",
 }
 
 packet ReadLocalOobData : SecurityCommand (op_code = READ_LOCAL_OOB_DATA) {
@@ -2287,8 +2402,16 @@ packet WriteLeHostSupport : Command (op_code = WRITE_LE_HOST_SUPPORT) {
   simultaneous_le_host : Enable,  // According to the spec, this should be 0x00 since 4.1
 }
 
+test WriteLeHostSupport {
+  "\x6d\x0c\x02\x01\x01",
+}
+
 packet WriteLeHostSupportComplete : CommandComplete (command_op_code = WRITE_LE_HOST_SUPPORT) {
   status : ErrorCode,
+}
+
+test WriteLeHostSupportComplete {
+  "\x0e\x04\x01\x6d\x0c\x00",
 }
 
 packet ReadSecureConnectionsHostSupport : Command (op_code = READ_SECURE_CONNECTIONS_HOST_SUPPORT) {
@@ -2303,8 +2426,16 @@ packet WriteSecureConnectionsHostSupport : SecurityCommand (op_code = WRITE_SECU
   secure_connections_host_support : Enable,
 }
 
+test WriteSecureConnectionsHostSupport {
+  "\x7a\x0c\x01\x01",
+}
+
 packet WriteSecureConnectionsHostSupportComplete : CommandComplete (command_op_code = WRITE_SECURE_CONNECTIONS_HOST_SUPPORT) {
   status : ErrorCode,
+}
+
+test WriteSecureConnectionsHostSupportComplete {
+  "\x0e\x04\x01\x7a\x0c\x00",
 }
 
 packet ReadLocalOobExtendedData : SecurityCommand (op_code = READ_LOCAL_OOB_EXTENDED_DATA) {
@@ -2345,6 +2476,10 @@ packet ConfigureDataPathComplete : CommandComplete (command_op_code = CONFIGURE_
 
   // INFORMATIONAL_PARAMETERS
 packet ReadLocalVersionInformation : Command (op_code = READ_LOCAL_VERSION_INFORMATION) {
+}
+
+test ReadLocalVersionInformation {
+  "\x01\x10\x00",
 }
 
 enum HciVersion : 8 {
@@ -2388,12 +2523,24 @@ packet ReadLocalVersionInformationComplete : CommandComplete (command_op_code = 
   local_version_information : LocalVersionInformation,
 }
 
+test ReadLocalVersionInformationComplete {
+  "\x0e\x0c\x01\x01\x10\x00\x09\x00\x00\x09\x1d\x00\xbe\x02",
+}
+
 packet ReadLocalSupportedCommands : Command (op_code = READ_LOCAL_SUPPORTED_COMMANDS) {
+}
+
+test ReadLocalSupportedCommands {
+  "\x02\x10\x00",
 }
 
 packet ReadLocalSupportedCommandsComplete : CommandComplete (command_op_code = READ_LOCAL_SUPPORTED_COMMANDS) {
   status : ErrorCode,
   supported_commands : 8[64],
+}
+
+test ReadLocalSupportedCommandsComplete {
+  "\x0e\x44\x01\x02\x10\x00\xff\xff\xff\x03\xce\xff\xef\xff\xff\xff\xff\x7f\xf2\x0f\xe8\xfe\x3f\xf7\x83\xff\x1c\x00\x00\x00\x61\xff\xff\xff\x7f\xbe\x20\xf5\xff\xf0\xff\xff\xff\xff\xff\x07\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet ReadLocalSupportedFeatures : Command (op_code = READ_LOCAL_SUPPORTED_FEATURES) {
@@ -2408,6 +2555,12 @@ packet ReadLocalExtendedFeatures : Command (op_code = READ_LOCAL_EXTENDED_FEATUR
   page_number : 8,
 }
 
+test ReadLocalExtendedFeatures {
+  "\x04\x10\x01\x00",
+  "\x04\x10\x01\x01",
+  "\x04\x10\x01\x02",
+}
+
 packet ReadLocalExtendedFeaturesComplete : CommandComplete (command_op_code = READ_LOCAL_EXTENDED_FEATURES) {
   status : ErrorCode,
   page_number : 8,
@@ -2415,7 +2568,17 @@ packet ReadLocalExtendedFeaturesComplete : CommandComplete (command_op_code = RE
   extended_lmp_features : 64,
 }
 
+test ReadLocalExtendedFeaturesComplete {
+  "\x0e\x0e\x01\x04\x10\x00\x00\x02\xff\xfe\x8f\xfe\xd8\x3f\x5b\x87",
+  "\x0e\x0e\x01\x04\x10\x00\x01\x02\x07\x00\x00\x00\x00\x00\x00\x00",
+  "\x0e\x0e\x01\x04\x10\x00\x02\x02\x45\x03\x00\x00\x00\x00\x00\x00",
+}
+
 packet ReadBufferSize : Command (op_code = READ_BUFFER_SIZE) {
+}
+
+test ReadBufferSize {
+  "\x05\x10\x00",
 }
 
 packet ReadBufferSizeComplete : CommandComplete (command_op_code = READ_BUFFER_SIZE) {
@@ -2426,12 +2589,24 @@ packet ReadBufferSizeComplete : CommandComplete (command_op_code = READ_BUFFER_S
   total_num_synchronous_data_packets : 16,
 }
 
+test ReadBufferSizeComplete {
+  "\x0e\x0b\x01\x05\x10\x00\x00\x04\x3c\x07\x00\x08\x00",
+}
+
 packet ReadBdAddr : Command (op_code = READ_BD_ADDR) {
+}
+
+test ReadBdAddr {
+  "\x09\x10\x00",
 }
 
 packet ReadBdAddrComplete : CommandComplete (command_op_code = READ_BD_ADDR) {
   status : ErrorCode,
   bd_addr : Address,
+}
+
+test ReadBdAddrComplete {
+  "\x0e\x0a\x01\x09\x10\x00\x14\x8e\x61\x5f\x36\x88",
 }
 
 packet ReadDataBlockSize : Command (op_code = READ_DATA_BLOCK_SIZE) {
@@ -2686,9 +2861,17 @@ struct LeBufferSize {
   total_num_le_packets : 8,
 }
 
+test LeReadBufferSizeV1 {
+  "\x02\x20\x00",
+}
+
 packet LeReadBufferSizeV1Complete : CommandComplete (command_op_code = LE_READ_BUFFER_SIZE_V1) {
   status : ErrorCode,
   le_buffer_size : LeBufferSize,
+}
+
+test LeReadBufferSizeV1Complete {
+  "\x0e\x07\x01\x02\x20\x00\xfb\x00\x10",
 }
 
 packet LeReadLocalSupportedFeatures : Command (op_code = LE_READ_LOCAL_SUPPORTED_FEATURES) {
@@ -2768,7 +2951,7 @@ packet LeReadAdvertisingPhysicalChannelTxPowerComplete : CommandComplete (comman
 packet LeSetAdvertisingData : LeAdvertisingCommand (op_code = LE_SET_ADVERTISING_DATA) {
   _size_(advertising_data) : 8,
   advertising_data : GapData[],
-  _padding_[35], // Zero padding to 31 bytes of advertising_data + 1 size + 2 opcode + 1 total_size
+  _padding_[31], // Zero padding to 31 bytes of advertising_data
 }
 
 packet LeSetAdvertisingDataComplete : CommandComplete (command_op_code = LE_SET_ADVERTISING_DATA) {
@@ -2778,7 +2961,7 @@ packet LeSetAdvertisingDataComplete : CommandComplete (command_op_code = LE_SET_
 packet LeSetScanResponseData : LeAdvertisingCommand (op_code = LE_SET_SCAN_RESPONSE_DATA) {
   _size_(advertising_data) : 8,
   advertising_data : GapData[],
-  _padding_[35], // Zero padding to 31 bytes of advertising_data + 1 size + 2 opcode + 1 total_size
+  _padding_[31], // Zero padding to 31 bytes of advertising_data
 }
 
 packet LeSetScanResponseDataComplete : CommandComplete (command_op_code = LE_SET_SCAN_RESPONSE_DATA) {
@@ -2813,6 +2996,10 @@ packet LeSetScanParameters : LeScanningCommand (op_code = LE_SET_SCAN_PARAMETERS
   scanning_filter_policy : LeScanningFilterPolicy,
 }
 
+test LeSetScanParameters {
+  "\x0b\x20\x07\x01\x12\x00\x12\x00\x01\x00",
+}
+
 packet LeSetScanParametersComplete : CommandComplete (command_op_code = LE_SET_SCAN_PARAMETERS) {
   status : ErrorCode,
 }
@@ -2820,6 +3007,10 @@ packet LeSetScanParametersComplete : CommandComplete (command_op_code = LE_SET_S
 packet LeSetScanEnable : LeScanningCommand (op_code = LE_SET_SCAN_ENABLE) {
   le_scan_enable : Enable,
   filter_duplicates : Enable,
+}
+
+test LeSetScanEnable {
+  "\x0c\x20\x02\x01\x00",
 }
 
 packet LeSetScanEnableComplete : CommandComplete (command_op_code = LE_SET_SCAN_ENABLE) {
@@ -2859,9 +3050,17 @@ packet LeCreateConnectionCancelComplete : CommandComplete (command_op_code = LE_
 packet LeReadConnectListSize : Command (op_code = LE_READ_CONNECT_LIST_SIZE) {
 }
 
+test LeReadConnectListSize {
+  "\x0f\x20\x00",
+}
+
 packet LeReadConnectListSizeComplete : CommandComplete (command_op_code = LE_READ_CONNECT_LIST_SIZE) {
   status : ErrorCode,
   connect_list_size : 8,
+}
+
+test LeReadConnectListSizeComplete {
+  "\x0e\x05\x01\x0f\x20\x00\x80",
 }
 
 packet LeClearConnectList : LeConnectionManagementCommand (op_code = LE_CLEAR_CONNECT_LIST) {
@@ -3274,8 +3473,16 @@ packet LeSetExtendedAdvertisingRandomAddress : LeAdvertisingCommand (op_code = L
   advertising_random_address : Address,
 }
 
+test LeSetExtendedAdvertisingRandomAddress {
+  "\x35\x20\x07\x00\x77\x58\xeb\xd3\x1c\x6e",
+}
+
 packet LeSetExtendedAdvertisingRandomAddressComplete : CommandComplete (command_op_code = LE_SET_EXTENDED_ADVERTISING_RANDOM_ADDRESS) {
   status : ErrorCode,
+}
+
+test LeSetExtendedAdvertisingRandomAddressComplete {
+  "\x0e\x04\x01\x35\x20\x00",
 }
 
 // The lower 4 bits of the advertising event properties
@@ -3319,6 +3526,11 @@ packet LeSetExtendedAdvertisingLegacyParameters : LeAdvertisingCommand (op_code 
   _fixed_ = 0x1 : 8, // secondary_advertising_phy LE_1M
   advertising_sid : 8, // SID subfield from the ADI field of the PDU
   scan_request_notification_enable : Enable,
+}
+
+test LeSetExtendedAdvertisingLegacyParameters {
+  "\x36\x20\x19\x00\x13\x00\x90\x01\x00\xc2\x01\x00\x07\x01\x00\x00\x00\x00\x00\x00\x00\x00\xf9\x01\x00\x01\x01\x00",
+  "\x36\x20\x19\x01\x13\x00\x90\x01\x00\xc2\x01\x00\x07\x01\x00\x00\x00\x00\x00\x00\x00\x00\xf9\x01\x00\x01\x01\x00",
 }
 
 packet LeSetExtendedAdvertisingParameters : LeAdvertisingCommand (op_code = LE_SET_EXTENDED_ADVERTISING_PARAMETERS) {
@@ -3372,6 +3584,10 @@ packet LeSetExtendedAdvertisingData : LeAdvertisingCommand (op_code = LE_SET_EXT
   advertising_data : GapData[],
 }
 
+test LeSetExtendedAdvertisingData {
+  "\x37\x20\x12\x00\x03\x01\x0e\x02\x01\x02\x0a\x09\x50\x69\x78\x65\x6c\x20\x33\x20\x58",
+}
+
 packet LeSetExtendedAdvertisingDataRaw : LeAdvertisingCommand (op_code = LE_SET_EXTENDED_ADVERTISING_DATA) {
   advertising_handle : 8,
   operation : Operation,
@@ -3384,6 +3600,10 @@ packet LeSetExtendedAdvertisingDataRaw : LeAdvertisingCommand (op_code = LE_SET_
 
 packet LeSetExtendedAdvertisingDataComplete : CommandComplete (command_op_code = LE_SET_EXTENDED_ADVERTISING_DATA) {
   status : ErrorCode,
+}
+
+test LeSetExtendedAdvertisingDataComplete {
+  "\x0e\x04\x01\x37\x20\x00",
 }
 
 packet LeSetExtendedAdvertisingScanResponse : LeAdvertisingCommand (op_code = LE_SET_EXTENDED_ADVERTISING_SCAN_RESPONSE) {
@@ -3439,8 +3659,16 @@ packet LeSetExtendedAdvertisingEnable : LeAdvertisingCommand (op_code = LE_SET_E
   enabled_sets : EnabledSet[],
 }
 
+test LeSetExtendedAdvertisingEnable {
+  "\x39\x20\x06\x00\x01\x01\x00\x00\x00",
+}
+
 packet LeSetExtendedAdvertisingEnableComplete : CommandComplete (command_op_code = LE_SET_EXTENDED_ADVERTISING_ENABLE) {
   status : ErrorCode,
+}
+
+test LeSetExtendedAdvertisingEnableComplete {
+  "\x0e\x04\x01\x39\x20\x00",
 }
 
 packet LeReadMaximumAdvertisingDataLength : Command (op_code = LE_READ_MAXIMUM_ADVERTISING_DATA_LENGTH) {
@@ -3463,8 +3691,16 @@ packet LeRemoveAdvertisingSet : LeAdvertisingCommand (op_code = LE_REMOVE_ADVERT
   advertising_handle : 8,
 }
 
+test LeRemoveAdvertisingSet {
+  "\x3c\x20\x01\x01",
+}
+
 packet LeRemoveAdvertisingSetComplete : CommandComplete (command_op_code = LE_REMOVE_ADVERTISING_SET) {
   status : ErrorCode,
+}
+
+test LeRemoveAdvertisingSetComplete {
+  "\x0e\x04\x01\x3c\x20\x00",
 }
 
 packet LeClearAdvertisingSets : LeAdvertisingCommand (op_code = LE_CLEAR_ADVERTISING_SETS) {
@@ -3521,8 +3757,17 @@ packet LeSetExtendedScanParameters : LeScanningCommand (op_code = LE_SET_EXTENDE
   parameters : PhyScanParameters[],
 }
 
+test LeSetExtendedScanParameters {
+  "\x41\x20\x08\x01\x00\x01\x01\x12\x00\x12\x00",
+  "\x41\x20\x08\x01\x00\x01\x01\x99\x19\x99\x19",
+}
+
 packet LeSetExtendedScanParametersComplete : CommandComplete (command_op_code = LE_SET_EXTENDED_SCAN_PARAMETERS) {
   status : ErrorCode,
+}
+
+test LeSetExtendedScanParametersComplete {
+  "\x0e\x04\x01\x41\x20\x00",
 }
 
 enum FilterDuplicates : 8 {
@@ -3538,8 +3783,17 @@ packet LeSetExtendedScanEnable : LeScanningCommand (op_code = LE_SET_EXTENDED_SC
   period : 16, // 0 - Scan continuously,  N * 1.28 sec
 }
 
+test LeSetExtendedScanEnable {
+  "\x42\x20\x06\x01\x00\x00\x00\x00\x00",
+  "\x42\x20\x06\x00\x01\x00\x00\x00\x00",
+}
+
 packet LeSetExtendedScanEnableComplete : CommandComplete (command_op_code = LE_SET_EXTENDED_SCAN_ENABLE) {
   status : ErrorCode,
+}
+
+test LeSetExtendedScanEnableComplete {
+  "\x0e\x04\x01\x42\x20\x00",
 }
 
 struct LeCreateConnPhyScanParameters {
@@ -3560,6 +3814,10 @@ packet LeExtendedCreateConnection : LeConnectionManagementCommand (op_code = LE_
   peer_address : Address,
   initiating_phys : 8,
   phy_scan_parameters : LeCreateConnPhyScanParameters[],
+}
+
+test LeExtendedCreateConnection {
+  "\x43\x20\x2a\x01\x01\x00\x00\x00\x00\x00\x00\x00\x03\x00\x08\x30\x00\x18\x00\x28\x00\x00\x00\xf4\x01\x00\x00\x00\x00\x00\x08\x30\x00\x18\x00\x28\x00\x00\x00\xf4\x01\x00\x00\x00\x00",
 }
 
 packet LeExtendedCreateConnectionStatus : CommandStatus (command_op_code = LE_EXTENDED_CREATE_CONNECTION) {
@@ -3791,13 +4049,9 @@ struct CisParametersConfig {
   _reserved_ : 4,
   max_sdu_s_to_m : 12,
   _reserved_ : 4,
-  phy_m_to_s_1_m : 1,
-  phy_m_to_s_2_m : 1,
-  phy_m_to_s_coded : 1,
+  phy_m_to_s : 3,
   _reserved_ : 5,
-  phy_s_to_m_1_m : 1,
-  phy_s_to_m_2_m : 1,
-  phy_s_to_m_coded : 1,
+  phy_s_to_m : 3,
   _reserved_ : 5,
   rtn_m_to_s : 4,
   _reserved_ : 4,
@@ -3835,6 +4089,40 @@ packet LeSetCigParameters : LeIsoCommand (op_code = LE_SET_CIG_PARAMETERS) {
 }
 
 packet LeSetCigParametersComplete : CommandComplete (command_op_code = LE_SET_CIG_PARAMETERS) {
+  status : ErrorCode,
+  cig_id : 8,
+  _count_(connection_handle) : 8,
+  connection_handle : 16[],
+}
+
+struct LeCisParametersTestConfig {
+  cis_id : 8,
+  nse : 8,
+  max_sdu_m_to_s : 16,
+  max_sdu_s_to_m : 16,
+  max_pdu_m_to_s : 16,
+  max_pdu_s_to_m : 16,
+  phy_m_to_s : 8,
+  phy_s_to_m : 8,
+  bn_m_to_s : 8,
+  bn_s_to_m : 8,
+}
+
+packet LeSetCigParametersTest : LeIsoCommand (op_code = LE_SET_CIG_PARAMETERS_TEST) {
+  cig_id : 8,
+  sdu_interval_m_to_s : 24,
+  sdu_interval_s_to_m : 24,
+  ft_m_to_s : 8,
+  ft_s_to_m : 8,
+  iso_interval : 16,
+  peripherals_clock_accuracy : ClockAccuracy,
+  packing : Packing,
+  framing : Enable,
+  _count_(cis_config) : 8,
+  cis_config : LeCisParametersTestConfig[],
+}
+
+packet LeSetCigParametersTestComplete : CommandComplete (command_op_code = LE_SET_CIG_PARAMETERS_TEST) {
   status : ErrorCode,
   cig_id : 8,
   _count_(connection_handle) : 8,
@@ -4077,6 +4365,10 @@ packet LeSetTransmitPowerReportingEnableComplete : CommandComplete (command_op_c
 packet LeGetVendorCapabilities : VendorCommand (op_code = LE_GET_VENDOR_CAPABILITIES) {
 }
 
+test LeGetVendorCapabilities {
+  "\x53\xfd\x00",
+}
+
 struct VendorCapabilities {
   is_supported : 8,
   max_advt_instances: 8,
@@ -4110,6 +4402,7 @@ packet LeGetVendorCapabilitiesComplete : CommandComplete (command_op_code = LE_G
   base_vendor_capabilities : BaseVendorCapabilities,
   _payload_,
 }
+
 packet LeGetVendorCapabilitiesComplete095 : LeGetVendorCapabilitiesComplete {
   version_supported: 16,
   total_num_of_advt_tracked: 16,
@@ -4117,6 +4410,7 @@ packet LeGetVendorCapabilitiesComplete095 : LeGetVendorCapabilitiesComplete {
   debug_logging_supported: 8,
   _payload_,
 }
+
 packet LeGetVendorCapabilitiesComplete096 : LeGetVendorCapabilitiesComplete095 {
   le_address_generation_offloading_support: 8,
   _payload_,
@@ -4165,7 +4459,7 @@ packet LeMultiAdvtParamComplete : LeMultiAdvtComplete (sub_cmd = SET_PARAM) {
 packet LeMultiAdvtSetData : LeMultiAdvt (sub_cmd = SET_DATA) {
   _size_(advertising_data) : 8,
   advertising_data : GapData[],
-  _padding_[36], // Zero padding to 31 bytes of advertising_data + 1 size + 2 opcode + 1 total_size + 1 set
+  _padding_[31], // Zero padding to 31 bytes of advertising_data
   advertising_instance : 8,
 }
 
@@ -4175,7 +4469,7 @@ packet LeMultiAdvtSetDataComplete : LeMultiAdvtComplete (sub_cmd = SET_DATA) {
 packet LeMultiAdvtSetScanResp : LeMultiAdvt (sub_cmd = SET_SCAN_RESP) {
   _size_(advertising_data) : 8,
   advertising_data : GapData[],
-  _padding_[36], // Zero padding to 31 bytes of advertising_data + 1 size + 2 opcode + 1 total_size + 1 set
+  _padding_[31], // Zero padding to 31 bytes of advertising_data
   advertising_instance : 8,
 }
 
@@ -4478,11 +4772,10 @@ packet LeExtendedScanParamsComplete : CommandComplete (command_op_code = LE_EXTE
 }
 
 packet ControllerDebugInfo : VendorCommand (op_code = CONTROLLER_DEBUG_INFO) {
-  _payload_,  // placeholder (unimplemented)
 }
 
 packet ControllerDebugInfoComplete : CommandComplete (command_op_code = CONTROLLER_DEBUG_INFO) {
-  _payload_,  // placeholder (unimplemented)
+  status : ErrorCode,
 }
 
 packet ControllerA2DPOpcode : VendorCommand (op_code = CONTROLLER_A2DP_OPCODE) {
@@ -4505,14 +4798,22 @@ packet ControllerBqr : VendorCommand(op_code = CONTROLLER_BQR) {
   bqr_minimum_report_interval : 16,
 }
 
+test ControllerBqr {
+  "\x5e\xfd\x07\x00\x1f\x00\x07\x00\x88\x13",
+}
+
 packet ControllerBqrComplete : CommandComplete (command_op_code = CONTROLLER_BQR) {
   status : ErrorCode,
   current_quality_event_mask : 32
 }
 
+test ControllerBqrComplete {
+  "\x0e\x08\x01\x5e\xfd\x00\x1f\x00\x07\x00",
+}
+
 // HCI Event Packets
 
-packet InquiryComplete : Event (event_code = INQUIRY_COMPLETE){
+packet InquiryComplete : Event (event_code = INQUIRY_COMPLETE) {
   status : ErrorCode,
 }
 
@@ -4526,7 +4827,7 @@ struct InquiryResult {
   _reserved_ : 1,
 }
 
-packet InquiryResult : Event (event_code = INQUIRY_RESULT){
+packet InquiryResult : Event (event_code = INQUIRY_RESULT) {
   _count_(inquiry_results) : 8,
   inquiry_results : InquiryResult[],
 }
@@ -4536,7 +4837,7 @@ enum LinkType : 8 {
   ACL = 0x01,
 }
 
-packet ConnectionComplete : Event (event_code = CONNECTION_COMPLETE){
+packet ConnectionComplete : Event (event_code = CONNECTION_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4551,26 +4852,26 @@ enum ConnectionRequestLinkType : 8 {
   ESCO = 0x02,
 }
 
-packet ConnectionRequest : Event (event_code = CONNECTION_REQUEST){
+packet ConnectionRequest : Event (event_code = CONNECTION_REQUEST) {
   bd_addr : Address,
   class_of_device : ClassOfDevice,
   link_type : ConnectionRequestLinkType,
 }
 
-packet DisconnectionComplete : Event (event_code = DISCONNECTION_COMPLETE){
+packet DisconnectionComplete : Event (event_code = DISCONNECTION_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
   reason : ErrorCode,
 }
 
-packet AuthenticationComplete : Event (event_code = AUTHENTICATION_COMPLETE){
+packet AuthenticationComplete : Event (event_code = AUTHENTICATION_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
 }
 
-packet RemoteNameRequestComplete : Event (event_code = REMOTE_NAME_REQUEST_COMPLETE){
+packet RemoteNameRequestComplete : Event (event_code = REMOTE_NAME_REQUEST_COMPLETE) {
   status : ErrorCode,
   bd_addr : Address,
   remote_name : 8[248], // UTF-8 encoded user-friendly descriptive name
@@ -4582,34 +4883,34 @@ enum EncryptionEnabled : 8 {
   BR_EDR_AES_CCM = 0x02,
 }
 
-packet EncryptionChange : Event (event_code = ENCRYPTION_CHANGE){
+packet EncryptionChange : Event (event_code = ENCRYPTION_CHANGE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
   encryption_enabled : EncryptionEnabled,
 }
 
-packet ChangeConnectionLinkKeyComplete : Event (event_code = CHANGE_CONNECTION_LINK_KEY_COMPLETE){
+packet ChangeConnectionLinkKeyComplete : Event (event_code = CHANGE_CONNECTION_LINK_KEY_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
 }
 
-packet CentralLinkKeyComplete : Event (event_code = CENTRAL_LINK_KEY_COMPLETE){
+packet CentralLinkKeyComplete : Event (event_code = CENTRAL_LINK_KEY_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
   key_flag : KeyFlag,
 }
 
-packet ReadRemoteSupportedFeaturesComplete : Event (event_code = READ_REMOTE_SUPPORTED_FEATURES_COMPLETE){
+packet ReadRemoteSupportedFeaturesComplete : Event (event_code = READ_REMOTE_SUPPORTED_FEATURES_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
   lmp_features : 64,
 }
 
-packet ReadRemoteVersionInformationComplete : Event (event_code = READ_REMOTE_VERSION_INFORMATION_COMPLETE){
+packet ReadRemoteVersionInformationComplete : Event (event_code = READ_REMOTE_VERSION_INFORMATION_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4618,7 +4919,7 @@ packet ReadRemoteVersionInformationComplete : Event (event_code = READ_REMOTE_VE
   sub_version : 16,
 }
 
-packet QosSetupComplete : Event (event_code = QOS_SETUP_COMPLETE){
+packet QosSetupComplete : Event (event_code = QOS_SETUP_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4632,22 +4933,22 @@ packet QosSetupComplete : Event (event_code = QOS_SETUP_COMPLETE){
 
 // Command Complete and Command Status Events are implemented above Commands.
 
-packet HardwareError : Event (event_code = HARDWARE_ERROR){
+packet HardwareError : Event (event_code = HARDWARE_ERROR) {
   hardware_code : 8,
 }
 
-packet FlushOccurred : Event (event_code = FLUSH_OCCURRED){
+packet FlushOccurred : Event (event_code = FLUSH_OCCURRED) {
   connection_handle : 12,
   _reserved_ : 4,
 }
 
-packet RoleChange : Event (event_code = ROLE_CHANGE){
+packet RoleChange : Event (event_code = ROLE_CHANGE) {
   status : ErrorCode,
   bd_addr : Address,
   new_role : Role,
 }
 
-packet NumberOfCompletedPackets : Event (event_code = NUMBER_OF_COMPLETED_PACKETS){
+packet NumberOfCompletedPackets : Event (event_code = NUMBER_OF_COMPLETED_PACKETS) {
   _count_(completed_packets) : 8,
   completed_packets : CompletedPackets[],
 }
@@ -4658,7 +4959,7 @@ enum Mode : 8 {
   SNIFF = 0x02,
 }
 
-packet ModeChange : Event (event_code = MODE_CHANGE){
+packet ModeChange : Event (event_code = MODE_CHANGE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4672,16 +4973,16 @@ struct ZeroKeyAndAddress {
   _fixed_ = 0 : 64,
 }
 
-packet ReturnLinkKeys : Event (event_code = RETURN_LINK_KEYS){
+packet ReturnLinkKeys : Event (event_code = RETURN_LINK_KEYS) {
   _count_(keys) : 8,
   keys : ZeroKeyAndAddress[],
 }
 
-packet PinCodeRequest : Event (event_code = PIN_CODE_REQUEST){
+packet PinCodeRequest : Event (event_code = PIN_CODE_REQUEST) {
   bd_addr : Address,
 }
 
-packet LinkKeyRequest : Event (event_code = LINK_KEY_REQUEST){
+packet LinkKeyRequest : Event (event_code = LINK_KEY_REQUEST) {
   bd_addr : Address,
 }
 
@@ -4695,27 +4996,27 @@ enum KeyType : 8 {
   AUTHENTICATED_P256 = 0x08,
 }
 
-packet LinkKeyNotification : Event (event_code = LINK_KEY_NOTIFICATION){
+packet LinkKeyNotification : Event (event_code = LINK_KEY_NOTIFICATION) {
   bd_addr : Address,
   link_key : 8[16],
   key_type : KeyType,
 }
 
-packet LoopbackCommand : Event (event_code = LOOPBACK_COMMAND){
+packet LoopbackCommand : Event (event_code = LOOPBACK_COMMAND) {
   _payload_, // Command packet, truncated if it was longer than 252 bytes
 }
 
-packet DataBufferOverflow : Event (event_code = DATA_BUFFER_OVERFLOW){
+packet DataBufferOverflow : Event (event_code = DATA_BUFFER_OVERFLOW) {
   link_type : LinkType,
 }
 
-packet MaxSlotsChange : Event (event_code = MAX_SLOTS_CHANGE){
+packet MaxSlotsChange : Event (event_code = MAX_SLOTS_CHANGE) {
   connection_handle : 12,
   _reserved_ : 4,
   lmp_max_slots : 8,
 }
 
-packet ReadClockOffsetComplete : Event (event_code = READ_CLOCK_OFFSET_COMPLETE){
+packet ReadClockOffsetComplete : Event (event_code = READ_CLOCK_OFFSET_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4723,24 +5024,24 @@ packet ReadClockOffsetComplete : Event (event_code = READ_CLOCK_OFFSET_COMPLETE)
   _reserved_ : 1,
 }
 
-packet ConnectionPacketTypeChanged : Event (event_code = CONNECTION_PACKET_TYPE_CHANGED){
+packet ConnectionPacketTypeChanged : Event (event_code = CONNECTION_PACKET_TYPE_CHANGED) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
   packet_type : 16,
 }
 
-packet QosViolation : Event (event_code = QOS_VIOLATION){
+packet QosViolation : Event (event_code = QOS_VIOLATION) {
   connection_handle : 12,
   _reserved_ : 4,
 }
 
-packet PageScanRepetitionModeChange : Event (event_code = PAGE_SCAN_REPETITION_MODE_CHANGE){
+packet PageScanRepetitionModeChange : Event (event_code = PAGE_SCAN_REPETITION_MODE_CHANGE) {
   bd_addr : Address,
   page_scan_repetition_mode : PageScanRepetitionMode,
 }
 
-packet FlowSpecificationComplete : Event (event_code = FLOW_SPECIFICATION_COMPLETE){
+packet FlowSpecificationComplete : Event (event_code = FLOW_SPECIFICATION_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4763,12 +5064,12 @@ struct InquiryResultWithRssi {
   rssi : 8,
 }
 
-packet InquiryResultWithRssi : Event (event_code = INQUIRY_RESULT_WITH_RSSI){
+packet InquiryResultWithRssi : Event (event_code = INQUIRY_RESULT_WITH_RSSI) {
   _count_(inquiry_results) : 8,
   inquiry_results : InquiryResultWithRssi[],
 }
 
-packet ReadRemoteExtendedFeaturesComplete : Event (event_code = READ_REMOTE_EXTENDED_FEATURES_COMPLETE){
+packet ReadRemoteExtendedFeaturesComplete : Event (event_code = READ_REMOTE_EXTENDED_FEATURES_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4789,7 +5090,7 @@ enum ScoAirMode : 8 {
   TRANSPARENT = 0x03,
 }
 
-packet SynchronousConnectionComplete : Event (event_code = SYNCHRONOUS_CONNECTION_COMPLETE){
+packet SynchronousConnectionComplete : Event (event_code = SYNCHRONOUS_CONNECTION_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
    _reserved_ : 4,
@@ -4810,7 +5111,7 @@ packet SynchronousConnectionComplete : Event (event_code = SYNCHRONOUS_CONNECTIO
   air_mode : ScoAirMode,
 }
 
-packet SynchronousConnectionChanged : Event (event_code = SYNCHRONOUS_CONNECTION_CHANGED){
+packet SynchronousConnectionChanged : Event (event_code = SYNCHRONOUS_CONNECTION_CHANGED) {
   status : ErrorCode,
   connection_handle : 12,
    _reserved_ : 4,
@@ -4825,7 +5126,7 @@ packet SynchronousConnectionChanged : Event (event_code = SYNCHRONOUS_CONNECTION
   tx_packet_length : 16,
 }
 
-packet SniffSubratingEvent : Event (event_code = SNIFF_SUBRATING){
+packet SniffSubratingEvent : Event (event_code = SNIFF_SUBRATING) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
@@ -4846,48 +5147,48 @@ packet ExtendedInquiryResult : Event (event_code = EXTENDED_INQUIRY_RESULT) {
   rssi : 8,
   extended_inquiry_response : GapData[],
   // Extended inquiry Result is always 255 bytes long
-  // padded with zeroes as necessary
+  // padded GapData with zeroes as necessary
   // Refer to BLUETOOTH CORE SPECIFICATION Version 5.2 | Vol 3, Part C Section 8 on page 1340
-  _padding_[255],
+  _padding_[240],
 }
 
-packet EncryptionKeyRefreshComplete : Event (event_code = ENCRYPTION_KEY_REFRESH_COMPLETE){
+packet EncryptionKeyRefreshComplete : Event (event_code = ENCRYPTION_KEY_REFRESH_COMPLETE) {
   status : ErrorCode,
   connection_handle : 12,
   _reserved_ : 4,
 }
 
-packet IoCapabilityRequest : Event (event_code = IO_CAPABILITY_REQUEST){
+packet IoCapabilityRequest : Event (event_code = IO_CAPABILITY_REQUEST) {
   bd_addr : Address,
 }
 
-packet IoCapabilityResponse : Event (event_code = IO_CAPABILITY_RESPONSE){
+packet IoCapabilityResponse : Event (event_code = IO_CAPABILITY_RESPONSE) {
   bd_addr : Address,
   io_capability : IoCapability,
   oob_data_present : OobDataPresent,
   authentication_requirements : AuthenticationRequirements,
 }
 
-packet UserConfirmationRequest : Event (event_code = USER_CONFIRMATION_REQUEST){
+packet UserConfirmationRequest : Event (event_code = USER_CONFIRMATION_REQUEST) {
   bd_addr : Address,
   numeric_value : 20, // 0x00000-0xF423F (000000 - 999999)
   _reserved_ : 12,
 }
 
-packet UserPasskeyRequest : Event (event_code = USER_PASSKEY_REQUEST){
+packet UserPasskeyRequest : Event (event_code = USER_PASSKEY_REQUEST) {
   bd_addr : Address,
 }
 
-packet RemoteOobDataRequest : Event (event_code = REMOTE_OOB_DATA_REQUEST){
+packet RemoteOobDataRequest : Event (event_code = REMOTE_OOB_DATA_REQUEST) {
   bd_addr : Address,
 }
 
-packet SimplePairingComplete : Event (event_code = SIMPLE_PAIRING_COMPLETE){
+packet SimplePairingComplete : Event (event_code = SIMPLE_PAIRING_COMPLETE) {
   status : ErrorCode,
   bd_addr : Address,
 }
 
-packet LinkSupervisionTimeoutChanged : Event (event_code = LINK_SUPERVISION_TIMEOUT_CHANGED){
+packet LinkSupervisionTimeoutChanged : Event (event_code = LINK_SUPERVISION_TIMEOUT_CHANGED) {
   connection_handle : 12,
   _reserved_ : 4,
   link_supervision_timeout : 16, // 0x001-0xFFFF (0.625ms-40.9s)
@@ -4897,32 +5198,32 @@ enum FlushablePacketType : 8 {
   AUTOMATICALLY_FLUSHABLE_ONLY = 0,
 }
 
-packet EnhancedFlush : Command (op_code = ENHANCED_FLUSH){
+packet EnhancedFlush : Command (op_code = ENHANCED_FLUSH) {
   connection_handle : 12,
   _reserved_ : 4,
   packet_type : FlushablePacketType,
 }
 
-packet EnhancedFlushStatus : CommandStatus (command_op_code = ENHANCED_FLUSH){
+packet EnhancedFlushStatus : CommandStatus (command_op_code = ENHANCED_FLUSH) {
 }
 
-packet EnhancedFlushComplete : Event (event_code = ENHANCED_FLUSH_COMPLETE){
+packet EnhancedFlushComplete : Event (event_code = ENHANCED_FLUSH_COMPLETE) {
   connection_handle : 12,
   _reserved_ : 4,
 }
 
-packet UserPasskeyNotification : Event (event_code = USER_PASSKEY_NOTIFICATION){
+packet UserPasskeyNotification : Event (event_code = USER_PASSKEY_NOTIFICATION) {
   bd_addr : Address,
   passkey : 20, // 0x00000-0xF423F (000000 - 999999)
   _reserved_ : 12,
 }
 
-packet KeypressNotification : Event (event_code = KEYPRESS_NOTIFICATION){
+packet KeypressNotification : Event (event_code = KEYPRESS_NOTIFICATION) {
   bd_addr : Address,
   notification_type : KeypressNotificationType,
 }
 
-packet RemoteHostSupportedFeaturesNotification : Event (event_code = REMOTE_HOST_SUPPORTED_FEATURES_NOTIFICATION){
+packet RemoteHostSupportedFeaturesNotification : Event (event_code = REMOTE_HOST_SUPPORTED_FEATURES_NOTIFICATION) {
   bd_addr : Address,
   host_supported_features : 64,
 }

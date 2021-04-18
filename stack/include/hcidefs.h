@@ -696,24 +696,6 @@ constexpr uint8_t HCI_LE_STATES_INIT_CENTRAL_PERIPHERAL_BIT = 41;
 #define HCI_CR_CONN_NOT_ALLOW_SWITCH 0x00
 #define HCI_CR_CONN_ALLOW_SWITCH 0x01
 
-/* HCI role defenitions */
-enum : uint8_t {
-  HCI_ROLE_CENTRAL = 0x00,
-  HCI_ROLE_PERIPHERAL = 0x01,
-  HCI_ROLE_UNKNOWN = 0xff,
-};
-typedef uint8_t hci_role_t;
-inline std::string RoleText(hci_role_t role) {
-  switch (role) {
-    case HCI_ROLE_CENTRAL:
-      return std::string("central");
-    case HCI_ROLE_PERIPHERAL:
-      return std::string("peripheral");
-    default:
-      return std::string("unknown");
-  }
-}
-
 /* HCI mode defenitions */
 typedef enum : uint8_t {
   HCI_MODE_ACTIVE = 0x00,

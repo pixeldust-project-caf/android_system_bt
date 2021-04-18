@@ -552,9 +552,11 @@ class AdapterImpl : public Adapter, public hal::BluetoothInterface::Observer {
         }
         case BT_PROPERTY_BDNAME: {
           bt_bdname_t* hal_name = reinterpret_cast<bt_bdname_t*>(property->val);
-          std::string name = reinterpret_cast<char*>(hal_name->name);
-          LOG(INFO) << "Adapter name changed: " << name;
-          name_.Set(name);
+          if (hal_name) {
+            std::string name = reinterpret_cast<char*>(hal_name->name);
+            LOG(INFO) << "Adapter name changed: " << name;
+            name_.Set(name);
+          }
           break;
         }
         case BT_PROPERTY_LOCAL_LE_FEATURES: {
@@ -683,7 +685,8 @@ class AdapterImpl : public Adapter, public hal::BluetoothInterface::Observer {
 
   void AclStateChangedCallback(bt_status_t status,
                                const RawAddress& remote_bdaddr,
-                               bt_acl_state_t state) override {
+                               bt_acl_state_t state,
+                               bt_hci_error_code_t hci_reason) override {
     std::string device_address = BtAddrString(&remote_bdaddr);
     bool connected = (state == BT_ACL_STATE_CONNECTED);
     LOG(INFO) << "ACL state changed: " << device_address

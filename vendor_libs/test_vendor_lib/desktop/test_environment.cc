@@ -30,7 +30,6 @@ namespace bluetooth {
 namespace root_canal {
 
 using test_vendor_lib::AsyncTaskId;
-using test_vendor_lib::DualModeController;
 using test_vendor_lib::TaskCallback;
 
 void TestEnvironment::initialize(std::promise<void> barrier) {
@@ -159,6 +158,8 @@ void TestEnvironment::SetUpTestChannel() {
   test_channel_.AddPhy({"LOW_ENERGY"});
   test_channel_.SetTimerPeriod({"5"});
   test_channel_.StartTimer({});
+
+  test_channel_.FromFile(default_commands_file_);
 
   if (socket_fd == -1) {
     LOG_ERROR("Test channel SetUp(%d) failed.", test_port_);

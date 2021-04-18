@@ -56,6 +56,8 @@ class HciLayer : public Module, public CommandInterface<CommandBuilder> {
 
   virtual common::BidiQueueEnd<AclBuilder, AclView>* GetAclQueueEnd();
 
+  virtual common::BidiQueueEnd<IsoBuilder, IsoView>* GetIsoQueueEnd();
+
   virtual void RegisterEventHandler(EventCode event_code, common::ContextualCallback<void(EventView)> event_handler);
 
   virtual void UnregisterEventHandler(EventCode event_code);
@@ -64,6 +66,11 @@ class HciLayer : public Module, public CommandInterface<CommandBuilder> {
                                       common::ContextualCallback<void(LeMetaEventView)> event_handler);
 
   virtual void UnregisterLeEventHandler(SubeventCode subevent_code);
+
+  virtual void RegisterVendorSpecificEventHandler(
+      VseSubeventCode vse_subevent_code, common::ContextualCallback<void(VendorSpecificEventView)> event_handler);
+
+  virtual void UnregisterVendorSpecificEventHandler(VseSubeventCode vse_subevent_code);
 
   virtual SecurityInterface* GetSecurityInterface(common::ContextualCallback<void(EventView)> event_handler);
 
@@ -93,6 +100,7 @@ class HciLayer : public Module, public CommandInterface<CommandBuilder> {
   }
 
   static constexpr std::chrono::milliseconds kHciTimeoutMs = std::chrono::milliseconds(2000);
+  static constexpr std::chrono::milliseconds kHciTimeoutRestartMs = std::chrono::milliseconds(5000);
 
   static const ModuleFactory Factory;
 

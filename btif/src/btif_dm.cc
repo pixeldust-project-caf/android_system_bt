@@ -57,11 +57,11 @@
 #include "btif_hd.h"
 #include "btif_hf.h"
 #include "btif_hh.h"
+#include "btif_metrics_logging.h"
 #include "btif_sdp.h"
 #include "btif_storage.h"
 #include "btif_util.h"
 #include "btu.h"
-#include "common/metric_id_allocator.h"
 #include "common/metrics.h"
 #include "device/include/controller.h"
 #include "device/include/interop.h"
@@ -76,7 +76,6 @@
 #include "stack_config.h"
 
 using bluetooth::Uuid;
-using bluetooth::common::MetricIdAllocator;
 /******************************************************************************
  *  Constants & Macros
  *****************************************************************************/
@@ -147,8 +146,11 @@ typedef struct {
 
 /* this structure holds optional OOB data for remote device */
 typedef struct {
-  RawAddress bdaddr; /* peer bdaddr */
-  bt_out_of_band_data_t oob_data;
+  RawAddress bdaddr;       /* peer bdaddr */
+  tBT_TRANSPORT transport; /* BR/EDR or LE */
+  int data_present;        /* What type(s) of OOB Data present */
+  bt_oob_data_t p192_data; /* P192 Data or empty */
+  bt_oob_data_t p256_data; /* P256 Data or empty */
 } btif_dm_oob_cb_t;
 
 typedef struct { unsigned int manufact_id; } skip_sdp_entry_t;
@@ -445,10 +447,10 @@ static void bond_state_changed(bt_status_t status, const RawAddress& bd_addr,
       state, pairing_cb.state, pairing_cb.sdp_attempts);
 
   if (state == BT_BOND_STATE_NONE) {
-    MetricIdAllocator::GetInstance().ForgetDevice(bd_addr);
+    forget_device_from_metric_id_allocator(bd_addr);
   } else if (state == BT_BOND_STATE_BONDED) {
-    MetricIdAllocator::GetInstance().AllocateId(bd_addr);
-    if (!MetricIdAllocator::GetInstance().SaveDevice(bd_addr)) {
+    allocate_metric_id_from_metric_id_allocator(bd_addr);
+    if (!save_metric_id_from_metric_id_allocator(bd_addr)) {
       LOG(FATAL) << __func__ << ": Fail to save metric id for device "
                  << bd_addr;
     }
@@ -1532,7 +1534,7 @@ static void btif_dm_upstreams_evt(uint16_t event, char* p_param) {
       btif_update_remote_version_property(&bd_addr);
 
       invoke_acl_state_changed_cb(BT_STATUS_SUCCESS, bd_addr,
-                                  BT_ACL_STATE_CONNECTED);
+                                  BT_ACL_STATE_CONNECTED, HCI_SUCCESS);
       break;
 
     case BTA_DM_LINK_DOWN_EVT:
@@ -1540,10 +1542,16 @@ static void btif_dm_upstreams_evt(uint16_t event, char* p_param) {
       btm_set_bond_type_dev(p_data->link_down.bd_addr,
                             tBTM_SEC_DEV_REC::BOND_TYPE_UNKNOWN);
       btif_av_acl_disconnected(bd_addr);
-      BTIF_TRACE_DEBUG(
-          "BTA_DM_LINK_DOWN_EVT. Sending BT_ACL_STATE_DISCONNECTED");
       invoke_acl_state_changed_cb(BT_STATUS_SUCCESS, bd_addr,
-                                  BT_ACL_STATE_DISCONNECTED);
+                                  BT_ACL_STATE_DISCONNECTED,
+                                  static_cast<bt_hci_error_code_t>(btm_get_acl_disc_reason_code()));
+      LOG_DEBUG(
+          "Sent BT_ACL_STATE_DISCONNECTED upward as ACL link down event "
+          "device:%s reason:%s",
+          PRIVATE_ADDRESS(bd_addr),
+          hci_reason_code_text(
+              static_cast<tHCI_REASON>(btm_get_acl_disc_reason_code()))
+              .c_str());
       break;
 
     case BTA_DM_BLE_KEY_EVT:
@@ -1858,23 +1866,54 @@ void btif_dm_create_bond(const RawAddress bd_addr, int transport) {
  *                  data
  *
  ******************************************************************************/
-void btif_dm_create_bond_out_of_band(const RawAddress bd_addr, int transport,
-                                     const bt_out_of_band_data_t oob_data) {
+void btif_dm_create_bond_out_of_band(const RawAddress bd_addr,
+                                     tBT_TRANSPORT transport,
+                                     const bt_oob_data_t p192_data,
+                                     const bt_oob_data_t p256_data) {
+  bt_oob_data_t empty_data;
+  memset(&empty_data, 0, sizeof(empty_data));
+
   oob_cb.bdaddr = bd_addr;
-  memcpy(&oob_cb.oob_data, &oob_data, sizeof(bt_out_of_band_data_t));
+  oob_cb.transport = transport;
+  oob_cb.data_present = (int)BTM_OOB_NONE;
+  if (memcmp(&p192_data, &empty_data, sizeof(p192_data)) != 0) {
+    memcpy(&oob_cb.p192_data, &p192_data, sizeof(bt_oob_data_t));
+    oob_cb.data_present = (int)BTM_OOB_PRESENT_192;
+  }
+  if (memcmp(&p256_data, &empty_data, sizeof(p256_data)) != 0) {
+    memcpy(&oob_cb.p256_data, &p256_data, sizeof(bt_oob_data_t));
+    if (oob_cb.data_present == (int)BTM_OOB_PRESENT_192) {
+      oob_cb.data_present = (int)BTM_OOB_PRESENT_192_AND_256;
+    } else {
+      oob_cb.data_present = (int)BTM_OOB_PRESENT_256;
+    }
+  }
 
   uint8_t empty[] = {0, 0, 0, 0, 0, 0, 0};
-  // If LE Bluetooth Device Address is provided, use provided address type
-  // value.
-  if (memcmp(oob_data.le_bt_dev_addr, empty, 7) != 0) {
-    /* byte no 7 is address type in LE Bluetooth Address OOB data */
-    tBLE_ADDR_TYPE address_type =
-        static_cast<tBLE_ADDR_TYPE>(oob_data.le_bt_dev_addr[6]);
-    if (address_type == BLE_ADDR_PUBLIC || address_type == BLE_ADDR_RANDOM) {
-      // bd_addr->address is already reversed, so use it instead of
-      // oob_data->le_bt_dev_addr
-      BTM_SecAddBleDevice(bd_addr, BT_DEVICE_TYPE_BLE, address_type);
-    }
+  // TODO(181889116): Upgrade to support p256 (for now we just ignore P256)
+  // because the controllers do not yet support it.
+  switch (transport) {
+    case BT_TRANSPORT_BR_EDR:
+      // TODO(182162589): Flesh out classic impl in legacy BTMSec
+      // Nothing to do yet, but not an error
+      break;
+    case BT_TRANSPORT_LE:
+      // If we have an address, lets get the type
+      if (memcmp(p192_data.address, empty, 7) != 0) {
+        /* byte no 7 is address type in LE Bluetooth Address OOB data */
+        tBLE_ADDR_TYPE address_type =
+            static_cast<tBLE_ADDR_TYPE>(p192_data.address[6]);
+        if (address_type == BLE_ADDR_PUBLIC ||
+            address_type == BLE_ADDR_RANDOM) {
+          // bd_addr->address is already reversed, so use it instead of
+          // oob_data->address
+          BTM_SecAddBleDevice(bd_addr, BT_DEVICE_TYPE_BLE, address_type);
+        }
+      }
+      break;
+    default:
+      LOG_ERROR("Invalid transport: %d", transport);
+      return;
   }
 
   BTIF_TRACE_EVENT("%s: bd_addr=%s, transport=%d", __func__,
@@ -1889,7 +1928,6 @@ void btif_dm_create_bond_out_of_band(const RawAddress bd_addr, int transport,
  * Description      Initiate bonding with the specified device
  *
  ******************************************************************************/
-
 void btif_dm_cancel_bond(const RawAddress bd_addr) {
   BTIF_TRACE_EVENT("%s: bd_addr=%s", __func__, bd_addr.ToString().c_str());
 
@@ -2156,7 +2194,7 @@ void btif_dm_proc_io_rsp(UNUSED_ATTR const RawAddress& bd_addr,
 }
 
 void btif_dm_set_oob_for_io_req(tBTM_OOB_DATA* p_has_oob_data) {
-  if (is_empty_128bit(oob_cb.oob_data.c192)) {
+  if (is_empty_128bit(oob_cb.p192_data.c)) {
     *p_has_oob_data = false;
   } else {
     *p_has_oob_data = true;
@@ -2167,8 +2205,8 @@ void btif_dm_set_oob_for_io_req(tBTM_OOB_DATA* p_has_oob_data) {
 void btif_dm_set_oob_for_le_io_req(const RawAddress& bd_addr,
                                    tBTM_OOB_DATA* p_has_oob_data,
                                    tBTM_LE_AUTH_REQ* p_auth_req) {
-  if (!is_empty_128bit(oob_cb.oob_data.le_sc_c) &&
-      !is_empty_128bit(oob_cb.oob_data.le_sc_r)) {
+  if (!is_empty_128bit(oob_cb.p192_data.c) &&
+      !is_empty_128bit(oob_cb.p192_data.r)) {
     /* We have LE SC OOB data */
 
     /* make sure OOB data is for this particular device */
@@ -2180,7 +2218,7 @@ void btif_dm_set_oob_for_le_io_req(const RawAddress& bd_addr,
       BTIF_TRACE_WARNING("%s: remote address didn't match OOB data address",
                          __func__);
     }
-  } else if (!is_empty_128bit(oob_cb.oob_data.sm_tk)) {
+  } else if (!is_empty_128bit(oob_cb.p192_data.sm_tk)) {
     /* We have security manager TK */
 
     /* make sure OOB data is for this particular device */
@@ -2207,7 +2245,7 @@ void btif_dm_load_local_oob(void) {
   osi_property_get("service.brcm.bt.oob", prop_oob, "3");
   BTIF_TRACE_DEBUG("%s: prop_oob = %s", __func__, prop_oob);
   if (prop_oob[0] != '3') {
-    if (is_empty_128bit(oob_cb.oob_data.c192)) {
+    if (is_empty_128bit(oob_cb.p192_data.c)) {
       BTIF_TRACE_DEBUG("%s: read OOB, call BTA_DmLocalOob()", __func__);
       BTA_DmLocalOob();
     }
@@ -2221,10 +2259,10 @@ void btif_dm_proc_loc_oob(bool valid, const Octet16& c, const Octet16& r) {
   const char* path = NULL;
   char prop_oob[PROPERTY_VALUE_MAX];
   BTIF_TRACE_DEBUG("%s: valid=%d", __func__, valid);
-  if (is_empty_128bit(oob_cb.oob_data.c192) && valid) {
+  if (is_empty_128bit(oob_cb.p192_data.c) && valid) {
     BTIF_TRACE_DEBUG("save local OOB data in memory");
-    memcpy(oob_cb.oob_data.c192, c.data(), OCTET16_LEN);
-    memcpy(oob_cb.oob_data.r192, r.data(), OCTET16_LEN);
+    memcpy(oob_cb.p192_data.c, c.data(), OCTET16_LEN);
+    memcpy(oob_cb.p192_data.r, r.data(), OCTET16_LEN);
     osi_property_get("service.brcm.bt.oob", prop_oob, "3");
     BTIF_TRACE_DEBUG("%s: prop_oob = %s", __func__, prop_oob);
     if (prop_oob[0] == '1')
@@ -2334,8 +2372,8 @@ bool btif_dm_proc_rmt_oob(const RawAddress& bd_addr, Octet16* p_c,
   }
 
   BTIF_TRACE_DEBUG("%s: read OOB data from %s", __func__, path);
-  fread(p_c->data(), 1, OCTET16_LEN, fp);
-  fread(p_r->data(), 1, OCTET16_LEN, fp);
+  (void)fread(p_c->data(), 1, OCTET16_LEN, fp);
+  (void)fread(p_r->data(), 1, OCTET16_LEN, fp);
   fclose(fp);
 
   bond_state_changed(BT_STATUS_SUCCESS, bd_addr, BT_BOND_STATE_BONDING);
@@ -2415,7 +2453,9 @@ static void btif_dm_ble_auth_cmpl_evt(tBTA_DM_AUTH_CMPL* p_auth_cmpl) {
     }
   } else {
     /*Map the HCI fail reason  to  bt status  */
-    switch (p_auth_cmpl->fail_reason) {
+    // TODO This is not a proper use of the type
+    uint8_t fail_reason = static_cast<uint8_t>(p_auth_cmpl->fail_reason);
+    switch (fail_reason) {
       case BTA_DM_AUTH_SMP_PAIR_AUTH_FAIL:
       case BTA_DM_AUTH_SMP_CONFIRM_VALUE_FAIL:
       case BTA_DM_AUTH_SMP_UNKNOWN_ERR:
@@ -2647,7 +2687,7 @@ static void btif_dm_ble_oob_req_evt(tBTA_DM_SP_RMT_OOB* req_oob_type) {
    * btif_dm_set_oob_for_le_io_req, but check here again. If it's not present
    * do nothing, pairing will timeout.
    */
-  if (is_empty_128bit(oob_cb.oob_data.sm_tk)) {
+  if (is_empty_128bit(oob_cb.p192_data.sm_tk)) {
     return;
   }
 
@@ -2667,7 +2707,7 @@ static void btif_dm_ble_oob_req_evt(tBTA_DM_SP_RMT_OOB* req_oob_type) {
   pairing_cb.is_le_only = true;
   pairing_cb.is_le_nc = false;
 
-  BTM_BleOobDataReply(req_oob_type->bd_addr, 0, 16, oob_cb.oob_data.sm_tk);
+  BTM_BleOobDataReply(req_oob_type->bd_addr, 0, 16, oob_cb.p192_data.sm_tk);
 }
 
 static void btif_dm_ble_sc_oob_req_evt(tBTA_DM_SP_RMT_OOB* req_oob_type) {
@@ -2679,8 +2719,8 @@ static void btif_dm_ble_sc_oob_req_evt(tBTA_DM_SP_RMT_OOB* req_oob_type) {
    * btif_dm_set_oob_for_le_io_req, but check here again. If it's not present
    * do nothing, pairing will timeout.
    */
-  if (is_empty_128bit(oob_cb.oob_data.le_sc_c) &&
-      is_empty_128bit(oob_cb.oob_data.le_sc_r)) {
+  if (is_empty_128bit(oob_cb.p192_data.c) &&
+      is_empty_128bit(oob_cb.p192_data.r)) {
     BTIF_TRACE_WARNING("%s: LE SC OOB data is empty", __func__);
     return;
   }
@@ -2702,8 +2742,8 @@ static void btif_dm_ble_sc_oob_req_evt(tBTA_DM_SP_RMT_OOB* req_oob_type) {
       true;  // TODO: we can derive classic pairing from this one
   pairing_cb.is_le_nc = false;
 
-  BTM_BleSecureConnectionOobDataReply(
-      req_oob_type->bd_addr, oob_cb.oob_data.le_sc_c, oob_cb.oob_data.le_sc_r);
+  BTM_BleSecureConnectionOobDataReply(req_oob_type->bd_addr, oob_cb.p192_data.c,
+                                      oob_cb.p192_data.r);
 }
 
 void btif_dm_update_ble_remote_properties(const RawAddress& bd_addr,

@@ -103,9 +103,13 @@ fluoride_defaults {
     name: "fluoride_defaults",
     defaults: ["fluoride_defaults_fuzzable", "fluoride_types_defaults"],
     shared_libs: [
+        "libcutils",
         "libgrpc++",
         "libgrpc_wrap",
-        "libstatslog"
+        "libhidlbase",
+        "libstatslog",
+        "libutils",
+
     ],
     sanitize: {
         misc_undefined: ["bounds"],
@@ -123,9 +127,10 @@ fluoride_defaults {
         android: {
             shared_libs: [
                 "android.hardware.bluetooth@1.0",
-                "libhidlbase",
-                "libutils",
-                "libcutils",
+                "android.hardware.bluetooth@1.1",
+            ],
+            cflags: [
+                "-DOS_ANDROID",
             ],
         },
     },

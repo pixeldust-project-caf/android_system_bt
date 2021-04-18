@@ -55,6 +55,10 @@ void ParentDef::AddParentConstraint(std::string field_name, std::variant<int64_t
   parent_constraints_.insert(std::pair(field_name, value));
 }
 
+void ParentDef::AddTestCase(std::string packet_bytes) {
+  test_cases_.insert(std::move(packet_bytes));
+}
+
 // Assign all size fields to their corresponding variable length fields.
 // Will crash if
 //  - there aren't any fields that don't match up to a field.
@@ -168,6 +172,17 @@ Size ParentDef::GetOffsetForField(std::string field_name, bool from_end) const {
     ERROR() << "Can't find a field offset for nonexistent field named: " << field_name << " in " << name_;
   }
 
+  PacketField* padded_field = nullptr;
+  {
+    PacketField* last_field = nullptr;
+    for (const auto field : fields_) {
+      if (field->GetFieldType() == PaddingField::kFieldType) {
+        padded_field = last_field;
+      }
+      last_field = field;
+    }
+  }
+
   // We have to use a generic lambda to conditionally change iteration direction
   // due to iterator and reverse_iterator being different types.
   auto size_lambda = [&](auto from, auto to) -> Size {
@@ -177,11 +192,13 @@ Size ParentDef::GetOffsetForField(std::string field_name, bool from_end) const {
       if ((*it)->GetName() == field_name) break;
       const auto& field = *it;
       // If there is a field with an unknown size before the field, return an empty Size.
-      if (field->GetSize().empty()) {
+      if (field->GetSize().empty() && padded_field != field) {
         return Size();
       }
-      if (field->GetFieldType() != PaddingField::kFieldType || !from_end) {
-        size += field->GetSize();
+      if (field != padded_field) {
+        if (!from_end || field->GetFieldType() != PaddingField::kFieldType) {
+          size += field->GetSize();
+        }
       }
     }
     return size;
@@ -245,8 +262,8 @@ FieldList ParentDef::GetParamList() const {
 
 void ParentDef::GenMembers(std::ostream& s) const {
   // Add the parameter list.
-  for (int i = 0; i < fields_.size(); i++) {
-    if (fields_[i]->GenBuilderMember(s)) {
+  for (const auto& field : fields_) {
+    if (field->GenBuilderMember(s)) {
       s << "_{};";
     }
   }
@@ -255,6 +272,20 @@ void ParentDef::GenMembers(std::ostream& s) const {
 void ParentDef::GenSize(std::ostream& s) const {
   auto header_fields = fields_.GetFieldsBeforePayloadOrBody();
   auto footer_fields = fields_.GetFieldsAfterPayloadOrBody();
+
+  Size padded_size;
+  const PacketField* padded_field = nullptr;
+  const PacketField* last_field = nullptr;
+  for (const auto& field : fields_) {
+    if (field->GetFieldType() == PaddingField::kFieldType) {
+      if (!padded_size.empty()) {
+        ERROR() << "Only one padding field is allowed.  Second field: " << field->GetName();
+      }
+      padded_field = last_field;
+      padded_size = field->GetSize();
+    }
+    last_field = field;
+  }
 
   s << "protected:";
   s << "size_t BitsOfHeader() const {";
@@ -269,7 +300,11 @@ void ParentDef::GenSize(std::ostream& s) const {
   }
 
   for (const auto& field : header_fields) {
-    s << " + " << field->GetBuilderSize();
+    if (field == padded_field) {
+      s << " + " << padded_size;
+    } else {
+      s << " + " << field->GetBuilderSize();
+    }
   }
   s << ";";
 
@@ -278,7 +313,11 @@ void ParentDef::GenSize(std::ostream& s) const {
   s << "size_t BitsOfFooter() const {";
   s << "return 0";
   for (const auto& field : footer_fields) {
-    s << " + " << field->GetBuilderSize();
+    if (field == padded_field) {
+      s << " + " << padded_size;
+    } else {
+      s << " + " << field->GetBuilderSize();
+    }
   }
 
   if (parent_ != nullptr) {
@@ -298,22 +337,8 @@ void ParentDef::GenSize(std::ostream& s) const {
     s << ";}\n\n";
   }
 
-  Size padded_size;
-  for (const auto& field : header_fields) {
-    if (field->GetFieldType() == PaddingField::kFieldType) {
-      if (!padded_size.empty()) {
-        ERROR() << "Only one padding field is allowed.  Second field: " << field->GetName();
-      }
-      padded_size = field->GetSize();
-    }
-  }
-
   s << "public:";
   s << "virtual size_t size() const override {";
-  if (!padded_size.empty()) {
-    s << "return " << padded_size.bytes() << ";}";
-    s << "size_t unpadded_size() const {";
-  }
   s << "return (BitsOfHeader() / 8)";
   if (fields_.HasPayload()) {
     s << "+ payload_->size()";
@@ -348,6 +373,17 @@ void ParentDef::GenSerialize(std::ostream& s) const {
       s << parent_->name_ << "Builder::SerializeHeader(i);";
     } else {
       s << parent_->name_ << "::SerializeHeader(i);";
+    }
+  }
+
+  const PacketField* padded_field = nullptr;
+  {
+    PacketField* last_field = nullptr;
+    for (const auto field : header_fields) {
+      if (field->GetFieldType() == PaddingField::kFieldType) {
+        padded_field = last_field;
+      }
+      last_field = field;
     }
   }
 
@@ -411,14 +447,17 @@ void ParentDef::GenSerialize(std::ostream& s) const {
       s << "[shared_checksum_ptr](uint8_t byte){ shared_checksum_ptr->AddByte(byte);},";
       s << "[shared_checksum_ptr](){ return static_cast<uint64_t>(shared_checksum_ptr->GetChecksum());}));";
     } else if (field->GetFieldType() == PaddingField::kFieldType) {
-      s << "ASSERT(unpadded_size() <= " << field->GetSize().bytes() << ");";
+      s << "ASSERT(unpadded_size <= " << field->GetSize().bytes() << ");";
       s << "size_t padding_bytes = ";
-      s << field->GetSize().bytes() << " - unpadded_size();";
+      s << field->GetSize().bytes() << " - unpadded_size;";
       s << "for (size_t padding = 0; padding < padding_bytes; padding++) {i.insert_byte(0);}";
     } else if (field->GetFieldType() == CountField::kFieldType) {
       const auto& vector_name = ((SizeField*)field)->GetSizedFieldName() + "_";
       s << "insert(" << vector_name << ".size(), i, " << field->GetSize().bits() << ");";
     } else {
+      if (field == padded_field) {
+        s << "size_t unpadded_size = (" << field->GetBuilderSize() << ") / 8;";
+      }
       field->GenInserter(s);
     }
   }
@@ -463,8 +502,7 @@ void ParentDef::GenInstanceOf(std::ostream& s) const {
     });
 
     // Check if constrained parent fields are set to their correct values.
-    for (int i = 0; i < parent_params.size(); i++) {
-      const auto& field = parent_params[i];
+    for (const auto& field : parent_params) {
       const auto& constraint = parent_constraints_.find(field->GetName());
       if (constraint != parent_constraints_.end()) {
         s << "if (parent." << field->GetName() << "_ != ";
@@ -650,21 +688,33 @@ void ParentDef::GenSizeRetVal(std::ostream& s) const {
   auto fields = fields_.GetFieldsWithoutTypes({
       BodyField::kFieldType,
   });
-  s << "let ret = 0;";
-  for (int i = 0; i < fields.size(); i++) {
-    auto field = fields[i];
-    bool is_padding = field->GetFieldType() == PaddingField::kFieldType;
-    bool is_vector = field->GetFieldType() == VectorField::kFieldType;
-    if (is_padding || is_vector) {
-      if (size > 0) {
-        if (size % 8 != 0) {
-          ERROR() << "size is not a multiple of 8!\n";
-        }
-        s << "let ret = ret + " << size / 8 << ";";
-        size = 0;
+  const PacketField* padded_field = nullptr;
+  auto padding_fields = fields_.GetFieldsWithTypes({
+      PaddingField::kFieldType,
+  });
+  if (padding_fields.size()) {
+    PacketField* last_field = nullptr;
+    for (const auto field : fields) {
+      if (field->GetFieldType() == PaddingField::kFieldType) {
+        padded_field = last_field;
       }
+      last_field = field;
+    }
+  }
 
+  s << "let ret = 0;";
+  for (const auto field : fields) {
+    bool is_vector = field->GetFieldType() == VectorField::kFieldType;
+    if (field != padded_field) {  // Skip the size of padded fields
       if (is_vector) {
+        if (size > 0) {
+          if (size % 8 != 0) {
+            ERROR() << "size is not a multiple of 8!\n";
+          }
+          s << "let ret = ret + " << size / 8 << ";";
+          size = 0;
+        }
+
         const VectorField* vector = (VectorField*)field;
         if (vector->element_size_.empty() || vector->element_size_.has_dynamic()) {
           s << "let ret = ret + self." << vector->GetName() << ".iter().fold(0, |acc, x| acc + x.get_total_size());";
@@ -672,11 +722,10 @@ void ParentDef::GenSizeRetVal(std::ostream& s) const {
           s << "let ret = ret + (self." << vector->GetName() << ".len() * ((" << vector->element_size_ << ") / 8));";
         }
       } else {
-        auto padded = field->GetSize().bytes();
-        s << "let ret = if ret < " << padded << " { " << padded << " } else { ret };";
+        size += field->GetSize().bits();
       }
     } else {
-      size += field->GetSize().bits();
+      s << "/* Skipping " << field->GetName() << " since it is padded */";
     }
   }
   if (size > 0) {

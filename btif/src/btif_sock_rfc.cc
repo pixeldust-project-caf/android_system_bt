@@ -18,40 +18,35 @@
 
 #define LOG_TAG "bt_btif_sock_rfcomm"
 
-#include <base/logging.h>
-#include <errno.h>
-#include <features.h>
-#include <pthread.h>
-#include <string.h>
+#include <frameworks/proto_logging/stats/enums/bluetooth/enums.pb.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <unistd.h>
-
+#include <cstdint>
 #include <mutex>
 
-#include <frameworks/proto_logging/stats/enums/bluetooth/enums.pb.h>
-#include <hardware/bluetooth.h>
-#include <hardware/bt_sock.h>
+#include "bt_target.h"  // Must be first to define build configuration
 
-#include "bt_common.h"
-#include "bt_target.h"
-#include "bta_jv_api.h"
-#include "btif_sock_sdp.h"
-#include "btif_sock_thread.h"
-#include "btif_sock_util.h"
-#include "btif_uid.h"
-#include "btif_util.h"
-#include "btm_api.h"
-#include "common/metrics.h"
-#include "osi/include/list.h"
-#include "osi/include/log.h"
-#include "osi/include/osi.h"
-#include "port_api.h"
-
+#include "bta/include/bta_jv_api.h"
+#include "btif/include/btif_metrics_logging.h"
 /* The JV interface can have only one user, hence we need to call a few
  * L2CAP functions from this file. */
-#include "btif_sock_l2cap.h"
+#include "btif/include/btif_sock_l2cap.h"
+#include "btif/include/btif_sock_sdp.h"
+#include "btif/include/btif_sock_thread.h"
+#include "btif/include/btif_sock_util.h"
+#include "btif/include/btif_uid.h"
+#include "include/hardware/bt_sock.h"
+#include "osi/include/allocator.h"
+#include "osi/include/compat.h"
+#include "osi/include/list.h"
+#include "osi/include/log.h"
+#include "osi/include/osi.h"  // INVALID_FD
+#include "stack/include/btm_api.h"
+#include "stack/include/btm_api_types.h"
+#include "stack/include/port_api.h"
+#include "types/bluetooth/uuid.h"
+#include "types/raw_address.h"
 
 using bluetooth::Uuid;
 
@@ -407,7 +402,7 @@ static void cleanup_rfc_slot(rfc_slot_t* slot) {
   if (slot->fd != INVALID_FD) {
     shutdown(slot->fd, SHUT_RDWR);
     close(slot->fd);
-    bluetooth::common::LogSocketConnectionState(
+    log_socket_connection_state(
         slot->addr, slot->id, BTSOCK_RFCOMM,
         android::bluetooth::SOCKET_CONNECTION_STATE_DISCONNECTED,
         slot->tx_bytes, slot->rx_bytes, slot->app_uid, slot->scn,
@@ -488,7 +483,7 @@ static void on_srv_rfc_listen_started(tBTA_JV_RFCOMM_START* p_start,
 
   if (p_start->status == BTA_JV_SUCCESS) {
     slot->rfc_handle = p_start->handle;
-    bluetooth::common::LogSocketConnectionState(
+    log_socket_connection_state(
         slot->addr, slot->id, BTSOCK_RFCOMM,
         android::bluetooth::SocketConnectionstateEnum::
             SOCKET_CONNECTION_STATE_LISTENING,
@@ -511,7 +506,7 @@ static uint32_t on_srv_rfc_connect(tBTA_JV_RFCOMM_SRV_OPEN* p_open,
       srv_rs, &p_open->rem_bda, p_open->handle, p_open->new_listen_handle);
   if (!accept_rs) return 0;
 
-  bluetooth::common::LogSocketConnectionState(
+  log_socket_connection_state(
       accept_rs->addr, accept_rs->id, BTSOCK_RFCOMM,
       android::bluetooth::SOCKET_CONNECTION_STATE_CONNECTED, 0, 0,
       accept_rs->app_uid, accept_rs->scn,
@@ -543,7 +538,7 @@ static void on_cli_rfc_connect(tBTA_JV_RFCOMM_OPEN* p_open, uint32_t id) {
   slot->rfc_port_handle = BTA_JvRfcommGetPortHdl(p_open->handle);
   slot->addr = p_open->rem_bda;
 
-  bluetooth::common::LogSocketConnectionState(
+  log_socket_connection_state(
       slot->addr, slot->id, BTSOCK_RFCOMM,
       android::bluetooth::SOCKET_CONNECTION_STATE_CONNECTED, 0, 0,
       slot->app_uid, slot->scn,
@@ -565,7 +560,7 @@ static void on_rfc_close(UNUSED_ATTR tBTA_JV_RFCOMM_CLOSE* p_close,
   // rfc_handle already closed when receiving rfcomm close event from stack.
   rfc_slot_t* slot = find_rfc_slot_by_id(id);
   if (slot) {
-    bluetooth::common::LogSocketConnectionState(
+    log_socket_connection_state(
         slot->addr, slot->id, BTSOCK_RFCOMM,
         android::bluetooth::SOCKET_CONNECTION_STATE_DISCONNECTING, 0, 0,
         slot->app_uid, slot->scn,

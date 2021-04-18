@@ -40,6 +40,7 @@
 #include "osi/include/fixed_queue.h"
 #include "osi/include/list.h"
 #include "stack/include/hci_error_code.h"
+#include "types/hci_role.h"
 
 #define L2CAP_MIN_MTU 48 /* Minimum acceptable MTU is 48 bytes */
 
@@ -398,9 +399,9 @@ typedef struct t_l2c_linkcb {
   RawAddress remote_bd_addr; /* The BD address of the remote */
 
  private:
-  uint8_t link_role_{HCI_ROLE_CENTRAL}; /* Central or peripheral */
+  tHCI_ROLE link_role_{HCI_ROLE_CENTRAL}; /* Central or peripheral */
  public:
-  uint8_t LinkRole() const { return link_role_; }
+  tHCI_ROLE LinkRole() const { return link_role_; }
   bool IsLinkRoleCentral() const { return link_role_ == HCI_ROLE_CENTRAL; }
   bool IsLinkRolePeripheral() const {
     return link_role_ == HCI_ROLE_PERIPHERAL;
@@ -737,9 +738,9 @@ extern void l2c_link_check_send_pkts(tL2C_LCB* p_lcb, uint16_t local_cid,
 extern void l2c_link_adjust_allocation(void);
 
 extern void l2c_link_sec_comp(const RawAddress* p_bda, tBT_TRANSPORT trasnport,
-                              void* p_ref_data, uint8_t status);
+                              void* p_ref_data, tBTM_STATUS status);
 extern void l2c_link_sec_comp2(const RawAddress& p_bda, tBT_TRANSPORT trasnport,
-                               void* p_ref_data, uint8_t status);
+                               void* p_ref_data, tBTM_STATUS status);
 extern void l2c_link_adjust_chnl_allocation(void);
 
 #if (L2CAP_CONFORMANCE_TESTING == TRUE)

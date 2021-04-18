@@ -24,25 +24,33 @@
 
 #define LOG_TAG "bluetooth"
 
-#include "bt_target.h"
-
+// BTA_HH_INCLUDED
+#include "bt_target.h"  // Must be first to define build configuration
 #if (BTA_HH_INCLUDED == TRUE)
 
-#include <string.h>
+#include <cstdint>
+#include <string>
 
+#include "bta/hh/bta_hh_int.h"
 #include "bta/include/bta_hh_api.h"
-#include "bta_hh_co.h"
-#include "bta_hh_int.h"
-#include "bta_sys.h"
-#include "btm_api.h"
-#include "l2c_api.h"
-#include "osi/include/osi.h"
+#include "bta/include/bta_hh_co.h"
+#include "bta/sys/bta_sys.h"
+#include "main/shim/dumpsys.h"
+#include "osi/include/log.h"
+#include "osi/include/osi.h"  // UNUSED_ATTR
+#include "stack/include/hiddefs.h"
 #include "stack/include/hidh_api.h"
-#include "utl.h"
+#include "types/raw_address.h"
 
 /*****************************************************************************
  *  Constants
  ****************************************************************************/
+
+namespace {
+
+constexpr char kBtmLogTag[] = "HIDH";
+
+}
 
 /*****************************************************************************
  *  Local Function prototypes
@@ -152,6 +160,8 @@ void bta_hh_api_disable(void) {
  *
  ******************************************************************************/
 void bta_hh_disc_cmpl(void) {
+  LOG_DEBUG("Disconnect complete");
+
   HID_HostDeregister();
   bta_hh_le_deregister();
   tBTA_HH_STATUS status = BTA_HH_OK;
@@ -478,29 +488,40 @@ void bta_hh_sdp_cmpl(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  *
  ******************************************************************************/
 void bta_hh_api_disc_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
-  tBTA_HH_CBDATA disc_dat;
-  tHID_STATUS status;
+  CHECK(p_cb != nullptr);
 
-  if (p_cb->is_le_device)
+  if (p_cb->is_le_device) {
+    LOG_DEBUG("Host initiating close to le device:%s",
+              PRIVATE_ADDRESS(p_cb->addr));
+
     bta_hh_le_api_disc_act(p_cb);
-  else
-  {
-    /* found an active connection */
-    disc_dat.handle =
-        p_data ? (uint8_t)p_data->hdr.layer_specific : p_cb->hid_handle;
-    disc_dat.status = BTA_HH_ERR;
+    BTM_LogHistory(kBtmLogTag, p_cb->addr, "Closed",
+                   base::StringPrintf("le local initiated"));
 
-    status = HID_HostCloseDev(disc_dat.handle);
-
-    if (status) {
-      tBTA_HH bta_hh;
-      bta_hh.dev_status = disc_dat;
-      (*bta_hh_cb.p_cback)(BTA_HH_CLOSE_EVT, &bta_hh);
+  } else {
+    const uint8_t hid_handle =
+        (p_data != nullptr) ? static_cast<uint8_t>(p_data->hdr.layer_specific)
+                            : p_cb->hid_handle;
+    tHID_STATUS status = HID_HostCloseDev(hid_handle);
+    if (status != HID_SUCCESS) {
+      LOG_WARN("Failed closing classic device:%s status:%s",
+               PRIVATE_ADDRESS(p_cb->addr), hid_status_text(status).c_str());
+    } else {
+      LOG_DEBUG("Host initiated close to classic device:%s",
+                PRIVATE_ADDRESS(p_cb->addr));
     }
+    tBTA_HH bta_hh = {
+        .dev_status = {.status =
+                           (status == HID_SUCCESS) ? BTA_HH_OK : BTA_HH_ERR,
+                       .handle = hid_handle},
+    };
+    (*bta_hh_cb.p_cback)(BTA_HH_CLOSE_EVT, &bta_hh);
+    BTM_LogHistory(kBtmLogTag, p_cb->addr, "Closed",
+                   base::StringPrintf("classic local reason %s",
+                                      hid_status_text(status).c_str()));
   }
-
-  return;
 }
+
 /*******************************************************************************
  *
  * Function         bta_hh_open_cmpl_act
@@ -530,6 +551,11 @@ void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
   conn.status = p_cb->status;
   conn.le_hid = p_cb->is_le_device;
   conn.scps_supported = p_cb->scps_supported;
+
+  BTM_LogHistory(kBtmLogTag, p_cb->addr, "Opened",
+                 base::StringPrintf(
+                     "%s initiator:%s", (p_cb->is_le_device) ? "le" : "classic",
+                     (p_cb->incoming_conn) ? "local" : "remote"));
 
   if (!p_cb->is_le_device)
   {
@@ -823,6 +849,9 @@ void bta_hh_close_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
   tBTA_HH_CBDATA disc_dat = {BTA_HH_OK, 0};
   uint32_t reason = p_data->hid_cback.data; /* Reason for closing (32-bit) */
 
+  // TODO Fix use proper types
+  tHID_STATUS hid_status = static_cast<tHID_STATUS>(reason);
+
   /* if HID_HDEV_EVT_VC_UNPLUG was received, report BTA_HH_VC_UNPLUG_EVT */
   uint16_t event = p_cb->vp ? BTA_HH_VC_UNPLUG_EVT : BTA_HH_CLOSE_EVT;
 
@@ -854,6 +883,11 @@ void bta_hh_close_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
   }
   /* otherwise report CLOSE/VC_UNPLUG event */
   else {
+    BTM_LogHistory(kBtmLogTag, p_cb->addr, "Closed",
+                   base::StringPrintf("%s reason %s",
+                                      (p_cb->is_le_device) ? "le" : "classic",
+                                      hid_status_text(hid_status).c_str()));
+
     /* finaliza device driver */
     bta_hh_co_close(p_cb->hid_handle, p_cb->app_id);
     /* inform role manager */

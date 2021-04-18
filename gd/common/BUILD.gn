@@ -1,5 +1,5 @@
 #
-#  Copyright 2021 Google
+#  Copyright 2021 Google, Inc.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -17,11 +17,15 @@
 source_set("BluetoothCommonSources") {
   sources = [
     "init_flags.cc",
+    "metric_id_manager.cc"
+    "metrics_linux.cc",
     "stop_watch.cc",
     "strings.cc",
   ]
 
-  include_dirs = [ "//bt/gd" ]
-
-  configs += [ "//bt:target_defaults" ]
+  configs += [ "//bt/gd:gd_defaults" ]
+  deps = [
+    "//bt/gd:gd_default_deps",
+    "//bt/third_party/proto_logging/stats:libbt-platform-protos"
+  ]
 }

@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "stack/include/acl_api_types.h"
@@ -26,6 +27,7 @@
 #include "stack/include/hcidefs.h"
 #include "stack/include/hcimsgs.h"
 #include "types/bt_transport.h"
+#include "types/hci_role.h"
 #include "types/raw_address.h"
 
 enum btm_acl_encrypt_state_t {
@@ -112,8 +114,6 @@ inline std::string power_mode_state_text(tBTM_PM_STATE state) {
   }
 }
 
-struct sACL_CONN;
-
 namespace bluetooth {
 namespace shim {
 tBTM_STATUS BTM_SetPowerMode(uint16_t handle, const tBTM_PM_PWR_MD& new_mode);
@@ -149,7 +149,7 @@ typedef struct {
 typedef struct {
   RawAddress remote_bd_addr; /* Remote BD addr involved with the switch */
   tHCI_STATUS hci_status;    /* HCI status returned with the event */
-  uint8_t role;              /* HCI_ROLE_CENTRAL or HCI_ROLE_PERIPHERAL */
+  tHCI_ROLE role;            /* HCI_ROLE_CENTRAL or HCI_ROLE_PERIPHERAL */
 } tBTM_ROLE_SWITCH_CMPL;
 
 struct tBTM_PM_MCB {
@@ -169,7 +169,7 @@ struct tBTM_PM_MCB {
   uint16_t handle_;
 };
 
-struct sACL_CONN {
+struct tACL_CONN {
   BD_FEATURES peer_le_features;
   bool peer_le_features_valid;
   BD_FEATURES peer_lmp_feature_pages[HCI_EXT_FEATURES_PAGE_MAX + 1];
@@ -228,7 +228,7 @@ struct sACL_CONN {
 
  public:
   bool is_encrypted = false;
-  uint8_t link_role;
+  tHCI_ROLE link_role;
   uint8_t switch_role_failed_attempts;
 
   struct {
@@ -313,8 +313,8 @@ struct sACL_CONN {
 
   void Reset();
 
-  struct sPolicy {
-    tBTM_PM_MODE Mode() const;
+  struct tPolicy {
+    tBTM_PM_MODE Mode() const { return this->mode.mode_; }
     struct {
       bool IsPending() const { return pending_ != BTM_PM_MD_UNKNOWN; }
       tBTM_PM_MODE Pending() const { return pending_; }
@@ -330,19 +330,19 @@ struct sACL_CONN {
                                                          uint16_t handle,
                                                          tHCI_MODE hci_mode,
                                                          uint16_t interval);
-      friend void sACL_CONN::Reset();
-      friend tBTM_PM_MODE sACL_CONN::sPolicy::Mode() const;
+      friend void tACL_CONN::Reset();
+      friend tBTM_PM_MODE tACL_CONN::tPolicy::Mode() const;
     } mode;
 
-    hci_role_t Role() const;
+    hci_role_t Role() const { return this->role.role_; }
     struct {
       unsigned RoleSwitchFailedCount() const { return role_switch_failed_cnt_; }
 
      private:
       hci_role_t role_{HCI_ROLE_CENTRAL};
       unsigned role_switch_failed_cnt_{0};
-      friend void sACL_CONN::Reset();
-      friend tBTM_PM_MODE sACL_CONN::sPolicy::Role() const;
+      friend void tACL_CONN::Reset();
+      friend hci_role_t tACL_CONN::tPolicy::Role() const;
     } role;
 
     struct {
@@ -358,24 +358,27 @@ struct sACL_CONN {
           tHCI_STATUS status, uint16_t handle,
           uint16_t maximum_transmit_latency, uint16_t maximum_receive_latency,
           uint16_t minimum_remote_timeout, uint16_t minimum_local_timeout);
-      friend void sACL_CONN::Reset();
+      friend void tACL_CONN::Reset();
     } sniff_subrating;
 
     tLINK_POLICY Settings() const { return settings_; }
 
    private:
     tLINK_POLICY settings_{kAllLinkPoliciesEnabled};
-    friend void btm_set_link_policy(sACL_CONN* conn, tLINK_POLICY policy);
-    friend void sACL_CONN::Reset();
+    friend void btm_set_link_policy(tACL_CONN* conn, tLINK_POLICY policy);
+    friend void tACL_CONN::Reset();
   } policy;
 };
-typedef sACL_CONN tACL_CONN;
 
 struct controller_t;
 
 /****************************************************
  **      ACL Management API
  ****************************************************/
+constexpr uint16_t kDefaultPacketTypeMask =
+    HCI_PKT_TYPES_MASK_DH1 | HCI_PKT_TYPES_MASK_DM1 | HCI_PKT_TYPES_MASK_DH3 |
+    HCI_PKT_TYPES_MASK_DM3 | HCI_PKT_TYPES_MASK_DH5 | HCI_PKT_TYPES_MASK_DM5;
+
 struct tACL_CB {
  private:
   friend uint8_t btm_handle_to_acl_index(uint16_t hci_handle);
@@ -389,13 +392,15 @@ struct tACL_CB {
 
   tACL_CONN acl_db[MAX_L2CAP_LINKS];
   tBTM_ROLE_SWITCH_CMPL switch_role_ref_data;
-  uint16_t btm_acl_pkt_types_supported =
-      HCI_PKT_TYPES_MASK_DH1 + HCI_PKT_TYPES_MASK_DM1 + HCI_PKT_TYPES_MASK_DH3 +
-      HCI_PKT_TYPES_MASK_DM3 + HCI_PKT_TYPES_MASK_DH5 + HCI_PKT_TYPES_MASK_DM5;
+  uint16_t btm_acl_pkt_types_supported = kDefaultPacketTypeMask;
   uint16_t btm_def_link_policy;
   tHCI_STATUS acl_disc_reason = HCI_ERR_UNDEFINED;
 
  public:
+  void SetDefaultPacketTypeMask(uint16_t packet_type_mask) {
+    btm_acl_pkt_types_supported = packet_type_mask;
+  }
+
   tHCI_STATUS get_disconnect_reason() const { return acl_disc_reason; }
   void set_disconnect_reason(tHCI_STATUS reason) { acl_disc_reason = reason; }
   uint16_t DefaultPacketTypes() const { return btm_acl_pkt_types_supported; }
@@ -412,4 +417,12 @@ struct tACL_CB {
     }
     return cnt;
   }
+
+ private:
+  std::unordered_set<RawAddress> ignore_auto_connect_after_disconnect_set_;
+
+ public:
+  void AddToIgnoreAutoConnectAfterDisconnect(const RawAddress& bd_addr);
+  bool CheckAndClearIgnoreAutoConnectAfterDisconnect(const RawAddress& bd_addr);
+  void ClearAllIgnoreAutoConnectAfterDisconnect();
 };

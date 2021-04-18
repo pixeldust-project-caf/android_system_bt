@@ -22,17 +22,18 @@
  *
  ******************************************************************************/
 
-#include <stddef.h>
+#include <cstdint>
 
-#include "bt_common.h"
-#include "bta/include/bta_api.h"
-#include "bta/include/utl.h"
+#include "bt_target.h"  // Must be first to define build configuration
+
 #include "bta/sys/bta_sys.h"
 #include "bta/sys/bta_sys_int.h"
 #include "main/shim/dumpsys.h"
 #include "osi/include/log.h"
-#include "osi/include/osi.h"
+#include "osi/include/osi.h"  // UNUSED_ATTR
 #include "stack/include/btm_api.h"
+#include "types/hci_role.h"
+#include "types/raw_address.h"
 
 /*******************************************************************************
  *
@@ -85,7 +86,7 @@ void bta_sys_ssr_cfg_register(tBTA_SYS_SSR_CFG_CBACK* p_cback) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_sys_notify_role_chg(const RawAddress& peer_addr, uint8_t new_role,
+void bta_sys_notify_role_chg(const RawAddress& peer_addr, tHCI_ROLE new_role,
                              tHCI_STATUS hci_status) {
   LOG_DEBUG("Role changed peer:%s new_role:%s hci_status:%s",
             PRIVATE_ADDRESS(peer_addr), RoleText(new_role).c_str(),

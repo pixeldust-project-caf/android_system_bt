@@ -22,18 +22,11 @@
  *
  ******************************************************************************/
 
-#include "bt_target.h"
+#include "bt_target.h"  // Must be first to define build configuration
 
-#include <string.h>
-
-#include "bt_common.h"
-#include "bt_utils.h"
-#include "bta_api.h"
-#include "bta_pan_api.h"
-#include "bta_pan_ci.h"
-#include "bta_pan_int.h"
-#include "osi/include/osi.h"
-#include "pan_api.h"
+#include "bta/pan/bta_pan_int.h"
+#include "osi/include/allocator.h"
+#include "types/raw_address.h"
 
 #if (BTA_PAN_INCLUDED == TRUE)
 
@@ -231,6 +224,7 @@ void bta_pan_ci_set_pfilters(uint16_t handle, uint16_t num_filters,
   PAN_SetProtocolFilters(handle, num_filters, p_start_array, p_end_array);
 }
 #else
+#include "osi/include/osi.h"  // UNUSED_ATTR
 
 void bta_pan_ci_tx_ready(UNUSED_ATTR uint16_t handle) {}
 

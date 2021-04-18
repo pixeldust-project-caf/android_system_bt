@@ -28,9 +28,13 @@
 #include "a2dp_aac.h"
 #include "a2dp_sbc.h"
 #include "a2dp_vendor.h"
+
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
 #include "a2dp_vendor_aptx.h"
 #include "a2dp_vendor_aptx_hd.h"
 #include "a2dp_vendor_ldac.h"
+#endif
+
 #include "bta/av/bta_av_int.h"
 #include "osi/include/log.h"
 #include "osi/include/properties.h"
@@ -116,6 +120,7 @@ A2dpCodecConfig* A2dpCodecConfig::createCodec(
     case BTAV_A2DP_CODEC_INDEX_SINK_SBC:
       codec_config = new A2dpCodecConfigSbcSink(codec_priority);
       break;
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case BTAV_A2DP_CODEC_INDEX_SOURCE_AAC:
       codec_config = new A2dpCodecConfigAacSource(codec_priority);
       break;
@@ -136,9 +141,11 @@ A2dpCodecConfig* A2dpCodecConfig::createCodec(
     case BTAV_A2DP_CODEC_INDEX_SINK_LDAC:
       codec_config = new A2dpCodecConfigLdacSink(codec_priority);
       break;
+#endif
     case BTAV_A2DP_CODEC_INDEX_SOURCE_APTX_TWS:
       break;
     case BTAV_A2DP_CODEC_INDEX_MAX:
+    default:
       break;
   }
 
@@ -162,10 +169,12 @@ int A2dpCodecConfig::getTrackBitRate() const {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_GetBitrateSbc();
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_GetBitRateAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorGetBitRate(p_codec_info);
+#endif
     default:
       break;
   }
@@ -198,6 +207,7 @@ bool A2dpCodecConfig::getCodecSpecificConfig(tBT_A2DP_OFFLOAD* p_a2dp_offload) {
       p_a2dp_offload->codec_info[3] =
           codec_config[3];  // Sample freq | channel mode
       break;
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       p_a2dp_offload->codec_info[0] = codec_config[3];  // object type
       p_a2dp_offload->codec_info[1] = codec_config[6];  // VBR | BR
@@ -243,6 +253,7 @@ bool A2dpCodecConfig::getCodecSpecificConfig(tBT_A2DP_OFFLOAD* p_a2dp_offload) {
                     p_a2dp_offload->codec_info[7]);
       }
       break;
+#endif
     default:
       break;
   }
@@ -580,6 +591,7 @@ bool A2dpCodecs::init() {
       if (strcmp(tok, "sbc") == 0) {
         LOG_INFO("%s: SBC offload supported", __func__);
         offload_codec_support[BTAV_A2DP_CODEC_INDEX_SOURCE_SBC] = true;
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
       } else if (strcmp(tok, "aac") == 0) {
         LOG_INFO("%s: AAC offload supported", __func__);
         offload_codec_support[BTAV_A2DP_CODEC_INDEX_SOURCE_AAC] = true;
@@ -592,6 +604,7 @@ bool A2dpCodecs::init() {
       } else if (strcmp(tok, "ldac") == 0) {
         LOG_INFO("%s: LDAC offload supported", __func__);
         offload_codec_support[BTAV_A2DP_CODEC_INDEX_SOURCE_LDAC] = true;
+#endif
       }
       tok = strtok_r(NULL, "-", &tmp_token);
     };
@@ -1020,10 +1033,12 @@ bool A2DP_IsSourceCodecValid(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_IsSourceCodecValidSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_IsSourceCodecValidAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_IsVendorSourceCodecValid(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1039,10 +1054,12 @@ bool A2DP_IsSinkCodecValid(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_IsSinkCodecValidSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_IsSinkCodecValidAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_IsVendorSinkCodecValid(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1058,10 +1075,12 @@ bool A2DP_IsPeerSourceCodecValid(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_IsPeerSourceCodecValidSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_IsPeerSourceCodecValidAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_IsVendorPeerSourceCodecValid(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1077,10 +1096,12 @@ bool A2DP_IsPeerSinkCodecValid(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_IsPeerSinkCodecValidSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_IsPeerSinkCodecValidAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_IsVendorPeerSinkCodecValid(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1096,10 +1117,12 @@ bool A2DP_IsSinkCodecSupported(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_IsSinkCodecSupportedSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_IsSinkCodecSupportedAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_IsVendorSinkCodecSupported(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1116,10 +1139,12 @@ bool A2DP_IsPeerSourceCodecSupported(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_IsPeerSourceCodecSupportedSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_IsPeerSourceCodecSupportedAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_IsVendorPeerSourceCodecSupported(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1138,7 +1163,11 @@ bool A2DP_UsesRtpHeader(bool content_protection_enabled,
 
   if (codec_type != A2DP_MEDIA_CT_NON_A2DP) return true;
 
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
   return A2DP_VendorUsesRtpHeader(content_protection_enabled, p_codec_info);
+#else
+  return true;
+#endif
 }
 
 uint8_t A2DP_GetMediaType(const uint8_t* p_codec_info) {
@@ -1154,10 +1183,12 @@ const char* A2DP_CodecName(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_CodecNameSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_CodecNameAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorCodecName(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1176,10 +1207,12 @@ bool A2DP_CodecTypeEquals(const uint8_t* p_codec_info_a,
   switch (codec_type_a) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_CodecTypeEqualsSbc(p_codec_info_a, p_codec_info_b);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_CodecTypeEqualsAac(p_codec_info_a, p_codec_info_b);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorCodecTypeEquals(p_codec_info_a, p_codec_info_b);
+#endif
     default:
       break;
   }
@@ -1198,10 +1231,12 @@ bool A2DP_CodecEquals(const uint8_t* p_codec_info_a,
   switch (codec_type_a) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_CodecEqualsSbc(p_codec_info_a, p_codec_info_b);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_CodecEqualsAac(p_codec_info_a, p_codec_info_b);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorCodecEquals(p_codec_info_a, p_codec_info_b);
+#endif
     default:
       break;
   }
@@ -1218,10 +1253,12 @@ int A2DP_GetTrackSampleRate(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_GetTrackSampleRateSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_GetTrackSampleRateAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorGetTrackSampleRate(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1238,10 +1275,12 @@ int A2DP_GetTrackBitsPerSample(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_GetTrackBitsPerSampleSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_GetTrackBitsPerSampleAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorGetTrackBitsPerSample(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1258,10 +1297,12 @@ int A2DP_GetTrackChannelCount(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_GetTrackChannelCountSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_GetTrackChannelCountAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorGetTrackChannelCount(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1278,10 +1319,12 @@ int A2DP_GetSinkTrackChannelType(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_GetSinkTrackChannelTypeSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_GetSinkTrackChannelTypeAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorGetSinkTrackChannelType(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1297,10 +1340,12 @@ bool A2DP_GetPacketTimestamp(const uint8_t* p_codec_info, const uint8_t* p_data,
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_GetPacketTimestampSbc(p_codec_info, p_data, p_timestamp);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_GetPacketTimestampAac(p_codec_info, p_data, p_timestamp);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorGetPacketTimestamp(p_codec_info, p_data, p_timestamp);
+#endif
     default:
       break;
   }
@@ -1316,11 +1361,13 @@ bool A2DP_BuildCodecHeader(const uint8_t* p_codec_info, BT_HDR* p_buf,
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_BuildCodecHeaderSbc(p_codec_info, p_buf, frames_per_packet);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_BuildCodecHeaderAac(p_codec_info, p_buf, frames_per_packet);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorBuildCodecHeader(p_codec_info, p_buf,
                                          frames_per_packet);
+#endif
     default:
       break;
   }
@@ -1338,10 +1385,12 @@ const tA2DP_ENCODER_INTERFACE* A2DP_GetEncoderInterface(
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_GetEncoderInterfaceSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_GetEncoderInterfaceAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorGetEncoderInterface(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1359,10 +1408,12 @@ const tA2DP_DECODER_INTERFACE* A2DP_GetDecoderInterface(
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_GetDecoderInterfaceSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_GetDecoderInterfaceAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorGetDecoderInterface(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1377,10 +1428,12 @@ bool A2DP_AdjustCodec(uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_AdjustCodecSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_AdjustCodecAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorAdjustCodec(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1397,10 +1450,12 @@ btav_a2dp_codec_index_t A2DP_SourceCodecIndex(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_SourceCodecIndexSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_SourceCodecIndexAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorSourceCodecIndex(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1417,10 +1472,12 @@ btav_a2dp_codec_index_t A2DP_SinkCodecIndex(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_SinkCodecIndexSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_SinkCodecIndexAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorSinkCodecIndex(p_codec_info);
+#endif
     default:
       break;
   }
@@ -1435,16 +1492,20 @@ const char* A2DP_CodecIndexStr(btav_a2dp_codec_index_t codec_index) {
       return A2DP_CodecIndexStrSbc();
     case BTAV_A2DP_CODEC_INDEX_SINK_SBC:
       return A2DP_CodecIndexStrSbcSink();
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case BTAV_A2DP_CODEC_INDEX_SOURCE_AAC:
       return A2DP_CodecIndexStrAac();
     case BTAV_A2DP_CODEC_INDEX_SINK_AAC:
       return A2DP_CodecIndexStrAacSink();
+#endif
     default:
       break;
   }
 
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
   if (codec_index < BTAV_A2DP_CODEC_INDEX_MAX)
     return A2DP_VendorCodecIndexStr(codec_index);
+#endif
 
   return "UNKNOWN CODEC INDEX";
 }
@@ -1462,16 +1523,20 @@ bool A2DP_InitCodecConfig(btav_a2dp_codec_index_t codec_index,
       return A2DP_InitCodecConfigSbc(p_cfg);
     case BTAV_A2DP_CODEC_INDEX_SINK_SBC:
       return A2DP_InitCodecConfigSbcSink(p_cfg);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case BTAV_A2DP_CODEC_INDEX_SOURCE_AAC:
       return A2DP_InitCodecConfigAac(p_cfg);
     case BTAV_A2DP_CODEC_INDEX_SINK_AAC:
       return A2DP_InitCodecConfigAacSink(p_cfg);
+#endif
     default:
       break;
   }
 
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
   if (codec_index < BTAV_A2DP_CODEC_INDEX_MAX)
     return A2DP_VendorInitCodecConfig(codec_index, p_cfg);
+#endif
 
   return false;
 }
@@ -1482,10 +1547,12 @@ std::string A2DP_CodecInfoString(const uint8_t* p_codec_info) {
   switch (codec_type) {
     case A2DP_MEDIA_CT_SBC:
       return A2DP_CodecInfoStringSbc(p_codec_info);
+#if !defined(EXCLUDE_NONSTANDARD_CODECS)
     case A2DP_MEDIA_CT_AAC:
       return A2DP_CodecInfoStringAac(p_codec_info);
     case A2DP_MEDIA_CT_NON_A2DP:
       return A2DP_VendorCodecInfoString(p_codec_info);
+#endif
     default:
       break;
   }
