@@ -26,6 +26,7 @@
 
 #include "stack/include/btm_api_types.h"
 #include "stack/include/btm_status.h"
+#include "stack/include/hci_error_code.h"
 #include "types/ble_address_with_type.h"
 
 #define CHNL_MAP_LEN 5
@@ -424,15 +425,15 @@ typedef uint8_t tBTM_BLE_SCAN_COND_OP;
 
 /* BLE adv payload filtering config complete callback */
 using tBTM_BLE_PF_CFG_CBACK = base::Callback<void(
-    uint8_t /* avbl_space */, uint8_t /* action */, uint8_t /* status */)>;
+    uint8_t /* avbl_space */, uint8_t /* action */, uint8_t /* btm_status */)>;
 
 /* BLE adv payload filtering status setup complete callback */
 using tBTM_BLE_PF_STATUS_CBACK =
-    base::Callback<void(uint8_t /*action*/, tBTM_STATUS /* status */)>;
+    base::Callback<void(uint8_t /*action*/, uint8_t /* btm_status */)>;
 
 /* BLE adv payload filtering param setup complete callback */
 using tBTM_BLE_PF_PARAM_CB = base::Callback<void(
-    uint8_t /* avbl_space */, uint8_t /* action */, uint8_t /* status */)>;
+    uint8_t /* avbl_space */, uint8_t /* action */, uint8_t /* btm_status */)>;
 
 #ifndef BTM_CS_IRK_LIST_MAX
 #define BTM_CS_IRK_LIST_MAX 0x20
@@ -485,13 +486,13 @@ typedef void(tBTM_BLE_ENERGY_INFO_CBACK)(tBTM_BLE_TX_TIME_MS tx_time,
                                          tBTM_BLE_RX_TIME_MS rx_time,
                                          tBTM_BLE_IDLE_TIME_MS idle_time,
                                          tBTM_BLE_ENERGY_USED energy_used,
-                                         tBTM_STATUS status);
+                                         tHCI_STATUS status);
 
 typedef struct {
   tBTM_BLE_ENERGY_INFO_CBACK* p_ener_cback;
 } tBTM_BLE_ENERGY_INFO_CB;
 
-typedef void(tBTM_BLE_CTRL_FEATURES_CBACK)(tBTM_STATUS status);
+typedef void(tBTM_BLE_CTRL_FEATURES_CBACK)(tHCI_STATUS status);
 
 /* BLE encryption keys */
 typedef struct {

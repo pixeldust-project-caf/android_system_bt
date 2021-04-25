@@ -29,34 +29,51 @@ import android.bluetooth.IBluetoothStateChangeCallback;
  */
 interface IBluetoothManager
 {
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     IBluetooth registerAdapter(in IBluetoothManagerCallback callback);
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     void unregisterAdapter(in IBluetoothManagerCallback callback);
     @UnsupportedAppUsage
     void registerStateChangeCallback(in IBluetoothStateChangeCallback callback);
     @UnsupportedAppUsage
     void unregisterStateChangeCallback(in IBluetoothStateChangeCallback callback);
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
     boolean enable(String packageName);
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
     boolean enableNoAutoConnect(String packageName);
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
     boolean disable(String packageName, boolean persist);
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     int getState();
     @UnsupportedAppUsage
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     IBluetoothGatt getBluetoothGatt();
 
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     boolean bindBluetoothProfileService(int profile, IBluetoothProfileServiceConnection proxy);
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     void unbindBluetoothProfileService(int profile, IBluetoothProfileServiceConnection proxy);
 
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(allOf={android.Manifest.permission.BLUETOOTH_CONNECT,android.Manifest.permission.LOCAL_MAC_ADDRESS})")
     String getAddress();
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
     String getName();
 
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_PRIVILEGED)")
     boolean onFactoryReset();
 
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     boolean isBleScanAlwaysAvailable();
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
     boolean enableBle(String packageName, IBinder b);
+    @JavaPassthrough(annotation="@android.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT)")
     boolean disableBle(String packageName, IBinder b);
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     boolean isBleAppPresent();
     boolean factoryReset();
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     boolean isHearingAidProfileSupported();
 
+    @JavaPassthrough(annotation="@android.annotation.RequiresNoPermission")
     List<String> getSystemConfigEnabledProfilesForPackage(String packageName);
 }
-
