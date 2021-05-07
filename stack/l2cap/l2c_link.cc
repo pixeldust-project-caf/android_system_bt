@@ -190,6 +190,9 @@ void l2c_link_hci_conn_comp(tHCI_STATUS status, uint16_t handle,
     /* Get the peer information if the l2cap flow-control/rtrans is supported */
     l2cu_send_peer_info_req(p_lcb, L2CAP_EXTENDED_FEATURES_INFO_TYPE);
 
+    /* Tell BTM Acl management about the link */
+    btm_acl_created(ci.bd_addr, handle, p_lcb->LinkRole(), BT_TRANSPORT_BR_EDR);
+
     if (p_lcb->IsBonding()) {
       LOG_DEBUG("Link is dedicated bonding handle:0x%04x", p_lcb->Handle());
       if (l2cu_start_post_bond_timer(handle)) return;
@@ -276,11 +279,10 @@ void l2c_link_sec_comp2(const RawAddress& p_bda,
   tL2C_LCB* p_lcb;
   tL2C_CCB* p_ccb;
   tL2C_CCB* p_next_ccb;
-  uint8_t event;
 
   LOG_DEBUG("btm_status=%s, BD_ADDR=%s, transport=%s",
             btm_status_text(status).c_str(), PRIVATE_ADDRESS(p_bda),
-            BtTransportText(transport).c_str());
+            bt_transport_text(transport).c_str());
 
   if (status == BTM_SUCCESS_NO_SECURITY) {
     status = BTM_SUCCESS;
@@ -305,7 +307,7 @@ void l2c_link_sec_comp2(const RawAddress& p_bda,
     if (p_ccb == p_ref_data) {
       switch (status) {
         case BTM_SUCCESS:
-          event = L2CEVT_SEC_COMP;
+          l2c_csm_execute(p_ccb, L2CEVT_SEC_COMP, &ci);
           break;
 
         case BTM_DELAY_CHECK:
@@ -317,9 +319,9 @@ void l2c_link_sec_comp2(const RawAddress& p_bda,
           return;
 
         default:
-          event = L2CEVT_SEC_COMP_NEG;
+          l2c_csm_execute(p_ccb, L2CEVT_SEC_COMP_NEG, &ci);
+          break;
       }
-      l2c_csm_execute(p_ccb, event, &ci);
       break;
     }
   }

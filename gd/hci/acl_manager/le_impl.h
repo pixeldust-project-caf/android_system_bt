@@ -295,8 +295,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       hci::ErrorCode hci_status, uint16_t handle, uint8_t version, uint16_t manufacturer_name, uint16_t sub_version) {
     auto callbacks = get_callbacks(handle);
     if (callbacks == nullptr) {
-      LOG_WARN("Can't find connection 0x%hx", handle);
-      ASSERT(!crash_on_unknown_handle_);
+      LOG_INFO("No le connection registered for 0x%hx", handle);
       return;
     }
     callbacks->OnReadRemoteVersionInformationComplete(hci_status, version, manufacturer_name, sub_version);
@@ -595,6 +594,7 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
     le_acl_connection_interface_->EnqueueCommand(
         LeCreateConnectionCancelBuilder::Create(),
         handler_->BindOnce(&le_impl::on_create_connection_cancel_complete, common::Unretained(this)));
+    le_address_manager_->AckPause(this);
   }
 
   void on_create_connection_cancel_complete(CommandCompleteView view) {
@@ -605,7 +605,6 @@ struct le_impl : public bluetooth::hci::LeAddressManagerCallback {
       std::string error_code = ErrorCodeText(status);
       LOG_WARN("Received on_create_connection_cancel_complete with error code %s", error_code.c_str());
     }
-    le_address_manager_->AckPause(this);
   }
 
   void check_for_unregister() {

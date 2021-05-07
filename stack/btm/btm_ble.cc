@@ -685,6 +685,12 @@ tBTM_STATUS BTM_SetBleDataLength(const RawAddress& bd_addr,
     return BTM_ILLEGAL_VALUE;
   }
 
+  tx_pdu_length = std::min<uint16_t>(
+      tx_pdu_length,
+      controller_get_interface()->get_ble_maximum_tx_data_length());
+  tx_time = std::min<uint16_t>(
+      tx_time, controller_get_interface()->get_ble_maximum_tx_time());
+
   btsnd_hcic_ble_set_data_length(hci_handle, tx_pdu_length, tx_time);
 
   return BTM_SUCCESS;
@@ -1778,7 +1784,7 @@ tBTM_STATUS btm_proc_smp_cback(tSMP_EVT event, const RawAddress& bd_addr,
           if (p_dev_rec == NULL) {
             BTM_TRACE_ERROR("%s: p_dev_rec is NULL", __func__);
             android_errorWriteLog(0x534e4554, "120612744");
-            return 0;
+            return BTM_SUCCESS;
           }
           BTM_TRACE_DEBUG(
               "evt=SMP_COMPLT_EVT before update sec_level=0x%x sec_flags=0x%x",

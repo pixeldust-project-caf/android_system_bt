@@ -66,6 +66,9 @@
 #include "types/hci_role.h"
 #include "types/raw_address.h"
 
+void BTM_update_version_info(const RawAddress& bd_addr,
+                             const remote_version_info& remote_version_info);
+
 void gatt_find_in_device_record(const RawAddress& bd_addr,
                                 tBLE_BD_ADDR* address_with_type);
 void l2c_link_hci_conn_comp(tHCI_STATUS status, uint16_t handle,
@@ -129,7 +132,7 @@ inline bool IsEprAvailable(const tACL_CONN& p_acl) {
 static void btm_acl_chk_peer_pkt_type_support(tACL_CONN* p,
                                               uint16_t* p_pkt_type);
 static void btm_process_remote_ext_features(tACL_CONN* p_acl_cb,
-                                            uint8_t num_read_pages);
+                                            uint8_t max_page_number);
 static void btm_read_failed_contact_counter_timeout(void* data);
 static void btm_read_remote_ext_features(uint16_t handle, uint8_t page_number);
 static void btm_read_rssi_timeout(void* data);
@@ -366,7 +369,7 @@ void btm_acl_created(const RawAddress& bda, uint16_t hci_handle,
         "Unable to create duplicate acl when one already exists handle:%hu"
         " role:%s transport:%s",
         hci_handle, RoleText(link_role).c_str(),
-        BtTransportText(transport).c_str());
+        bt_transport_text(transport).c_str());
     return;
   }
 
@@ -390,7 +393,7 @@ void btm_acl_created(const RawAddress& bda, uint16_t hci_handle,
   LOG_DEBUG(
       "Created new ACL connection peer:%s role:%s handle:0x%04x transport:%s",
       PRIVATE_ADDRESS(bda), RoleText(p_acl->link_role).c_str(), hci_handle,
-      BtTransportText(transport).c_str());
+      bt_transport_text(transport).c_str());
   btm_set_link_policy(p_acl, btm_cb.acl_cb_.DefaultLinkPolicy());
 
   if (transport == BT_TRANSPORT_LE) {
@@ -781,6 +784,9 @@ void btm_process_remote_version_complete(uint8_t status, uint16_t handle,
     p_acl_cb->remote_version_info.manufacturer = manufacturer;
     p_acl_cb->remote_version_info.lmp_subversion = lmp_subversion;
     p_acl_cb->remote_version_info.valid = true;
+    BTM_update_version_info(p_acl_cb->RemoteAddress(),
+                            p_acl_cb->remote_version_info);
+
     bluetooth::common::LogRemoteVersionInfo(handle, status, lmp_version,
                                             manufacturer, lmp_subversion);
   } else {
@@ -827,10 +833,9 @@ void btm_read_remote_version_complete(tHCI_STATUS status, uint16_t handle,
  *
  ******************************************************************************/
 void btm_process_remote_ext_features(tACL_CONN* p_acl_cb,
-                                     uint8_t num_read_pages) {
+                                     uint8_t max_page_number) {
   CHECK(p_acl_cb != nullptr);
-  if (!p_acl_cb->peer_lmp_feature_valid[0] ||
-      !p_acl_cb->peer_lmp_feature_valid[1]) {
+  if (!p_acl_cb->peer_lmp_feature_valid[max_page_number]) {
     LOG_WARN(
         "Checking remote features but remote feature read is "
         "incomplete");
@@ -951,7 +956,7 @@ void btm_read_remote_features_complete(uint16_t handle, uint8_t* features) {
 
   /* Remote controller has no extended features. Process remote controller
      supported features (features page 0). */
-  btm_process_remote_ext_features(p_acl_cb, 1);
+  btm_process_remote_ext_features(p_acl_cb, 0);
 
   /* Continue with HCI connection establishment */
   internal_.btm_establish_continue(p_acl_cb);
@@ -1028,7 +1033,7 @@ void btm_read_remote_ext_features_complete(uint16_t handle, uint8_t page_num,
   LOG_DEBUG("BTM reached last remote extended features page (%d)", page_num);
 
   /* Process the pages */
-  btm_process_remote_ext_features(p_acl_cb, (uint8_t)(page_num + 1));
+  btm_process_remote_ext_features(p_acl_cb, max_page);
 
   /* Continue with HCI connection establishment */
   internal_.btm_establish_continue(p_acl_cb);
@@ -1054,7 +1059,7 @@ void btm_read_remote_ext_features_failed(uint8_t status, uint16_t handle) {
   }
 
   /* Process supported features only */
-  btm_process_remote_ext_features(p_acl_cb, 1);
+  btm_process_remote_ext_features(p_acl_cb, 0);
 
   /* Continue HCI connection establishment */
   internal_.btm_establish_continue(p_acl_cb);
@@ -2036,7 +2041,7 @@ tBTM_STATUS btm_remove_acl(const RawAddress& bd_addr, tBT_TRANSPORT transport) {
 
   if (p_acl->Handle() == HCI_INVALID_HANDLE) {
     LOG_WARN("Cannot remove unknown acl bd_addr:%s transport:%s",
-             PRIVATE_ADDRESS(bd_addr), BtTransportText(transport).c_str());
+             PRIVATE_ADDRESS(bd_addr), bt_transport_text(transport).c_str());
     return BTM_UNKNOWN_ADDR;
   }
 
@@ -2044,7 +2049,7 @@ tBTM_STATUS btm_remove_acl(const RawAddress& bd_addr, tBT_TRANSPORT transport) {
     LOG_DEBUG(
         "Delay disconnect until role switch is complete bd_addr:%s "
         "transport:%s",
-        PRIVATE_ADDRESS(bd_addr), BtTransportText(transport).c_str());
+        PRIVATE_ADDRESS(bd_addr), bt_transport_text(transport).c_str());
     p_acl->rs_disc_pending = BTM_SEC_DISC_PENDING;
     return BTM_SUCCESS;
   }
@@ -2692,12 +2697,13 @@ constexpr uint16_t kDataPacketEventBrEdr = (BT_EVT_TO_LM_HCI_ACL);
 constexpr uint16_t kDataPacketEventBle =
     (BT_EVT_TO_LM_HCI_ACL | LOCAL_BLE_CONTROLLER_ID);
 
-void acl_send_data_packet_br_edr([[maybe_unused]] const RawAddress& bd_addr,
-                                 BT_HDR* p_buf) {
+void acl_send_data_packet_br_edr(const RawAddress& bd_addr, BT_HDR* p_buf) {
   if (bluetooth::shim::is_gd_acl_enabled()) {
     tACL_CONN* p_acl = internal_.btm_bda_to_acl(bd_addr, BT_TRANSPORT_BR_EDR);
     if (p_acl == nullptr) {
-      LOG_WARN("Acl br_edr data write for unknown device");
+      LOG_WARN("Acl br_edr data write for unknown device:%s",
+               PRIVATE_ADDRESS(bd_addr));
+      osi_free(p_buf);
       return;
     }
     return bluetooth::shim::ACL_WriteData(p_acl->hci_handle, p_buf);
@@ -2709,7 +2715,9 @@ void acl_send_data_packet_ble(const RawAddress& bd_addr, BT_HDR* p_buf) {
   if (bluetooth::shim::is_gd_acl_enabled()) {
     tACL_CONN* p_acl = internal_.btm_bda_to_acl(bd_addr, BT_TRANSPORT_LE);
     if (p_acl == nullptr) {
-      LOG_WARN("Acl le data write for unknown device");
+      LOG_WARN("Acl le data write for unknown device:%s",
+               PRIVATE_ADDRESS(bd_addr));
+      osi_free(p_buf);
       return;
     }
     return bluetooth::shim::ACL_WriteData(p_acl->hci_handle, p_buf);
@@ -2816,8 +2824,43 @@ void acl_process_num_completed_pkts(uint8_t* p, uint8_t evt_len) {
   bluetooth::hci::IsoManager::GetInstance()->HandleNumComplDataPkts(p, evt_len);
 }
 
+void acl_process_supported_features(uint16_t handle, uint64_t features) {
+  ASSERT_LOG(bluetooth::shim::is_gd_acl_enabled(),
+             "Should only be called when gd_acl enabled");
+
+  tACL_CONN* p_acl = internal_.acl_get_connection_from_handle(handle);
+  if (p_acl == nullptr) {
+    LOG_WARN("Unable to find active acl");
+    return;
+  }
+  const uint8_t current_page_number = 0;
+
+  memcpy(p_acl->peer_lmp_feature_pages[current_page_number],
+         (uint8_t*)&features, sizeof(uint64_t));
+  p_acl->peer_lmp_feature_valid[current_page_number] = true;
+
+  LOG_DEBUG(
+      "Copied supported feature pages handle:%hu current_page_number:%hhu "
+      "features:%s",
+      handle, current_page_number,
+      bd_features_text(p_acl->peer_lmp_feature_pages[current_page_number])
+          .c_str());
+
+  if ((HCI_LMP_EXTENDED_SUPPORTED(p_acl->peer_lmp_feature_pages[0])) &&
+      (controller_get_interface()
+           ->supports_reading_remote_extended_features())) {
+    LOG_DEBUG("Waiting for remote extended feature response to arrive");
+  } else {
+    LOG_DEBUG("No more remote features outstanding so notify upper layer");
+    NotifyAclFeaturesReadComplete(*p_acl, current_page_number);
+  }
+}
+
 void acl_process_extended_features(uint16_t handle, uint8_t current_page_number,
                                    uint8_t max_page_number, uint64_t features) {
+  ASSERT_LOG(bluetooth::shim::is_gd_acl_enabled(),
+             "Should only be called when gd_acl enabled");
+
   if (current_page_number > HCI_EXT_FEATURES_PAGE_MAX) {
     LOG_WARN("Unable to process current_page_number:%hhu", current_page_number);
     return;
@@ -2874,4 +2917,36 @@ bool acl_check_and_clear_ignore_auto_connect_after_disconnect(
 
 void acl_clear_all_ignore_auto_connect_after_disconnect() {
   btm_cb.acl_cb_.ClearAllIgnoreAutoConnectAfterDisconnect();
+}
+
+/**
+ * Confusingly, immutable device features are stored in the
+ * ephemeral connection data structure while connection security
+ * is stored in the device record.
+ *
+ * This HACK allows legacy security protocols to work as intended under
+ * those conditions.
+ */
+void HACK_acl_check_sm4(tBTM_SEC_DEV_REC& record) {
+  // Return if we already know this info
+  if ((record.sm4 & BTM_SM4_TRUE) != BTM_SM4_UNKNOWN) return;
+
+  tACL_CONN* p_acl =
+      internal_.btm_bda_to_acl(record.RemoteAddress(), BT_TRANSPORT_BR_EDR);
+  if (p_acl == nullptr) {
+    LOG_WARN("Unable to find active acl for authentication device:%s",
+             PRIVATE_ADDRESS(record.RemoteAddress()));
+  }
+
+  // If we have not received the SSP feature record
+  // we have to wait
+  if (!p_acl->peer_lmp_feature_valid[1]) {
+    LOG_WARN(
+        "Authentication started without extended feature page 1 request "
+        "response");
+    return;
+  }
+  record.sm4 = (HCI_SSP_HOST_SUPPORTED(p_acl->peer_lmp_feature_pages[1]))
+                   ? BTM_SM4_TRUE
+                   : BTM_SM4_KNOWN;
 }
