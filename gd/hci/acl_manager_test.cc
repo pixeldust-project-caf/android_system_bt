@@ -120,7 +120,7 @@ class TestHciLayer : public HciLayer {
       std::unique_ptr<CommandBuilder> command,
       common::ContextualOnceCallback<void(CommandStatusView)> on_status) override {
     command_queue_.push(std::move(command));
-    command_status_callbacks.push_front(std::move(on_status));
+    command_status_callbacks.push_back(std::move(on_status));
     if (command_promise_ != nullptr) {
       command_promise_->set_value();
       command_promise_.reset();
@@ -131,7 +131,7 @@ class TestHciLayer : public HciLayer {
       std::unique_ptr<CommandBuilder> command,
       common::ContextualOnceCallback<void(CommandCompleteView)> on_complete) override {
     command_queue_.push(std::move(command));
-    command_complete_callbacks.push_front(std::move(on_complete));
+    command_complete_callbacks.push_back(std::move(on_complete));
     if (command_promise_ != nullptr) {
       command_promise_->set_value();
       command_promise_.reset();
@@ -520,6 +520,7 @@ class AclManagerWithConnectionTest : public AclManagerTest {
     MOCK_METHOD4(
         OnReadRemoteVersionInformationComplete,
         void(hci::ErrorCode hci_status, uint8_t lmp_version, uint16_t manufacturer_name, uint16_t sub_version));
+    MOCK_METHOD1(OnReadRemoteSupportedFeaturesComplete, void(uint64_t features));
     MOCK_METHOD3(
         OnReadRemoteExtendedFeaturesComplete, void(uint8_t page_number, uint8_t max_page_number, uint64_t features));
   } mock_connection_management_callbacks_;

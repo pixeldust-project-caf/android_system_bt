@@ -180,6 +180,10 @@ struct classic_impl : public security::ISecurityManagerListener {
         client_handler_->CallOn(
             client_callbacks_, &ConnectionCallbacks::HACK_OnEscoConnectRequest, address, request.GetClassOfDevice());
         return;
+
+      case ConnectionRequestLinkType::UNKNOWN:
+        LOG_ERROR("Request has unknown ConnectionRequestLinkType.");
+        return;
     }
 
     incoming_connecting_address_ = address;
@@ -574,7 +578,7 @@ struct classic_impl : public security::ISecurityManagerListener {
       ASSERT(!crash_on_unknown_handle_);
       return;
     }
-    callbacks->OnReadRemoteExtendedFeaturesComplete(0, 1, view.GetLmpFeatures());
+    callbacks->OnReadRemoteSupportedFeaturesComplete(view.GetLmpFeatures());
   }
 
   void on_read_remote_extended_features_complete(EventView packet) {

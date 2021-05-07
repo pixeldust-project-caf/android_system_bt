@@ -46,14 +46,14 @@
  ****************************************************************************/
 
 /* Status Return Value */
-#define BTA_SUCCESS 0 /* Successful operation. */
-#define BTA_FAILURE 1 /* Generic failure. */
-#define BTA_PENDING 2 /* API cannot be completed right now */
-#define BTA_BUSY 3
-#define BTA_NO_RESOURCES 4
-#define BTA_WRONG_MODE 5
-
-typedef uint8_t tBTA_STATUS;
+typedef enum : uint8_t {
+  BTA_SUCCESS = 0, /* Successful operation. */
+  BTA_FAILURE = 1, /* Generic failure. */
+  BTA_PENDING = 2, /* API cannot be completed right now */
+  BTA_BUSY = 3,
+  BTA_NO_RESOURCES = 4,
+  BTA_WRONG_MODE = 5,
+} tBTA_STATUS;
 
 /*
  * Service ID
@@ -627,12 +627,6 @@ enum {
 
 /* Device Identification (DI) data structure
 */
-/* Used to set the DI record */
-typedef tSDP_DI_RECORD tBTA_DI_RECORD;
-/* Used to get the DI record */
-typedef tSDP_DI_GET_RECORD tBTA_DI_GET_RECORD;
-/* SDP discovery database */
-typedef tSDP_DISCOVERY_DB tBTA_DISCOVERY_DB;
 
 #ifndef BTA_DI_NUM_MAX
 #define BTA_DI_NUM_MAX 3
@@ -910,7 +904,7 @@ extern bool BTA_DmGetConnectionState(const RawAddress& bd_addr);
  * Returns          BTA_SUCCESS if record set sucessfully, otherwise error code.
  *
  ******************************************************************************/
-extern tBTA_STATUS BTA_DmSetLocalDiRecord(tBTA_DI_RECORD* p_device_info,
+extern tBTA_STATUS BTA_DmSetLocalDiRecord(tSDP_DI_RECORD* p_device_info,
                                           uint32_t* p_handle);
 
 /*******************************************************************************

@@ -165,9 +165,12 @@ static bool event_already_registered_in_hci_layer(
     case bluetooth::hci::EventCode::COMMAND_STATUS:
     case bluetooth::hci::EventCode::PAGE_SCAN_REPETITION_MODE_CHANGE:
     case bluetooth::hci::EventCode::MAX_SLOTS_CHANGE:
+    case bluetooth::hci::EventCode::LE_META_EVENT:
+      return bluetooth::shim::is_gd_hci_enabled() ||
+             bluetooth::shim::is_gd_acl_enabled() ||
+             bluetooth::shim::is_gd_l2cap_enabled();
     case bluetooth::hci::EventCode::DISCONNECTION_COMPLETE:
     case bluetooth::hci::EventCode::READ_REMOTE_VERSION_INFORMATION_COMPLETE:
-    case bluetooth::hci::EventCode::LE_META_EVENT:
       return bluetooth::shim::is_gd_acl_enabled() ||
              bluetooth::shim::is_gd_l2cap_enabled();
     default:
@@ -341,7 +344,7 @@ void OnTransmitPacketCommandComplete(command_complete_cb complete_callback,
                                      bluetooth::hci::CommandCompleteView view) {
   LOG_DEBUG("Received cmd complete for %s",
             bluetooth::hci::OpCodeText(view.GetCommandOpCode()).c_str());
-  std::vector<const uint8_t> data(view.begin(), view.end());
+  std::vector<uint8_t> data(view.begin(), view.end());
   BT_HDR* response = WrapPacketAndCopy(MSG_HC_TO_STACK_HCI_EVT, &view);
   complete_callback(response, context);
 }
