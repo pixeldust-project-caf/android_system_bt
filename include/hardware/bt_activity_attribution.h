@@ -17,6 +17,8 @@
 #ifndef ANDROID_INCLUDE_BT_ACTIVITY_ATTRIBUTION_H
 #define ANDROID_INCLUDE_BT_ACTIVITY_ATTRIBUTION_H
 
+#include <vector>
+
 #include "raw_address.h"
 
 namespace bluetooth {
@@ -26,12 +28,14 @@ class ActivityAttributionCallbacks {
  public:
   enum class Activity : uint8_t {
     UNKNOWN = 0,
+    ACL,
     ADVERTISE,
     CONNECT,
     CONTROL,
-    SCAN,
     HFP,
-    VENDOR
+    ISO,
+    SCAN,
+    VENDOR,
   };
 
   struct BtaaAggregationEntry {

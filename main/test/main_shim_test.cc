@@ -21,6 +21,7 @@
 #include <map>
 #include <thread>
 
+#include "btif/include/btif_hh.h"
 #include "device/include/controller.h"
 #include "gd/btaa/activity_attribution.h"
 #include "gd/hal/hci_hal.h"
@@ -45,13 +46,13 @@
 #include "main/shim/acl.h"
 #include "main/shim/acl_legacy_interface.h"
 #include "main/shim/helpers.h"
-#include "main/test/common/main_handler.h"
-#include "main/test/common/mock_entry.h"
 #include "os/handler.h"
 #include "os/thread.h"
 #include "stack/btm/btm_int_types.h"
 #include "stack/include/btu.h"
 #include "stack/l2cap/l2c_int.h"
+#include "test/common/main_handler.h"
+#include "test/mock/mock_main_shim_entry.h"
 
 using namespace bluetooth;
 using namespace testing;
@@ -62,6 +63,7 @@ const uint8_t kMaxLeAcceptlistSize = 16;
 std::map<std::string, int> mock_function_count_map;
 tL2C_CB l2cb;
 tBTM_CB btm_cb;
+btif_hh_cb_t btif_hh_cb;
 
 namespace {
 std::map<std::string, std::promise<uint16_t>> mock_function_handle_promise_map;
@@ -370,4 +372,49 @@ TEST_F(MainShimTest, connect_and_disconnect) {
   handler_->Call([](std::promise<void> done) { done.set_value(); },
                  std::move(done));
   future.wait();
+}
+
+TEST_F(MainShimTest, is_flushable) {
+  {
+    BT_HDR* bt_hdr =
+        (BT_HDR*)calloc(1, sizeof(BT_HDR) + sizeof(HciDataPreamble));
+
+    ASSERT_TRUE(!IsPacketFlushable(bt_hdr));
+    HciDataPreamble* hci = ToPacketData<HciDataPreamble>(bt_hdr);
+    hci->SetFlushable();
+    ASSERT_TRUE(IsPacketFlushable(bt_hdr));
+
+    free(bt_hdr);
+  }
+
+  {
+    size_t offset = 1024;
+    BT_HDR* bt_hdr =
+        (BT_HDR*)calloc(1, sizeof(BT_HDR) + sizeof(HciDataPreamble) + offset);
+    bt_hdr->offset = offset;
+
+    ASSERT_TRUE(!IsPacketFlushable(bt_hdr));
+    HciDataPreamble* hci = ToPacketData<HciDataPreamble>(bt_hdr);
+    hci->SetFlushable();
+    ASSERT_TRUE(IsPacketFlushable(bt_hdr));
+
+    free(bt_hdr);
+  }
+
+  {
+    size_t offset = 1024;
+    BT_HDR* bt_hdr =
+        (BT_HDR*)calloc(1, sizeof(BT_HDR) + sizeof(HciDataPreamble) + offset);
+
+    uint8_t* p = ToPacketData<uint8_t>(bt_hdr, L2CAP_SEND_CMD_OFFSET);
+    UINT16_TO_STREAM(
+        p, 0x123 | (L2CAP_PKT_START_NON_FLUSHABLE << L2CAP_PKT_TYPE_SHIFT));
+    ASSERT_TRUE(!IsPacketFlushable(bt_hdr));
+
+    p = ToPacketData<uint8_t>(bt_hdr, L2CAP_SEND_CMD_OFFSET);
+    UINT16_TO_STREAM(p, 0x123 | (L2CAP_PKT_START << L2CAP_PKT_TYPE_SHIFT));
+    ASSERT_TRUE(IsPacketFlushable(bt_hdr));
+
+    free(bt_hdr);
+  }
 }

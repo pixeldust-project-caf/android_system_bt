@@ -81,6 +81,27 @@ typedef enum {
   CST_W4_L2CA_DISCONNECT_RSP   /* Waiting for upper layer disc rsp */
 } tL2C_CHNL_STATE;
 
+#define CASE_RETURN_TEXT(code) \
+  case code:                   \
+    return #code
+
+inline std::string channel_state_text(const tL2C_CHNL_STATE& state) {
+  switch (state) {
+    CASE_RETURN_TEXT(CST_CLOSED);
+    CASE_RETURN_TEXT(CST_ORIG_W4_SEC_COMP);
+    CASE_RETURN_TEXT(CST_TERM_W4_SEC_COMP);
+    CASE_RETURN_TEXT(CST_W4_L2CAP_CONNECT_RSP);
+    CASE_RETURN_TEXT(CST_W4_L2CA_CONNECT_RSP);
+    CASE_RETURN_TEXT(CST_CONFIG);
+    CASE_RETURN_TEXT(CST_OPEN);
+    CASE_RETURN_TEXT(CST_W4_L2CAP_DISCONNECT_RSP);
+    CASE_RETURN_TEXT(CST_W4_L2CA_DISCONNECT_RSP);
+    default:
+      return std::string("UNKNOWN[%hhu]", state);
+  }
+}
+#undef CASE_RETURN_TEXT
+
 /* Define the possible L2CAP link states
 */
 typedef enum {
@@ -331,6 +352,28 @@ typedef struct t_l2c_ccb {
   /* used to indicate that ECOC is used */
   bool ecoc{false};
   bool reconfig_started;
+
+  struct {
+    struct {
+      unsigned bytes{0};
+      unsigned packets{0};
+      void operator()(unsigned bytes) {
+        this->bytes += bytes;
+        this->packets++;
+      }
+    } rx, tx;
+    struct {
+      struct {
+        unsigned bytes{0};
+        unsigned packets{0};
+        void operator()(unsigned bytes) {
+          this->bytes += bytes;
+          this->packets++;
+        }
+      } rx, tx;
+    } dropped;
+  } metrics;
+
 } tL2C_CCB;
 
 /***********************************************************************

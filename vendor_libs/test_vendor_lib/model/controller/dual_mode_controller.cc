@@ -146,6 +146,7 @@ DualModeController::DualModeController(const std::string& properties_filename, u
   SET_SUPPORTED(READ_INQUIRY_RESPONSE_TRANSMIT_POWER_LEVEL,
                 ReadInquiryResponseTransmitPowerLevel);
   SET_SUPPORTED(SEND_KEYPRESS_NOTIFICATION, SendKeypressNotification);
+  SET_HANDLER(SET_EVENT_MASK_PAGE_2, SetEventMaskPage2);
   SET_SUPPORTED(READ_LOCAL_OOB_DATA, ReadLocalOobData);
   SET_SUPPORTED(READ_LOCAL_OOB_EXTENDED_DATA, ReadLocalOobExtendedData);
   SET_SUPPORTED(WRITE_SIMPLE_PAIRING_MODE, WriteSimplePairingMode);
@@ -288,6 +289,8 @@ DualModeController::DualModeController(const std::string& properties_filename, u
   SET_SUPPORTED(READ_VOICE_SETTING, ReadVoiceSetting);
   SET_SUPPORTED(READ_CONNECTION_ACCEPT_TIMEOUT, ReadConnectionAcceptTimeout);
   SET_SUPPORTED(WRITE_CONNECTION_ACCEPT_TIMEOUT, WriteConnectionAcceptTimeout);
+  SET_SUPPORTED(LE_SET_ADDRESS_RESOLUTION_ENABLE, LeSetAddressResolutionEnable);
+  SET_SUPPORTED(LE_SET_RESOLVABLE_PRIVATE_ADDRESS_TIMEOUT, LeSetResovalablePrivateAddressTimeout);
 #undef SET_HANDLER
 #undef SET_SUPPORTED
   properties_.SetSupportedCommands(supported_commands);
@@ -852,6 +855,14 @@ void DualModeController::SendKeypressNotification(CommandView command) {
       peer, command_view.GetNotificationType());
   send_event_(bluetooth::hci::SendKeypressNotificationCompleteBuilder::Create(
       kNumCommandPackets, status, peer));
+}
+
+void DualModeController::SetEventMaskPage2(CommandView command) {
+  auto payload =
+      std::make_unique<bluetooth::packet::RawBuilder>(std::vector<uint8_t>(
+          {static_cast<uint8_t>(bluetooth::hci::ErrorCode::SUCCESS)}));
+  send_event_(bluetooth::hci::CommandCompleteBuilder::Create(
+      kNumCommandPackets, command.GetOpCode(), std::move(payload)));
 }
 
 void DualModeController::ReadLocalOobData(CommandView command) {
@@ -1559,6 +1570,24 @@ void DualModeController::LeReadBufferSize(CommandView command) {
   auto packet = bluetooth::hci::LeReadBufferSizeV1CompleteBuilder::Create(
       kNumCommandPackets, ErrorCode::SUCCESS, le_buffer_size);
   send_event_(std::move(packet));
+}
+
+void DualModeController::LeSetAddressResolutionEnable(CommandView command) {
+    // NOP
+    auto payload =
+      std::make_unique<bluetooth::packet::RawBuilder>(std::vector<uint8_t>(
+          {static_cast<uint8_t>(bluetooth::hci::ErrorCode::SUCCESS)}));
+  send_event_(bluetooth::hci::CommandCompleteBuilder::Create(
+      kNumCommandPackets, command.GetOpCode(), std::move(payload)));
+}
+
+void DualModeController::LeSetResovalablePrivateAddressTimeout(CommandView command) {
+    // NOP
+    auto payload =
+      std::make_unique<bluetooth::packet::RawBuilder>(std::vector<uint8_t>(
+          {static_cast<uint8_t>(bluetooth::hci::ErrorCode::SUCCESS)}));
+  send_event_(bluetooth::hci::CommandCompleteBuilder::Create(
+      kNumCommandPackets, command.GetOpCode(), std::move(payload)));
 }
 
 void DualModeController::LeReadLocalSupportedFeatures(CommandView command) {
