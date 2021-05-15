@@ -29,6 +29,7 @@
 #include <memory>
 #include <string>
 
+#include "btif/include/btif_hh.h"
 #include "device/include/controller.h"
 #include "gd/common/bidi_queue.h"
 #include "gd/common/bind.h"
@@ -818,7 +819,7 @@ struct shim::legacy::Acl::impl {
   }
 
   void accept_le_connection_from(const hci::AddressWithType& address_with_type,
-                                 std::promise<bool> promise) {
+                                 bool is_direct, std::promise<bool> promise) {
     if (shadow_acceptlist_.IsFull()) {
       LOG_ERROR("Acceptlist is full preventing new Le connection");
       promise.set_value(false);
@@ -826,7 +827,7 @@ struct shim::legacy::Acl::impl {
     }
     shadow_acceptlist_.Add(address_with_type);
     promise.set_value(true);
-    GetAclManager()->CreateLeConnection(address_with_type);
+    GetAclManager()->CreateLeConnection(address_with_type, is_direct);
     LOG_DEBUG("Allow Le connection from remote:%s",
               PRIVATE_ADDRESS(address_with_type));
     BTM_LogHistory(kBtmLogTag, ToLegacyAddressWithType(address_with_type),
@@ -859,9 +860,10 @@ struct shim::legacy::Acl::impl {
     for (auto& entry : history) {
       LOG_DEBUG("%s", entry.c_str());
     }
-    LOG_DEBUG("Shadow le accept list  size:%hhu",
-              controller_get_interface()->get_ble_acceptlist_size());
     const auto acceptlist = shadow_acceptlist_.GetCopy();
+    LOG_DEBUG("Shadow le accept list  size:%-3zu controller_max_size:%hhu",
+              acceptlist.size(),
+              controller_get_interface()->get_ble_acceptlist_size());
     for (auto& entry : acceptlist) {
       LOG_DEBUG("acceptlist:%s", entry.ToString().c_str());
     }
@@ -874,10 +876,12 @@ struct shim::legacy::Acl::impl {
     for (auto& entry : history) {
       LOG_DUMPSYS(fd, "%s", entry.c_str());
     }
-    LOG_DUMPSYS(fd, "Shadow le accept list  size:%hhu",
+    auto acceptlist = shadow_acceptlist_.GetCopy();
+    LOG_DUMPSYS(fd,
+                "Shadow le accept list  size:%-3zu controller_max_size:%hhu",
+                acceptlist.size(),
                 controller_get_interface()->get_ble_acceptlist_size());
     unsigned cnt = 0;
-    auto acceptlist = shadow_acceptlist_.GetCopy();
     for (auto& entry : acceptlist) {
       LOG_DUMPSYS(fd, "%03u le acceptlist:%s", ++cnt, entry.ToString().c_str());
     }
@@ -962,6 +966,34 @@ void DumpsysAcl(int fd) {
 using Record = common::TimestampedEntry<std::string>;
 const std::string kTimeFormat("%Y-%m-%d %H:%M:%S");
 
+#define DUMPSYS_TAG "shim::legacy::hid"
+extern btif_hh_cb_t btif_hh_cb;
+
+void DumpsysHid(int fd) {
+  LOG_DUMPSYS_TITLE(fd, DUMPSYS_TAG);
+  LOG_DUMPSYS(fd, "status:%s num_devices:%u",
+              btif_hh_status_text(btif_hh_cb.status).c_str(),
+              btif_hh_cb.device_num);
+  LOG_DUMPSYS(fd, "status:%s", btif_hh_status_text(btif_hh_cb.status).c_str());
+  for (unsigned i = 0; i < BTIF_HH_MAX_HID; i++) {
+    const btif_hh_device_t* p_dev = &btif_hh_cb.devices[i];
+    if (p_dev->bd_addr != RawAddress::kEmpty) {
+      LOG_DUMPSYS(fd, "  %u: addr:%s fd:%d state:%s ready:%s thread_id:%d", i,
+                  PRIVATE_ADDRESS(p_dev->bd_addr), p_dev->fd,
+                  bthh_connection_state_text(p_dev->dev_status).c_str(),
+                  (p_dev->ready_for_data) ? ("T") : ("F"),
+                  static_cast<int>(p_dev->hh_poll_thread_id));
+    }
+  }
+  for (unsigned i = 0; i < BTIF_HH_MAX_ADDED_DEV; i++) {
+    const btif_hh_added_device_t* p_dev = &btif_hh_cb.added_devices[i];
+    if (p_dev->bd_addr != RawAddress::kEmpty) {
+      LOG_DUMPSYS(fd, "  %u: addr:%s", i, PRIVATE_ADDRESS(p_dev->bd_addr));
+    }
+  }
+}
+#undef DUMPSYS_TAG
+
 #define DUMPSYS_TAG "shim::legacy::btm"
 void DumpsysBtm(int fd) {
   LOG_DUMPSYS_TITLE(fd, DUMPSYS_TAG);
@@ -1001,6 +1033,7 @@ void DumpsysRecord(int fd) {
 #undef DUMPSYS_TAG
 
 void shim::legacy::Acl::Dump(int fd) const {
+  DumpsysHid(fd);
   DumpsysRecord(fd);
   DumpsysAcl(fd);
   DumpsysL2cap(fd);
@@ -1110,9 +1143,10 @@ void shim::legacy::Acl::CancelClassicConnection(const hci::Address& address) {
 }
 
 void shim::legacy::Acl::AcceptLeConnectionFrom(
-    const hci::AddressWithType& address_with_type, std::promise<bool> promise) {
+    const hci::AddressWithType& address_with_type, bool is_direct,
+    std::promise<bool> promise) {
   handler_->CallOn(pimpl_.get(), &Acl::impl::accept_le_connection_from,
-                   address_with_type, std::move(promise));
+                   address_with_type, is_direct, std::move(promise));
 }
 
 void shim::legacy::Acl::IgnoreLeConnectionFrom(
@@ -1286,6 +1320,10 @@ void shim::legacy::Acl::OnLeConnectSuccess(
   RawAddress local_rpa = RawAddress::kEmpty; /* TODO enhanced */
   RawAddress peer_rpa = RawAddress::kEmpty;  /* TODO enhanced */
   uint8_t peer_addr_type = 0;                /* TODO public */
+
+  // Once an le connection has successfully been established
+  // the device address is removed from the controller accept list.
+  pimpl_->shadow_acceptlist_.Remove(address_with_type);
 
   TRY_POSTING_ON_MAIN(
       acl_interface_.connection.le.on_connected, legacy_address_with_type,

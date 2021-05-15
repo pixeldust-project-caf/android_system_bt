@@ -31,6 +31,7 @@ namespace {
 std::mutex parameter_mutex;
 std::string config_file_path;
 std::string snoop_log_file_path;
+std::string snooz_log_file_path;
 }  // namespace
 
 // Write to $PWD/bt_stack.conf if $PWD can be found, otherwise, write to $HOME/bt_stack.conf
@@ -41,7 +42,7 @@ std::string ParameterProvider::ConfigFilePath() {
       return config_file_path;
     }
   }
-  return "/etc/systembt/bt_config.conf";
+  return "/etc/bluetooth/bt_config.conf";
 }
 
 void ParameterProvider::OverrideConfigFilePath(const std::string& path) {
@@ -57,12 +58,22 @@ std::string ParameterProvider::SnoopLogFilePath() {
     }
   }
 
-  return "/etc/systembt/btsnoop_hci.log";
+  return "/etc/bluetooth/btsnoop_hci.log";
 }
 
 void ParameterProvider::OverrideSnoopLogFilePath(const std::string& path) {
   std::lock_guard<std::mutex> lock(parameter_mutex);
   snoop_log_file_path = path;
+}
+
+std::string ParameterProvider::SnoozLogFilePath() {
+  {
+    std::lock_guard<std::mutex> lock(parameter_mutex);
+    if (!snooz_log_file_path.empty()) {
+      return snooz_log_file_path;
+    }
+  }
+  return "/etc/bluetooth/btsnooz_hci.log";
 }
 
 }  // namespace os

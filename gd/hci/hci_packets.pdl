@@ -226,6 +226,9 @@ enum OpCode : 16 {
   ENHANCED_FLUSH = 0x0C5F,
   SEND_KEYPRESS_NOTIFICATION = 0x0C60,
 
+  // Allow stacks to disable AMP events
+  SET_EVENT_MASK_PAGE_2 = 0x0C63,
+
   READ_LE_HOST_SUPPORT = 0x0C6C,
   WRITE_LE_HOST_SUPPORT = 0x0C6D,
 
@@ -515,6 +518,7 @@ enum OpCodeIndex : 16 {
   SEND_KEYPRESS_NOTIFICATION = 202,
   IO_CAPABILITY_REQUEST_NEGATIVE_REPLY = 203,
   READ_ENCRYPTION_KEY_SIZE = 204,
+  SET_EVENT_MASK_PAGE_2 = 222,
   READ_DATA_BLOCK_SIZE = 232,
   READ_LE_HOST_SUPPORT = 245,
   WRITE_LE_HOST_SUPPORT = 246,
@@ -4502,7 +4506,8 @@ enum BatchScanOpcode : 8 {
   READ_RESULT_PARAMETERS = 0x04,
 }
 
-packet LeBatchScan : VendorCommand (op_code = LE_BATCH_SCAN) {
+// https://source.android.com/devices/bluetooth/hci_requirements#batching-of-scan-results
+packet LeBatchScan : LeScanningCommand (op_code = LE_BATCH_SCAN) {
   batch_scan_opcode : BatchScanOpcode,
   _body_,
 }
@@ -4547,8 +4552,24 @@ packet LeBatchScanSetScanParameters : LeBatchScan (batch_scan_opcode = SET_SCAN_
 packet LeBatchScanSetScanParametersComplete : LeBatchScanComplete (batch_scan_opcode = SET_SCAN_PARAMETERS) {
 }
 
-packet LeBatchScanReadTruncatedResultParameters : LeBatchScan (batch_scan_opcode = READ_RESULT_PARAMETERS) {
-  _fixed_ = 0x01 : 8,
+enum BatchScanDataRead : 8 {
+  TRUNCATED_MODE_DATA = 0x01,
+  FULL_MODE_DATA = 0x02,
+}
+
+packet LeBatchScanReadResultParameters : LeBatchScan (batch_scan_opcode = READ_RESULT_PARAMETERS) {
+  batch_scan_data_read : BatchScanDataRead,
+}
+
+packet LeBatchScanReadResultParametersCompleteRaw : LeBatchScanComplete (batch_scan_opcode = READ_RESULT_PARAMETERS) {
+  batch_scan_data_read : BatchScanDataRead,
+  num_of_records : 8,
+  raw_data : 8[],
+}
+
+packet LeBatchScanReadResultParametersComplete : LeBatchScanComplete (batch_scan_opcode = READ_RESULT_PARAMETERS) {
+  batch_scan_data_read : BatchScanDataRead,
+  _body_,
 }
 
 struct TruncatedResult {
@@ -4559,12 +4580,7 @@ struct TruncatedResult {
   timestamp : 16,
 }
 
-packet LeBatchScanReadTruncatedResultParametersComplete : LeBatchScanComplete (batch_scan_opcode = READ_RESULT_PARAMETERS) {
-  _fixed_ = 0x01 : 8,
-}
-
-packet LeBatchScanReadFullResultParameters : LeBatchScan (batch_scan_opcode = READ_RESULT_PARAMETERS) {
-  _fixed_ = 0x02 : 8,
+packet LeBatchScanReadTruncatedResultParametersComplete : LeBatchScanReadResultParametersComplete (batch_scan_data_read = TRUNCATED_MODE_DATA) {
   _count_(results) : 8,
   results : TruncatedResult[],
 }
@@ -4581,8 +4597,7 @@ struct FullResult {
   scan_response : 8[],
 }
 
-packet LeBatchScanReadFullResultParametersComplete : LeBatchScanComplete (batch_scan_opcode = READ_RESULT_PARAMETERS) {
-  _fixed_ = 0x02 : 8,
+packet LeBatchScanReadFullResultParametersComplete : LeBatchScanReadResultParametersComplete (batch_scan_data_read = FULL_MODE_DATA) {
   _count_(results) : 8,
   results : FullResult[],
 }
@@ -5611,6 +5626,33 @@ packet LeBigInfoAdvertisingReport : LeMetaEvent (subevent_code = BIG_INFO_ADVERT
 packet VendorSpecificEvent : Event (event_code = VENDOR_SPECIFIC) {
   subevent_code : VseSubeventCode,
   _payload_,
+}
+
+packet StorageThresholdBreachEvent : VendorSpecificEvent (subevent_code = BLE_THRESHOLD) {
+}
+
+enum AdvtInfoPresent : 8 {
+  ADVT_INFO_PRESENT = 0x00,
+  NO_ADVT_INFO_PRESENT = 0x01,
+}
+
+packet LEAdvertisementTrackingEvent : VendorSpecificEvent (subevent_code = BLE_TRACKING) {
+  apcf_filter_index : 8,
+  advertiser_state : 8,
+  advt_info_present : AdvtInfoPresent,
+  advertiser_address : Address,
+  advertiser_address_type : 8,
+  _body_,
+}
+
+packet LEAdvertisementTrackingWithInfoEvent : LEAdvertisementTrackingEvent {
+  tx_power : 8,
+  rssi : 8,
+  timestamp : 16,
+  _size_(adv_packet) : 8,
+  adv_packet : 8[],
+  _size_(scan_response) : 8,
+  scan_response : 8[],
 }
 
 enum QualityReportId : 8 {
