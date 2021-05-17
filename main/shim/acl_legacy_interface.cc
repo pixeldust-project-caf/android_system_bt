@@ -40,6 +40,8 @@ const acl_interface_t GetAclInterface() {
       .connection.le.on_failed = acl_ble_connection_fail,
       .connection.le.on_disconnected = btm_acl_disconnected,
 
+      .connection.sco.on_esco_connect_request = btm_sco_on_esco_connect_request,
+      .connection.sco.on_sco_connect_request = btm_sco_on_sco_connect_request,
       .connection.sco.on_disconnected = btm_sco_on_disconnected,
 
       .link.classic.on_authentication_complete = btm_sec_auth_complete,
@@ -62,6 +64,8 @@ const acl_interface_t GetAclInterface() {
       .link.classic.on_read_link_supervision_timeout_complete = nullptr,
       .link.classic.on_read_remote_version_information_complete =
           btm_read_remote_version_complete,
+      .link.classic.on_read_remote_supported_features_complete =
+          acl_process_supported_features,
       .link.classic.on_read_remote_extended_features_complete =
           acl_process_extended_features,
       .link.classic.on_read_rssi_complete = nullptr,

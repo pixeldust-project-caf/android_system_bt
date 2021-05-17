@@ -34,15 +34,6 @@
 #include "stack/include/btm_ble_api_types.h"
 #include "stack/include/security_client_callbacks.h"
 
-#define BTM_SEC_IS_SM4(sm) ((bool)(BTM_SM4_TRUE == ((sm)&BTM_SM4_TRUE)))
-#define BTM_SEC_IS_SM4_LEGACY(sm) ((bool)(BTM_SM4_KNOWN == ((sm)&BTM_SM4_TRUE)))
-#define BTM_SEC_IS_SM4_UNKNOWN(sm) \
-  ((bool)(BTM_SM4_UNKNOWN == ((sm)&BTM_SM4_TRUE)))
-
-#define BTM_SEC_LE_MASK                              \
-  (BTM_SEC_LE_AUTHENTICATED | BTM_SEC_LE_ENCRYPTED | \
-   BTM_SEC_LE_LINK_KEY_KNOWN | BTM_SEC_LE_LINK_KEY_AUTHED)
-
 #define BTM_MAX_SCN_ 31  // PORT_MAX_RFC_PORTS system/bt/stack/include/rfcdefs.h
 
 constexpr size_t kMaxLogSize = 255;
@@ -135,7 +126,7 @@ typedef void(tBTM_BT_QUALITY_REPORT_RECEIVER)(uint8_t len, uint8_t* p_stream);
 
 /* Define the Device Management control structure
  */
-typedef struct {
+typedef struct tBTM_DEVCB {
   tBTM_VS_EVT_CB* p_vend_spec_cb[BTM_MAX_VSE_CALLBACKS]; /* Register for vendor
                                                             specific events  */
 
@@ -211,7 +202,7 @@ typedef struct {
   }
 } tBTM_DEVCB;
 
-typedef struct {
+typedef struct tBTM_CB {
   tBTM_CFG cfg; /* Device configuration */
 
   /*****************************************************

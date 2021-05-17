@@ -18,6 +18,7 @@
 
 #include "hci/acl_manager/classic_acl_connection.h"
 #include "hci/address.h"
+#include "hci/class_of_device.h"
 #include "l2cap/classic/internal/link.h"
 #include "l2cap/internal/scheduler_fifo.h"
 #include "os/log.h"
@@ -313,6 +314,14 @@ void LinkManager::OnConnectFail(hci::Address device, hci::ErrorCode reason) {
   pending_links_.erase(pending_link);
 }
 
+void LinkManager::HACK_OnEscoConnectRequest(hci::Address device, hci::ClassOfDevice cod) {
+  LOG_ERROR("Remote ESCO connect request unimplemented");
+}
+
+void LinkManager::HACK_OnScoConnectRequest(hci::Address device, hci::ClassOfDevice cod) {
+  LOG_ERROR("Remote SCO connect request unimplemented");
+}
+
 void LinkManager::OnDisconnect(hci::Address device, hci::ErrorCode status) {
   auto* link = GetLink(device);
   ASSERT_LOG(link != nullptr, "Device %s is disconnected with reason 0x%x, but not in local database",
@@ -367,6 +376,13 @@ void LinkManager::OnReadRemoteVersionInformation(
         lmp_version,
         manufacturer_name,
         sub_version);
+  }
+}
+
+void LinkManager::OnReadRemoteSupportedFeatures(hci::Address device, uint64_t features) {
+  if (link_property_callback_handler_ != nullptr) {
+    link_property_callback_handler_->CallOn(
+        link_property_listener_, &LinkPropertyListener::OnReadRemoteSupportedFeatures, device, features);
   }
 }
 

@@ -21,6 +21,7 @@
 
 #include "hci/acl_manager/classic_acl_connection.h"
 #include "hci/address.h"
+#include "hci/class_of_device.h"
 #include "l2cap/classic/dynamic_channel_manager.h"
 #include "l2cap/classic/fixed_channel_manager.h"
 #include "l2cap/classic/internal/dynamic_channel_service_manager_impl.h"
@@ -65,6 +66,10 @@ class LinkManager : public hci::acl_manager::ConnectionCallbacks {
   Link* GetLink(hci::Address device);
   void OnConnectSuccess(std::unique_ptr<hci::acl_manager::ClassicAclConnection> acl_connection) override;
   void OnConnectFail(hci::Address device, hci::ErrorCode reason) override;
+
+  void HACK_OnEscoConnectRequest(hci::Address, hci::ClassOfDevice) override;
+  void HACK_OnScoConnectRequest(hci::Address, hci::ClassOfDevice) override;
+
   virtual void OnDisconnect(hci::Address device, hci::ErrorCode status);
   void OnAuthenticationComplete(hci::ErrorCode hci_status, hci::Address device);
   void OnEncryptionChange(hci::Address device, hci::EncryptionEnabled enabled);
@@ -74,6 +79,7 @@ class LinkManager : public hci::acl_manager::ConnectionCallbacks {
       uint8_t lmp_version,
       uint16_t manufacturer_name,
       uint16_t sub_version);
+  void OnReadRemoteSupportedFeatures(hci::Address device, uint64_t features);
   void OnReadRemoteExtendedFeatures(
       hci::Address device, uint8_t page_number, uint8_t max_page_number, uint64_t features);
   void OnRoleChange(hci::ErrorCode hci_status, hci::Address remote, hci::Role role);

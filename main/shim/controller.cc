@@ -26,7 +26,7 @@
 #include "osi/include/log.h"
 
 #include "hci/controller.h"
-#include "src/controller.rs.h"
+#include "src/bridge.rs.h"
 
 using ::bluetooth::common::init_flags::gd_rust_is_enabled;
 using ::bluetooth::shim::GetController;
@@ -90,6 +90,16 @@ static future_t* start_up(void) {
 
     data_.le_supported_states =
         bluetooth::shim::GetController()->GetLeSupportedStates();
+
+    auto local_version_info =
+        bluetooth::shim::GetController()->GetLocalVersionInformation();
+    data_.bt_version.hci_version =
+        static_cast<uint8_t>(local_version_info.hci_version_);
+    data_.bt_version.hci_revision = local_version_info.hci_revision_;
+    data_.bt_version.lmp_version =
+        static_cast<uint8_t>(local_version_info.lmp_version_);
+    data_.bt_version.lmp_subversion = local_version_info.lmp_subversion_;
+    data_.bt_version.manufacturer = local_version_info.manufacturer_name_;
 
     LOG_INFO("Mac address:%s", string_address.c_str());
   }
@@ -260,6 +270,17 @@ static uint16_t get_le_maximum_tx_data_length(void) {
   }
 }
 
+static uint16_t get_le_maximum_tx_time(void) {
+  if (gd_rust_is_enabled()) {
+    return bluetooth::shim::rust::controller_get_le_maximum_tx_time(
+        **bluetooth::shim::Stack::GetInstance()->GetRustController());
+  } else {
+    ::bluetooth::hci::LeMaximumDataLength le_maximum_data_length =
+        GetController()->GetLeMaximumDataLength();
+    return le_maximum_data_length.supported_max_tx_time_;
+  }
+}
+
 FORWARD_GETTER_IF_RUST(uint16_t, get_le_max_advertising_data_length,
                        GetController()->GetLeMaximumAdvertisingDataLength())
 FORWARD_GETTER_IF_RUST(uint8_t, get_le_supported_advertising_sets,
@@ -352,6 +373,7 @@ static const controller_t interface = {
     get_iso_packet_size,
     get_le_suggested_default_data_length,
     get_le_maximum_tx_data_length,
+    get_le_maximum_tx_time,
     get_le_max_advertising_data_length,
     get_le_supported_advertising_sets,
     get_le_periodic_advertiser_list_size,

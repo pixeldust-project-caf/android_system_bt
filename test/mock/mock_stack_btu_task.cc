@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Android Open Source Project
+ * Copyright 2021 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,6 +65,6 @@ bt_status_t do_in_main_thread_delayed(const base::Location& from_here,
 void btu_hci_msg_process(BT_HDR* p_msg) { mock_function_count_map[__func__]++; }
 void main_thread_shut_down() { mock_function_count_map[__func__]++; }
 void main_thread_start_up() { mock_function_count_map[__func__]++; }
-void post_on_bt_main(std::function<void()> closure) {
+void post_on_bt_main(BtMainClosure closure) {
   mock_function_count_map[__func__]++;
 }

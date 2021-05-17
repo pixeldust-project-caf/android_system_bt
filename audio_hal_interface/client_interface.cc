@@ -24,6 +24,7 @@
 #include <hidl/MQDescriptor.h>
 #include <future>
 
+#include "common/stop_watch_legacy.h"
 #include "osi/include/log.h"
 
 namespace bluetooth {
@@ -34,6 +35,7 @@ using ::android::hardware::Return;
 using ::android::hardware::Void;
 using ::android::hardware::audio::common::V5_0::SourceMetadata;
 using ::android::hardware::bluetooth::audio::V2_0::IBluetoothAudioPort;
+using ::bluetooth::common::StopWatchLegacy;
 
 using DataMQ = ::android::hardware::MessageQueue<
     uint8_t, ::android::hardware::kSynchronizedReadWrite>;
@@ -72,6 +74,7 @@ class BluetoothAudioPortImpl : public IBluetoothAudioPort {
       : transport_instance_(transport_instance), provider_(provider) {}
 
   Return<void> startStream() override {
+    StopWatchLegacy(__func__);
     BluetoothAudioCtrlAck ack = transport_instance_->StartRequest();
     if (ack != BluetoothAudioCtrlAck::PENDING) {
       auto hidl_retval =
@@ -85,6 +88,7 @@ class BluetoothAudioPortImpl : public IBluetoothAudioPort {
   }
 
   Return<void> suspendStream() override {
+    StopWatchLegacy(__func__);
     BluetoothAudioCtrlAck ack = transport_instance_->SuspendRequest();
     if (ack != BluetoothAudioCtrlAck::PENDING) {
       auto hidl_retval =
@@ -98,12 +102,14 @@ class BluetoothAudioPortImpl : public IBluetoothAudioPort {
   }
 
   Return<void> stopStream() override {
+    StopWatchLegacy(__func__);
     transport_instance_->StopRequest();
     return Void();
   }
 
   Return<void> getPresentationPosition(
       getPresentationPosition_cb _hidl_cb) override {
+    StopWatchLegacy(__func__);
     uint64_t remote_delay_report_ns;
     uint64_t total_bytes_read;
     timespec data_position;
@@ -130,6 +136,7 @@ class BluetoothAudioPortImpl : public IBluetoothAudioPort {
   }
 
   Return<void> updateMetadata(const SourceMetadata& sourceMetadata) override {
+    StopWatchLegacy(__func__);
     LOG(INFO) << __func__ << ": " << sourceMetadata.tracks.size()
               << " track(s)";
     // refer to StreamOut.impl.h within Audio HAL (AUDIO_HAL_VERSION_5_0)
@@ -418,15 +425,18 @@ BluetoothAudioSinkClientInterface::BluetoothAudioSinkClientInterface(
                                         this, message_loop),
                                     sink},
       sink_(sink) {
+  if (HalVersionManager::GetHalVersion() ==
+      BluetoothAudioHalVersion::VERSION_UNAVAILABLE) {
+    return;
+  }
+
   if ((HalVersionManager::GetHalVersion() ==
        BluetoothAudioHalVersion::VERSION_2_1) &&
       (sink_->GetSessionType_2_1() != SessionType_2_1::UNKNOWN)) {
     FetchAudioProvider_2_1();
-
     return;
   }
-
-  if (sink_->GetSessionType() != SessionType::UNKNOWN) FetchAudioProvider();
+  FetchAudioProvider();
 }
 
 BluetoothAudioSinkClientInterface::~BluetoothAudioSinkClientInterface() {
@@ -453,13 +463,18 @@ BluetoothAudioSourceClientInterface::BluetoothAudioSourceClientInterface(
                                         this, message_loop),
                                     source},
       source_(source) {
+  if (HalVersionManager::GetHalVersion() ==
+      BluetoothAudioHalVersion::VERSION_UNAVAILABLE) {
+    return;
+  }
+
   if ((HalVersionManager::GetHalVersion() ==
        BluetoothAudioHalVersion::VERSION_2_1) &&
       (source_->GetSessionType_2_1() != SessionType_2_1::UNKNOWN)) {
     FetchAudioProvider_2_1();
+    return;
   }
-
-  if (source_->GetSessionType() != SessionType::UNKNOWN) FetchAudioProvider();
+  FetchAudioProvider();
 }
 
 BluetoothAudioSourceClientInterface::~BluetoothAudioSourceClientInterface() {
@@ -510,7 +525,11 @@ bool BluetoothAudioClientInterface::UpdateAudioConfig_2_1(
       (transport_->GetSessionType_2_1() ==
            SessionType_2_1::A2DP_SOFTWARE_ENCODING_DATAPATH ||
        transport_->GetSessionType_2_1() ==
-           SessionType_2_1::HEARING_AID_SOFTWARE_ENCODING_DATAPATH);
+           SessionType_2_1::HEARING_AID_SOFTWARE_ENCODING_DATAPATH ||
+       transport_->GetSessionType_2_1() ==
+           SessionType_2_1::LE_AUDIO_SOFTWARE_ENCODING_DATAPATH ||
+       transport_->GetSessionType_2_1() ==
+           SessionType_2_1::LE_AUDIO_SOFTWARE_DECODED_DATAPATH);
   bool is_offload_session = (transport_->GetSessionType_2_1() ==
                              SessionType_2_1::A2DP_HARDWARE_OFFLOAD_DATAPATH);
   auto audio_config_discriminator = audio_config_2_1.getDiscriminator();

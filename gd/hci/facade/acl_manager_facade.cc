@@ -23,6 +23,8 @@
 #include "common/bind.h"
 #include "grpc/grpc_event_queue.h"
 #include "hci/acl_manager.h"
+#include "hci/address.h"
+#include "hci/class_of_device.h"
 #include "hci/facade/acl_manager_facade.grpc.pb.h"
 #include "hci/facade/acl_manager_facade.pb.h"
 #include "hci/hci_packets.h"
@@ -367,6 +369,14 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
     current_connection_request_++;
   }
 
+  void HACK_OnEscoConnectRequest(Address address, ClassOfDevice cod) override {
+    LOG_ERROR("Remote ESCO connect request unimplemented");
+  }
+
+  void HACK_OnScoConnectRequest(Address address, ClassOfDevice cod) override {
+    LOG_ERROR("Remote SCO connect request unimplemented");
+  }
+
   class Connection : public ConnectionManagementCallbacks {
    public:
     Connection(
@@ -518,6 +528,9 @@ class AclManagerFacadeService : public AclManagerFacade::Service, public Connect
           lmp_version,
           manufacturer_name,
           sub_version);
+    }
+    void OnReadRemoteSupportedFeaturesComplete(uint64_t features) override {
+      LOG_INFO("OnReadRemoteSupportedFeaturesComplete features:0x%lx", static_cast<unsigned long>(features));
     }
     void OnReadRemoteExtendedFeaturesComplete(
         uint8_t page_number, uint8_t max_page_number, uint64_t features) override {

@@ -90,7 +90,9 @@ void btm_esco_proc_conn_chg(uint8_t status, uint16_t handle,
                             uint16_t rx_pkt_len, uint16_t tx_pkt_len) {
   mock_function_count_map[__func__]++;
 }
-void btm_route_sco_data(BT_HDR* p_msg) { mock_function_count_map[__func__]++; }
+void btm_route_sco_data(BT_HDR_RIGID* p_msg) {
+  mock_function_count_map[__func__]++;
+}
 void btm_sco_acl_removed(const RawAddress* bda) {
   mock_function_count_map[__func__]++;
 }
@@ -100,7 +102,7 @@ void btm_sco_chk_pend_rolechange(uint16_t hci_handle) {
 void btm_sco_chk_pend_unpark(tHCI_STATUS hci_status, uint16_t hci_handle) {
   mock_function_count_map[__func__]++;
 }
-void btm_sco_conn_req(const RawAddress& bda, DEV_CLASS dev_class,
+void btm_sco_conn_req(const RawAddress& bda, const DEV_CLASS& dev_class,
                       uint8_t link_type) {
   mock_function_count_map[__func__]++;
 }

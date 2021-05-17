@@ -54,8 +54,7 @@ class OnceClosure {
   }
 
   void Run() const {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, std::move(*closure_));
+    std::move(*closure_).Run();
     delete closure_;
     ((OnceClosure*)this)->closure_ = nullptr;
   }
@@ -64,11 +63,11 @@ class OnceClosure {
   base::OnceClosure* closure_;
 };
 
-using u8SliceCallback = TrampolineCallback<::rust::Slice<uint8_t>>;
-using u8SliceOnceCallback = TrampolineOnceCallback<::rust::Slice<uint8_t>>;
+using u8SliceCallback = TrampolineCallback<::rust::Slice<const uint8_t>>;
+using u8SliceOnceCallback = TrampolineOnceCallback<::rust::Slice<const uint8_t>>;
 
 }  // namespace rust
 }  // namespace shim
 }  // namespace bluetooth
 
-#include "src/hci.rs.h"
+#include "src/bridge.rs.h"

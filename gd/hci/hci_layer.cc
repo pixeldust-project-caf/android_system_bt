@@ -18,9 +18,12 @@
 
 #include "common/bind.h"
 #include "common/init_flags.h"
+#include "hci/hci_metrics_logging.h"
 #include "os/alarm.h"
+#include "os/metrics.h"
 #include "os/queue.h"
 #include "packet/packet_builder.h"
+#include "storage/storage_module.h"
 
 namespace bluetooth {
 namespace hci {
@@ -50,6 +53,7 @@ static void fail_if_reset_complete_not_success(CommandCompleteView complete) {
 }
 
 static void abort_after_time_out(OpCode op_code) {
+  bluetooth::os::LogMetricHciTimeoutEvent(static_cast<uint32_t>(op_code));
   ASSERT_LOG(false, "Done waiting for debug information after HCI timeout (%s)", OpCodeText(op_code).c_str());
 }
 
@@ -64,6 +68,8 @@ class CommandQueueEntry {
       : command(move(command_packet)), waiting_for_status_(true), on_status(move(on_status_function)) {}
 
   unique_ptr<CommandBuilder> command;
+  unique_ptr<CommandView> command_view;
+
   bool waiting_for_status_;
   ContextualOnceCallback<void(CommandStatusView)> on_status;
   ContextualOnceCallback<void(CommandCompleteView)> on_complete;
@@ -87,14 +93,17 @@ class CommandQueueEntry {
 struct HciLayer::impl {
   impl(hal::HciHal* hal, HciLayer& module) : hal_(hal), module_(module) {
     hci_timeout_alarm_ = new Alarm(module.GetHandler());
-    hci_abort_alarm_ = new Alarm(module.GetHandler());
   }
 
   ~impl() {
     incoming_acl_buffer_.Clear();
     incoming_iso_buffer_.Clear();
-    delete hci_timeout_alarm_;
-    delete hci_abort_alarm_;
+    if (hci_timeout_alarm_ != nullptr) {
+      delete hci_timeout_alarm_;
+    }
+    if (hci_abort_alarm_ != nullptr) {
+      delete hci_abort_alarm_;
+    }
     command_queue_.clear();
   }
 
@@ -165,12 +174,15 @@ struct HciLayer::impl {
     command_queue_.front().GetCallback<TResponse>()->Invoke(move(response_view));
     command_queue_.pop_front();
     waiting_command_ = OpCode::NONE;
-    hci_timeout_alarm_->Cancel();
-    send_next_command();
+    if (hci_timeout_alarm_ != nullptr) {
+      hci_timeout_alarm_->Cancel();
+      send_next_command();
+    }
   }
 
   void on_hci_timeout(OpCode op_code) {
     LOG_ERROR("Timed out waiting for 0x%02hx (%s)", op_code, OpCodeText(op_code).c_str());
+    // TODO: LogMetricHciTimeoutEvent(static_cast<uint32_t>(op_code));
 
     LOG_ERROR("Flushing %zd waiting commands", command_queue_.size());
     // Clear any waiting commands (there is an abort coming anyway)
@@ -180,8 +192,17 @@ struct HciLayer::impl {
     enqueue_command(
         ControllerDebugInfoBuilder::Create(), module_.GetHandler()->BindOnce(&fail_if_reset_complete_not_success));
     // Don't time out for this one;
-    hci_timeout_alarm_->Cancel();
-    hci_abort_alarm_->Schedule(BindOnce(&abort_after_time_out, op_code), kHciTimeoutRestartMs);
+    if (hci_timeout_alarm_ != nullptr) {
+      hci_timeout_alarm_->Cancel();
+      delete hci_timeout_alarm_;
+      hci_timeout_alarm_ = nullptr;
+    }
+    if (hci_abort_alarm_ == nullptr) {
+      hci_abort_alarm_ = new Alarm(module_.GetHandler());
+      hci_abort_alarm_->Schedule(BindOnce(&abort_after_time_out, op_code), kHciTimeoutRestartMs);
+    } else {
+      LOG_WARN("Unable to schedul abort timer");
+    }
   }
 
   void send_next_command() {
@@ -202,9 +223,16 @@ struct HciLayer::impl {
     auto cmd_view = CommandView::Create(PacketView<kLittleEndian>(bytes));
     ASSERT(cmd_view.IsValid());
     OpCode op_code = cmd_view.GetOpCode();
+    command_queue_.front().command_view = std::make_unique<CommandView>(std::move(cmd_view));
+    log_link_layer_connection_command_status(command_queue_.front().command_view, ErrorCode::STATUS_UNKNOWN);
+    log_classic_pairing_command_status(command_queue_.front().command_view, ErrorCode::STATUS_UNKNOWN);
     waiting_command_ = op_code;
     command_credits_ = 0;  // Only allow one outstanding command
-    hci_timeout_alarm_->Schedule(BindOnce(&impl::on_hci_timeout, common::Unretained(this), op_code), kHciTimeoutMs);
+    if (hci_timeout_alarm_ != nullptr) {
+      hci_timeout_alarm_->Schedule(BindOnce(&impl::on_hci_timeout, common::Unretained(this), op_code), kHciTimeoutMs);
+    } else {
+      LOG_WARN("%s sent without an hci-timeout timer", OpCodeText(op_code).c_str());
+    }
   }
 
   void register_event(EventCode event, ContextualCallback<void(EventView)> handler) {
@@ -245,28 +273,43 @@ struct HciLayer::impl {
     subevent_handlers_.erase(subevent_handlers_.find(event));
   }
 
-  void register_vendor_specific_event(
-      VseSubeventCode vse_subevent_code, ContextualCallback<void(VendorSpecificEventView)> event_handler) {
-    ASSERT_LOG(
-        vendor_specific_event_handlers_.count(vse_subevent_code) == 0,
-        "Can not register a second handler for %02hhx (%s)",
-        vse_subevent_code,
-        VseSubeventCodeText(vse_subevent_code).c_str());
-    vendor_specific_event_handlers_[vse_subevent_code] = event_handler;
+  static void abort_after_root_inflammation(uint8_t vse_error) {
+    ASSERT_LOG(false, "Root inflammation with reason 0x%02hhx", vse_error);
   }
 
-  void unregister_vendor_specific_event(VseSubeventCode vse_subevent_code) {
-    vendor_specific_event_handlers_.erase(vendor_specific_event_handlers_.find(vse_subevent_code));
+  void handle_root_inflammation(uint8_t vse_error_reason) {
+    // Add Logging for crash reason
+    if (hci_timeout_alarm_ != nullptr) {
+      hci_timeout_alarm_->Cancel();
+      delete hci_timeout_alarm_;
+      hci_timeout_alarm_ = nullptr;
+    }
+    LOG_ERROR("Received a Root Inflammation Event, scheduling an abort");
+    if (hci_abort_alarm_ == nullptr) {
+      hci_abort_alarm_ = new Alarm(module_.GetHandler());
+      hci_abort_alarm_->Schedule(BindOnce(&abort_after_root_inflammation, vse_error_reason), kHciTimeoutRestartMs);
+    } else {
+      LOG_WARN("Abort timer already scheduled");
+    }
   }
 
   void on_hci_event(EventView event) {
     ASSERT(event.IsValid());
+    log_hci_event(command_queue_.front().command_view, event, module_.GetDependency<storage::StorageModule>());
     EventCode event_code = event.GetEventCode();
-    ASSERT_LOG(
-        event_handlers_.find(event_code) != event_handlers_.end(),
-        "Unhandled event of type 0x%02hhx (%s)",
-        event_code,
-        EventCodeText(event_code).c_str());
+    // Root Inflamation is a special case, since it aborts here
+    if (event_code == EventCode::VENDOR_SPECIFIC) {
+      auto inflammation = BqrRootInflammationEventView::Create(
+          BqrLinkQualityEventView::Create(BqrEventView::Create(VendorSpecificEventView::Create(event))));
+      if (inflammation.IsValid()) {
+        handle_root_inflammation(inflammation.GetVendorSpecificErrorCode());
+        return;
+      }
+    }
+    if (event_handlers_.find(event_code) == event_handlers_.end()) {
+      LOG_WARN("Unhandled event of type 0x%02hhx (%s)", event_code, EventCodeText(event_code).c_str());
+      return;
+    }
     event_handlers_[event_code].Invoke(event);
   }
 
@@ -274,26 +317,11 @@ struct HciLayer::impl {
     LeMetaEventView meta_event_view = LeMetaEventView::Create(event);
     ASSERT(meta_event_view.IsValid());
     SubeventCode subevent_code = meta_event_view.GetSubeventCode();
-    ASSERT_LOG(
-        subevent_handlers_.find(subevent_code) != subevent_handlers_.end(),
-        "Unhandled le subevent of type 0x%02hhx (%s)",
-        subevent_code,
-        SubeventCodeText(subevent_code).c_str());
-    subevent_handlers_[subevent_code].Invoke(meta_event_view);
-  }
-
-  void on_vendor_specific_event(EventView event) {
-    VendorSpecificEventView vendor_specific_event_view = VendorSpecificEventView::Create(event);
-    ASSERT(vendor_specific_event_view.IsValid());
-    VseSubeventCode vse_subevent_code = vendor_specific_event_view.GetSubeventCode();
-    if (vendor_specific_event_handlers_.find(vse_subevent_code) == vendor_specific_event_handlers_.end()) {
-      LOG_ERROR(
-          "Unhandled vendor specific event of type 0x%02hhx (%s)",
-          vse_subevent_code,
-          VseSubeventCodeText(vse_subevent_code).c_str());
+    if (subevent_handlers_.find(subevent_code) == subevent_handlers_.end()) {
+      LOG_WARN("Unhandled le subevent of type 0x%02hhx (%s)", subevent_code, SubeventCodeText(subevent_code).c_str());
       return;
     }
-    vendor_specific_event_handlers_[vse_subevent_code].Invoke(vendor_specific_event_view);
+    subevent_handlers_[subevent_code].Invoke(meta_event_view);
   }
 
   hal::HciHal* hal_;
@@ -304,7 +332,6 @@ struct HciLayer::impl {
 
   std::map<EventCode, ContextualCallback<void(EventView)>> event_handlers_;
   std::map<SubeventCode, ContextualCallback<void(LeMetaEventView)>> subevent_handlers_;
-  std::map<VseSubeventCode, ContextualCallback<void(VendorSpecificEventView)>> vendor_specific_event_handlers_;
   OpCode waiting_command_{OpCode::NONE};
   uint8_t command_credits_{1};  // Send reset first
   Alarm* hci_timeout_alarm_{nullptr};
@@ -389,15 +416,6 @@ void HciLayer::RegisterLeEventHandler(SubeventCode event, ContextualCallback<voi
 
 void HciLayer::UnregisterLeEventHandler(SubeventCode event) {
   CallOn(impl_, &impl::unregister_le_event, event);
-}
-
-void HciLayer::RegisterVendorSpecificEventHandler(
-    VseSubeventCode vse_subevent_code, common::ContextualCallback<void(VendorSpecificEventView)> event_handler) {
-  CallOn(impl_, &impl::register_vendor_specific_event, vse_subevent_code, event_handler);
-}
-
-void HciLayer::UnregisterVendorSpecificEventHandler(VseSubeventCode vse_subevent_code) {
-  CallOn(impl_, &impl::unregister_vendor_specific_event, vse_subevent_code);
 }
 
 void HciLayer::on_disconnection_complete(EventView event_view) {
@@ -503,6 +521,7 @@ const ModuleFactory HciLayer::Factory = ModuleFactory([]() { return new HciLayer
 
 void HciLayer::ListDependencies(ModuleList* list) {
   list->add<hal::HciHal>();
+  list->add<storage::StorageModule>();
 }
 
 void HciLayer::Start() {
@@ -526,7 +545,6 @@ void HciLayer::Start() {
   auto drop_packet = handler->BindOn(impl_, &impl::drop);
   RegisterEventHandler(EventCode::PAGE_SCAN_REPETITION_MODE_CHANGE, drop_packet);
   RegisterEventHandler(EventCode::MAX_SLOTS_CHANGE, drop_packet);
-  RegisterEventHandler(EventCode::VENDOR_SPECIFIC, handler->BindOn(impl_, &impl::on_vendor_specific_event));
 
   EnqueueCommand(ResetBuilder::Create(), handler->BindOnce(&fail_if_reset_complete_not_success));
   hal->registerIncomingPacketCallback(hal_callbacks_);

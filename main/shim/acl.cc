@@ -39,6 +39,8 @@
 #include "gd/hci/acl_manager/connection_management_callbacks.h"
 #include "gd/hci/acl_manager/le_acl_connection.h"
 #include "gd/hci/acl_manager/le_connection_management_callbacks.h"
+#include "gd/hci/address.h"
+#include "gd/hci/class_of_device.h"
 #include "gd/hci/controller.h"
 #include "gd/os/handler.h"
 #include "gd/os/queue.h"
@@ -235,12 +237,14 @@ void ValidateAclInterface(const shim::legacy::acl_interface_t& acl_interface) {
 
 }  // namespace
 
-#define TRY_POSTING_ON_MAIN(cb, ...)                             \
-  if (cb == nullptr) {                                           \
-    LOG_WARN("Dropping ACL event with no callback");             \
-  } else {                                                       \
-    do_in_main_thread(FROM_HERE, base::Bind(cb, ##__VA_ARGS__)); \
-  }
+#define TRY_POSTING_ON_MAIN(cb, ...)                               \
+  do {                                                             \
+    if (cb == nullptr) {                                           \
+      LOG_WARN("Dropping ACL event with no callback");             \
+    } else {                                                       \
+      do_in_main_thread(FROM_HERE, base::Bind(cb, ##__VA_ARGS__)); \
+    }                                                              \
+  } while (0)
 
 constexpr HciHandle kInvalidHciHandle = 0xffff;
 
@@ -295,7 +299,14 @@ class ShimAclConnection {
     BT_HDR* p_buf = MakeLegacyBtHdrPacket(std::move(packet), preamble);
     ASSERT_LOG(p_buf != nullptr,
                "Unable to allocate BT_HDR legacy packet handle:%04x", handle_);
-    TRY_POSTING_ON_MAIN(send_data_upwards_, p_buf);
+    if (send_data_upwards_ == nullptr) {
+      LOG_WARN("Dropping ACL data with no callback");
+      osi_free(p_buf);
+    } else if (do_in_main_thread(FROM_HERE,
+                                 base::Bind(send_data_upwards_, p_buf)) !=
+               BT_STATUS_SUCCESS) {
+      osi_free(p_buf);
+    }
   }
 
   virtual void InitiateDisconnect(hci::DisconnectReason reason) = 0;
@@ -507,6 +518,17 @@ class ClassicShimAclConnection
     TRY_POSTING_ON_MAIN(interface_.on_read_remote_version_information_complete,
                         ToLegacyHciErrorCode(hci_status), handle_, lmp_version,
                         manufacturer_name, sub_version);
+  }
+
+  void OnReadRemoteSupportedFeaturesComplete(uint64_t features) override {
+    TRY_POSTING_ON_MAIN(interface_.on_read_remote_supported_features_complete,
+                        handle_, features);
+
+    if (features & ((uint64_t(1) << 63))) {
+      connection_->ReadRemoteExtendedFeatures(1);
+      return;
+    }
+    LOG_DEBUG("Device does not support extended features");
   }
 
   void OnReadRemoteExtendedFeaturesComplete(uint8_t page_number,
@@ -761,6 +783,40 @@ struct shim::legacy::Acl::impl {
     handle_to_classic_connection_map_[handle]->SetConnectionEncryption(enable);
   }
 
+  void disconnect_classic(uint16_t handle, tHCI_STATUS reason) {
+    auto connection = handle_to_classic_connection_map_.find(handle);
+    if (connection != handle_to_classic_connection_map_.end()) {
+      auto remote_address = connection->second->GetRemoteAddress();
+      connection->second->InitiateDisconnect(
+          ToDisconnectReasonFromLegacy(reason));
+      LOG_DEBUG("Disconnection initiated classic remote:%s handle:%hu",
+                PRIVATE_ADDRESS(remote_address), handle);
+      BTM_LogHistory(kBtmLogTag, ToRawAddress(remote_address),
+                     "Disconnection initiated", "classic");
+    } else {
+      LOG_WARN("Unable to disconnect unknown classic connection handle:0x%04x",
+               handle);
+    }
+  }
+
+  void disconnect_le(uint16_t handle, tHCI_STATUS reason) {
+    auto connection = handle_to_le_connection_map_.find(handle);
+    if (connection != handle_to_le_connection_map_.end()) {
+      auto remote_address_with_type =
+          connection->second->GetRemoteAddressWithType();
+      connection->second->InitiateDisconnect(
+          ToDisconnectReasonFromLegacy(reason));
+      LOG_DEBUG("Disconnection initiated le remote:%s handle:%hu",
+                PRIVATE_ADDRESS(remote_address_with_type), handle);
+      BTM_LogHistory(kBtmLogTag,
+                     ToLegacyAddressWithType(remote_address_with_type),
+                     "Disconnection initiated", "Le");
+    } else {
+      LOG_WARN("Unable to disconnect unknown le connection handle:0x%04x",
+               handle);
+    }
+  }
+
   void accept_le_connection_from(const hci::AddressWithType& address_with_type,
                                  std::promise<bool> promise) {
     if (shadow_acceptlist_.IsFull()) {
@@ -860,43 +916,45 @@ void DumpsysAcl(int fd) {
   shim::Stack::GetInstance()->GetAcl()->DumpConnectionHistory(fd);
 
   for (int i = 0; i < MAX_L2CAP_LINKS; i++) {
-    const tACL_CONN& acl_conn = acl_cb.acl_db[i];
-    if (!acl_conn.in_use) continue;
+    const tACL_CONN& link = acl_cb.acl_db[i];
+    if (!link.in_use) continue;
 
-    LOG_DUMPSYS(fd, "    peer_le_features valid:%s data:%s",
-                common::ToString(acl_conn.peer_le_features_valid).c_str(),
-                bd_features_text(acl_conn.peer_le_features).c_str());
-    for (int j = 0; j < HCI_EXT_FEATURES_PAGE_MAX + 1; j++) {
-      LOG_DUMPSYS(fd, "    peer_lmp_features[%d] valid:%s data:%s", j,
-                  common::ToString(acl_conn.peer_lmp_feature_valid[j]).c_str(),
-                  bd_features_text(acl_conn.peer_lmp_feature_pages[j]).c_str());
-    }
-    LOG_DUMPSYS(fd, "      sniff_subrating:%s",
-                common::ToString(HCI_SNIFF_SUB_RATE_SUPPORTED(
-                                     acl_conn.peer_lmp_feature_pages[0]))
-                    .c_str());
-
-    LOG_DUMPSYS(fd, "remote_addr:%s", acl_conn.remote_addr.ToString().c_str());
-    LOG_DUMPSYS(fd, "    handle:0x%04x", acl_conn.hci_handle);
-    LOG_DUMPSYS(fd, "    [le] active_remote_addr:%s",
-                acl_conn.active_remote_addr.ToString().c_str());
-    LOG_DUMPSYS(fd, "    [le] conn_addr:%s",
-                acl_conn.conn_addr.ToString().c_str());
-    LOG_DUMPSYS(fd, "    link_up_issued:%s",
-                (acl_conn.link_up_issued) ? "true" : "false");
-    LOG_DUMPSYS(fd, "    transport:%s",
-                BtTransportText(acl_conn.transport).c_str());
-    LOG_DUMPSYS(fd, "    flush_timeout:0x%04x",
-                acl_conn.flush_timeout_in_ticks);
-    LOG_DUMPSYS(
-        fd, "    [classic] link_policy:%s",
-        link_policy_text(static_cast<tLINK_POLICY>(acl_conn.link_policy))
-            .c_str());
+    LOG_DUMPSYS(fd, "remote_addr:%s handle:0x%04x transport:%s",
+                link.remote_addr.ToString().c_str(), link.hci_handle,
+                bt_transport_text(link.transport).c_str());
+    LOG_DUMPSYS(fd, "    link_up_issued:%5s",
+                (link.link_up_issued) ? "true" : "false");
+    LOG_DUMPSYS(fd, "    flush_timeout:0x%04x", link.flush_timeout_in_ticks);
     LOG_DUMPSYS(fd, "    link_supervision_timeout:%.3f sec",
-                ticks_to_seconds(acl_conn.link_super_tout));
-    LOG_DUMPSYS(fd, "    pkt_types_mask:0x%04x", acl_conn.pkt_types_mask);
-    LOG_DUMPSYS(fd, "    disconnect_reason:0x%02x", acl_conn.disconnect_reason);
-    LOG_DUMPSYS(fd, "    role:%s", RoleText(acl_conn.link_role).c_str());
+                ticks_to_seconds(link.link_super_tout));
+    LOG_DUMPSYS(fd, "    disconnect_reason:0x%02x", link.disconnect_reason);
+
+    if (link.is_transport_br_edr()) {
+      for (int j = 0; j < HCI_EXT_FEATURES_PAGE_MAX + 1; j++) {
+        LOG_DUMPSYS(fd, "    peer_lmp_features[%d] valid:%s data:%s", j,
+                    common::ToString(link.peer_lmp_feature_valid[j]).c_str(),
+                    bd_features_text(link.peer_lmp_feature_pages[j]).c_str());
+      }
+      LOG_DUMPSYS(fd, "    [classic] link_policy:%s",
+                  link_policy_text(static_cast<tLINK_POLICY>(link.link_policy))
+                      .c_str());
+      LOG_DUMPSYS(fd, "    [classic] sniff_subrating:%s",
+                  common::ToString(HCI_SNIFF_SUB_RATE_SUPPORTED(
+                                       link.peer_lmp_feature_pages[0]))
+                      .c_str());
+
+      LOG_DUMPSYS(fd, "    pkt_types_mask:0x%04x", link.pkt_types_mask);
+      LOG_DUMPSYS(fd, "    role:%s", RoleText(link.link_role).c_str());
+    } else if (link.is_transport_ble()) {
+      LOG_DUMPSYS(fd, "    [le] peer_features valid:%s data:%s",
+                  common::ToString(link.peer_le_features_valid).c_str(),
+                  bd_features_text(link.peer_le_features).c_str());
+
+      LOG_DUMPSYS(fd, "    [le] active_remote_addr:%s",
+                  link.active_remote_addr.ToString().c_str());
+      LOG_DUMPSYS(fd, "    [le] conn_addr:%s",
+                  link.conn_addr.ToString().c_str());
+    }
   }
 }
 #undef DUMPSYS_TAG
@@ -937,7 +995,6 @@ void DumpsysRecord(int fd) {
        node = list_next(node)) {
     tBTM_SEC_DEV_REC* p_dev_rec =
         static_cast<tBTM_SEC_DEV_REC*>(list_node(node));
-
     LOG_DUMPSYS(fd, "%03u %s", ++cnt, p_dev_rec->ToString().c_str());
   }
 }
@@ -1173,6 +1230,31 @@ void shim::legacy::Acl::OnConnectFail(hci::Address address,
                                     hci::ErrorCodeText(reason).c_str()));
 }
 
+void shim::legacy::Acl::HACK_OnEscoConnectRequest(hci::Address address,
+                                                  hci::ClassOfDevice cod) {
+  const RawAddress bd_addr = ToRawAddress(address);
+  types::ClassOfDevice legacy_cod;
+  types::ClassOfDevice::FromString(cod.ToLegacyConfigString(), legacy_cod);
+
+  TRY_POSTING_ON_MAIN(acl_interface_.connection.sco.on_esco_connect_request,
+                      bd_addr, legacy_cod);
+  LOG_DEBUG("Received ESCO connect request remote:%s",
+            PRIVATE_ADDRESS(address));
+  BTM_LogHistory(kBtmLogTag, ToRawAddress(address), "ESCO Connection request");
+}
+
+void shim::legacy::Acl::HACK_OnScoConnectRequest(hci::Address address,
+                                                 hci::ClassOfDevice cod) {
+  const RawAddress bd_addr = ToRawAddress(address);
+  types::ClassOfDevice legacy_cod;
+  types::ClassOfDevice::FromString(cod.ToLegacyConfigString(), legacy_cod);
+
+  TRY_POSTING_ON_MAIN(acl_interface_.connection.sco.on_sco_connect_request,
+                      bd_addr, legacy_cod);
+  LOG_DEBUG("Received SCO connect request remote:%s", PRIVATE_ADDRESS(address));
+  BTM_LogHistory(kBtmLogTag, ToRawAddress(address), "SCO Connection request");
+}
+
 void shim::legacy::Acl::OnLeConnectSuccess(
     hci::AddressWithType address_with_type,
     std::unique_ptr<hci::acl_manager::LeAclConnection> connection) {
@@ -1258,38 +1340,14 @@ void shim::legacy::Acl::ConfigureLePrivacy(bool is_le_privacy_enabled) {
 }
 
 void shim::legacy::Acl::DisconnectClassic(uint16_t handle, tHCI_STATUS reason) {
-  auto connection = pimpl_->handle_to_classic_connection_map_.find(handle);
-  if (connection != pimpl_->handle_to_classic_connection_map_.end()) {
-    auto remote_address = connection->second->GetRemoteAddress();
-    connection->second->InitiateDisconnect(
-        ToDisconnectReasonFromLegacy(reason));
-    LOG_DEBUG("Disconnection initiated classic remote:%s handle:%hu",
-              PRIVATE_ADDRESS(remote_address), handle);
-    BTM_LogHistory(kBtmLogTag, ToRawAddress(remote_address),
-                   "Disconnection initiated", "classic");
-  } else {
-    LOG_WARN("Unable to disconnect unknown classic connection handle:0x%04x",
-             handle);
-  }
+  handler_->CallOn(pimpl_.get(), &Acl::impl::disconnect_classic, handle,
+                   reason);
 }
 
 void shim::legacy::Acl::DisconnectLe(uint16_t handle, tHCI_STATUS reason) {
-  auto connection = pimpl_->handle_to_le_connection_map_.find(handle);
-  if (connection != pimpl_->handle_to_le_connection_map_.end()) {
-    auto remote_address_with_type =
-        connection->second->GetRemoteAddressWithType();
-    connection->second->InitiateDisconnect(
-        ToDisconnectReasonFromLegacy(reason));
-    LOG_DEBUG("Disconnection initiated le remote:%s handle:%hu",
-              PRIVATE_ADDRESS(remote_address_with_type), handle);
-    BTM_LogHistory(kBtmLogTag,
-                   ToLegacyAddressWithType(remote_address_with_type),
-                   "Disconnection initiated", "Le");
-  } else {
-    LOG_WARN("Unable to disconnect unknown le connection handle:0x%04x",
-             handle);
-  }
+  handler_->CallOn(pimpl_.get(), &Acl::impl::disconnect_le, handle, reason);
 }
+
 bool shim::legacy::Acl::HoldMode(uint16_t hci_handle, uint16_t max_interval,
                                  uint16_t min_interval) {
   handler_->CallOn(pimpl_.get(), &Acl::impl::HoldMode, hci_handle, max_interval,

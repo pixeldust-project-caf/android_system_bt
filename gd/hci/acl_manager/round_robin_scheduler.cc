@@ -89,7 +89,18 @@ void RoundRobinScheduler::start_round_robin() {
     return;
   }
   if (!fragments_to_send_.empty()) {
+    auto connection_type = fragments_to_send_.front().first;
+    bool classic_buffer_full = acl_packet_credits_ == 0 && connection_type == ConnectionType::CLASSIC;
+    bool le_buffer_full = le_acl_packet_credits_ == 0 && connection_type == ConnectionType::LE;
+    if (classic_buffer_full || le_buffer_full) {
+      LOG_WARN("Buffer of connection_type %d is full", connection_type);
+      return;
+    }
     send_next_fragment();
+    return;
+  }
+  if (acl_queue_handlers_.empty()) {
+    LOG_INFO("No any acl connection");
     return;
   }
 
@@ -205,15 +216,35 @@ void RoundRobinScheduler::incoming_acl_credits(uint16_t handle, uint16_t credits
     LOG_INFO("Dropping %hx received credits to unknown connection 0x%0hx", credits, handle);
     return;
   }
-  acl_queue_handler->second.number_of_sent_packets_ -= credits;
-  if (acl_queue_handler->second.connection_type_ == ConnectionType::CLASSIC) {
-    acl_packet_credits_ += credits;
+
+  if (acl_queue_handler->second.number_of_sent_packets_ >= credits) {
+    acl_queue_handler->second.number_of_sent_packets_ -= credits;
   } else {
-    le_acl_packet_credits_ += credits;
+    LOG_WARN("receive more credits than we sent");
+    acl_queue_handler->second.number_of_sent_packets_ = 0;
   }
-  ASSERT(acl_packet_credits_ <= max_acl_packet_credits_);
-  ASSERT(le_acl_packet_credits_ <= le_max_acl_packet_credits_);
-  if (acl_packet_credits_ == credits || le_acl_packet_credits_ == credits) {
+
+  bool credit_was_zero = false;
+  if (acl_queue_handler->second.connection_type_ == ConnectionType::CLASSIC) {
+    if (acl_packet_credits_ == 0) {
+      credit_was_zero = true;
+    }
+    acl_packet_credits_ += credits;
+    if (acl_packet_credits_ > max_acl_packet_credits_) {
+      acl_packet_credits_ = max_acl_packet_credits_;
+      LOG_WARN("acl packet credits overflow due to receive %hx credits", credits);
+    }
+  } else {
+    if (le_acl_packet_credits_ == 0) {
+      credit_was_zero = true;
+    }
+    le_acl_packet_credits_ += credits;
+    if (le_acl_packet_credits_ > le_max_acl_packet_credits_) {
+      le_acl_packet_credits_ = le_max_acl_packet_credits_;
+      LOG_WARN("le acl packet credits overflow due to receive %hx credits", credits);
+    }
+  }
+  if (credit_was_zero) {
     start_round_robin();
   }
 }

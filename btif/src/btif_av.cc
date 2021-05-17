@@ -20,6 +20,7 @@
 
 #include <base/bind.h>
 #include <base/strings/stringprintf.h>
+#include <frameworks/proto_logging/stats/enums/bluetooth/a2dp/enums.pb.h>
 #include <cstdint>
 #include <future>
 #include <memory>
@@ -27,7 +28,6 @@
 #include <vector>
 
 #include "audio_hal_interface/a2dp_encoding.h"
-#include "audio_hal_interface/hearing_aid_software_encoding.h"
 #include "bta/av/bta_av_int.h"
 #include "btif/include/btif_a2dp.h"
 #include "btif/include/btif_a2dp_control.h"
@@ -39,7 +39,10 @@
 #include "btif/include/btif_profile_queue.h"
 #include "btif/include/btif_rc.h"
 #include "btif/include/btif_util.h"
+#include "btif_metrics_logging.h"
+#include "common/metrics.h"
 #include "common/state_machine.h"
+#include "hardware/bt_av.h"
 #include "include/hardware/bt_rc.h"
 #include "main/shim/dumpsys.h"
 #include "osi/include/properties.h"
@@ -2411,6 +2414,26 @@ static void btif_report_audio_state(const RawAddress& peer_address,
                      base::Bind(btif_av_sink.Callbacks()->audio_state_cb,
                                 peer_address, state));
   }
+
+  using android::bluetooth::a2dp::AudioCodingModeEnum;
+  using android::bluetooth::a2dp::PlaybackStateEnum;
+  PlaybackStateEnum playback_state = PlaybackStateEnum::PLAYBACK_STATE_UNKNOWN;
+  switch (state) {
+    case BTAV_AUDIO_STATE_STARTED:
+      playback_state = PlaybackStateEnum::PLAYBACK_STATE_PLAYING;
+      break;
+    case BTAV_AUDIO_STATE_STOPPED:
+      playback_state = PlaybackStateEnum::PLAYBACK_STATE_NOT_PLAYING;
+      break;
+    default:
+      break;
+  }
+  AudioCodingModeEnum audio_coding_mode =
+      btif_av_is_a2dp_offload_running()
+          ? AudioCodingModeEnum::AUDIO_CODING_MODE_HARDWARE
+          : AudioCodingModeEnum::AUDIO_CODING_MODE_SOFTWARE;
+
+  log_a2dp_playback_event(peer_address, playback_state, audio_coding_mode);
 }
 
 void btif_av_report_source_codec_state(
@@ -2457,18 +2480,23 @@ static void btif_av_report_sink_audio_config_state(
 static void btif_av_query_mandatory_codec_priority(
     const RawAddress& peer_address) {
   auto query_priority = [](const RawAddress& peer_address) {
-    auto apply_priority = [](const RawAddress& peer_address, bool preferred) {
-      BtifAvPeer* peer = btif_av_source_find_peer(peer_address);
-      if (peer == nullptr) {
-        BTIF_TRACE_WARNING(
-            "btif_av_query_mandatory_codec_priority: peer is null");
-        return;
-      }
-      peer->SetMandatoryCodecPreferred(preferred);
-    };
-    bool preferred =
-        btif_av_source.Callbacks()->mandatory_codec_preferred_cb(peer_address);
+    if (!btif_av_source.Enabled()) {
+      LOG_WARN("BTIF AV Source is not enabled");
+      return;
+    }
+    btav_source_callbacks_t* callbacks = btif_av_source.Callbacks();
+    bool preferred = callbacks != nullptr &&
+                     callbacks->mandatory_codec_preferred_cb(peer_address);
     if (preferred) {
+      auto apply_priority = [](const RawAddress& peer_address, bool preferred) {
+        BtifAvPeer* peer = btif_av_find_peer(peer_address);
+        if (peer == nullptr) {
+          BTIF_TRACE_WARNING(
+              "btif_av_query_mandatory_codec_priority: peer is null");
+          return;
+        }
+        peer->SetMandatoryCodecPreferred(preferred);
+      };
       do_in_main_thread(
           FROM_HERE, base::BindOnce(apply_priority, peer_address, preferred));
     }
@@ -3362,7 +3390,7 @@ static void btif_debug_av_peer_dump(int fd, const BtifAvPeer& peer) {
   dprintf(fd, "    Support 3Mbps: %s\n", peer.Is3Mbps() ? "true" : "false");
   dprintf(fd, "    Self Initiated Connection: %s\n",
           peer.SelfInitiatedConnection() ? "true" : "false");
-  dprintf(fd, "    Delay Reporting: %u\n", peer.GetDelayReport());
+  dprintf(fd, "    Delay Reporting: %u (in 1/10 milliseconds) \n", peer.GetDelayReport());
   dprintf(fd, "    Codec Preferred: %s\n",
           peer.IsMandatoryCodecPreferred() ? "Mandatory" : "Optional");
 }

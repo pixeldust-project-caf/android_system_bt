@@ -46,6 +46,7 @@ class HciDeathRecipient : public ::android::hardware::hidl_death_recipient {
  public:
   virtual void serviceDied(uint64_t /*cookie*/, const android::wp<::android::hidl::base::V1_0::IBase>& /*who*/) {
     LOG_ERROR("Bluetooth HAL service died!");
+    common::StopWatch::DumpStopWatchLog();
     abort();
   }
 };
@@ -156,7 +157,6 @@ class HciHalHidl : public HciHal {
   }
 
   void sendHciCommand(HciPacket command) override {
-    common::StopWatch(GetTimerText(__func__, command));
     btsnoop_logger_->Capture(command, SnoopLogger::Direction::OUTGOING, SnoopLogger::PacketType::CMD);
     if (common::init_flags::btaa_hci_is_enabled()) {
       btaa_logger_->Capture(command, SnoopLogger::PacketType::CMD);
@@ -165,7 +165,6 @@ class HciHalHidl : public HciHal {
   }
 
   void sendAclData(HciPacket packet) override {
-    common::StopWatch(GetTimerText(__func__, packet));
     btsnoop_logger_->Capture(packet, SnoopLogger::Direction::OUTGOING, SnoopLogger::PacketType::ACL);
     if (common::init_flags::btaa_hci_is_enabled()) {
       btaa_logger_->Capture(packet, SnoopLogger::PacketType::ACL);
@@ -174,7 +173,6 @@ class HciHalHidl : public HciHal {
   }
 
   void sendScoData(HciPacket packet) override {
-    common::StopWatch(GetTimerText(__func__, packet));
     btsnoop_logger_->Capture(packet, SnoopLogger::Direction::OUTGOING, SnoopLogger::PacketType::SCO);
     if (common::init_flags::btaa_hci_is_enabled()) {
       btaa_logger_->Capture(packet, SnoopLogger::PacketType::SCO);
@@ -188,7 +186,6 @@ class HciHalHidl : public HciHal {
       return;
     }
 
-    common::StopWatch(GetTimerText(__func__, packet));
     btsnoop_logger_->Capture(packet, SnoopLogger::Direction::OUTGOING, SnoopLogger::PacketType::ISO);
     bt_hci_1_1_->sendIsoData(packet);
   }
@@ -242,6 +239,10 @@ class HciHalHidl : public HciHal {
     callbacks_->ResetCallback();
     bt_hci_ = nullptr;
     bt_hci_1_1_ = nullptr;
+  }
+
+  std::string ToString() const override {
+    return std::string("HciHalHidl");
   }
 
  private:

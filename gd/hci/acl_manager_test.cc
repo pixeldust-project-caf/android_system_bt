@@ -26,6 +26,7 @@
 
 #include "common/bind.h"
 #include "hci/address.h"
+#include "hci/class_of_device.h"
 #include "hci/controller.h"
 #include "hci/hci_layer.h"
 #include "os/thread.h"
@@ -119,7 +120,7 @@ class TestHciLayer : public HciLayer {
       std::unique_ptr<CommandBuilder> command,
       common::ContextualOnceCallback<void(CommandStatusView)> on_status) override {
     command_queue_.push(std::move(command));
-    command_status_callbacks.push_front(std::move(on_status));
+    command_status_callbacks.push_back(std::move(on_status));
     if (command_promise_ != nullptr) {
       command_promise_->set_value();
       command_promise_.reset();
@@ -130,7 +131,7 @@ class TestHciLayer : public HciLayer {
       std::unique_ptr<CommandBuilder> command,
       common::ContextualOnceCallback<void(CommandCompleteView)> on_complete) override {
     command_queue_.push(std::move(command));
-    command_complete_callbacks.push_front(std::move(on_complete));
+    command_complete_callbacks.push_back(std::move(on_complete));
     if (command_promise_ != nullptr) {
       command_promise_->set_value();
       command_promise_.reset();
@@ -405,6 +406,9 @@ class AclManagerNoCallbacksTest : public ::testing::Test {
     }
     MOCK_METHOD(void, OnConnectFail, (Address, ErrorCode reason), (override));
 
+    MOCK_METHOD(void, HACK_OnEscoConnectRequest, (Address, ClassOfDevice), (override));
+    MOCK_METHOD(void, HACK_OnScoConnectRequest, (Address, ClassOfDevice), (override));
+
     std::list<std::shared_ptr<ClassicAclConnection>> connections_;
     std::unique_ptr<std::promise<void>> connection_promise_;
   } mock_connection_callback_;
@@ -447,6 +451,8 @@ class AclManagerWithConnectionTest : public AclManagerTest {
     while (!last_command.IsValid()) {
       last_command = test_hci_layer_->GetCommand(OpCode::CREATE_CONNECTION);
     }
+
+    EXPECT_CALL(mock_connection_management_callbacks_, OnRoleChange(hci::ErrorCode::SUCCESS, Role::CENTRAL));
 
     auto first_connection = GetConnectionFuture();
     test_hci_layer_->IncomingEvent(
@@ -514,6 +520,7 @@ class AclManagerWithConnectionTest : public AclManagerTest {
     MOCK_METHOD4(
         OnReadRemoteVersionInformationComplete,
         void(hci::ErrorCode hci_status, uint8_t lmp_version, uint16_t manufacturer_name, uint16_t sub_version));
+    MOCK_METHOD1(OnReadRemoteSupportedFeaturesComplete, void(uint64_t features));
     MOCK_METHOD3(
         OnReadRemoteExtendedFeaturesComplete, void(uint8_t page_number, uint8_t max_page_number, uint64_t features));
   } mock_connection_management_callbacks_;
@@ -1457,6 +1464,30 @@ TEST_F(AclManagerLifeCycleTest, unregister_le_before_enhanced_connection_complet
 
   auto connection_future_status = connection_future.wait_for(kTimeout);
   ASSERT_NE(connection_future_status, std::future_status::ready);
+}
+
+TEST_F(AclManagerWithConnectionTest, remote_sco_connect_request) {
+  ClassOfDevice class_of_device;
+
+  EXPECT_CALL(mock_connection_callback_, HACK_OnScoConnectRequest(remote, class_of_device));
+
+  test_hci_layer_->IncomingEvent(
+      ConnectionRequestBuilder::Create(remote, class_of_device, ConnectionRequestLinkType::SCO));
+  fake_registry_.SynchronizeModuleHandler(&HciLayer::Factory, std::chrono::milliseconds(20));
+  fake_registry_.SynchronizeModuleHandler(&AclManager::Factory, std::chrono::milliseconds(20));
+  fake_registry_.SynchronizeModuleHandler(&HciLayer::Factory, std::chrono::milliseconds(20));
+}
+
+TEST_F(AclManagerWithConnectionTest, remote_esco_connect_request) {
+  ClassOfDevice class_of_device;
+
+  EXPECT_CALL(mock_connection_callback_, HACK_OnEscoConnectRequest(remote, class_of_device));
+
+  test_hci_layer_->IncomingEvent(
+      ConnectionRequestBuilder::Create(remote, class_of_device, ConnectionRequestLinkType::ESCO));
+  fake_registry_.SynchronizeModuleHandler(&HciLayer::Factory, std::chrono::milliseconds(20));
+  fake_registry_.SynchronizeModuleHandler(&AclManager::Factory, std::chrono::milliseconds(20));
+  fake_registry_.SynchronizeModuleHandler(&HciLayer::Factory, std::chrono::milliseconds(20));
 }
 
 }  // namespace

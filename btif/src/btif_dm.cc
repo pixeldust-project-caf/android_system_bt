@@ -81,6 +81,7 @@ using bluetooth::Uuid;
  *****************************************************************************/
 
 const Uuid UUID_HEARING_AID = Uuid::FromString("FDF0");
+const Uuid UUID_VC = Uuid::FromString("1844");
 
 #define COD_MASK 0x07FF
 
@@ -214,7 +215,7 @@ static void btif_dm_ble_oob_req_evt(tBTA_DM_SP_RMT_OOB* req_oob_type);
 static void btif_dm_ble_sc_oob_req_evt(tBTA_DM_SP_RMT_OOB* req_oob_type);
 
 static void bte_scan_filt_param_cfg_evt(uint8_t action_type, uint8_t avbl_space,
-                                        uint8_t ref_value, uint8_t status);
+                                        uint8_t ref_value, uint8_t btm_status);
 
 static char* btif_get_default_local_name();
 
@@ -479,14 +480,16 @@ static void btif_update_remote_version_property(RawAddress* p_bd) {
   uint8_t lmp_ver = 0;
   uint16_t lmp_subver = 0;
   uint16_t mfct_set = 0;
-  bool version_info_valid = false;
   bt_remote_version_t info;
   bt_status_t status;
 
-  version_info_valid =
+  CHECK(p_bd != nullptr);
+
+  const bool version_info_valid =
       BTM_ReadRemoteVersion(*p_bd, &lmp_ver, &mfct_set, &lmp_subver);
 
-  LOG_INFO("remote version info [%s]: %x, %x, %x", p_bd->ToString().c_str(),
+  LOG_INFO("Remote version info valid:%s [%s]: %x, %x, %x",
+           logbool(version_info_valid).c_str(), PRIVATE_ADDRESS((*p_bd)),
            lmp_ver, mfct_set, lmp_subver);
 
   if (version_info_valid) {
@@ -1210,8 +1213,11 @@ static void btif_dm_search_devices_evt(tBTA_DM_SEARCH_EVT event,
     } break;
 
     case BTA_DM_INQ_CMPL_EVT: {
-      BTM_BleAdvFilterParamSetup(BTM_BLE_SCAN_COND_DELETE, 0, nullptr,
-                                 base::Bind(&bte_scan_filt_param_cfg_evt, 0));
+      BTM_BleAdvFilterParamSetup(BTM_BLE_SCAN_COND_DELETE,
+                                 static_cast<tBTM_BLE_PF_FILT_INDEX>(0),
+                                 nullptr,
+                                 base::Bind(&bte_scan_filt_param_cfg_evt,
+                                            btm_status_value(BTM_SUCCESS)));
     } break;
     case BTA_DM_DISC_CMPL_EVT: {
       invoke_discovery_state_changed_cb(BT_DISCOVERY_STOPPED);
@@ -1230,7 +1236,8 @@ static void btif_dm_search_devices_evt(tBTA_DM_SEARCH_EVT event,
         btgatt_filt_param_setup_t adv_filt_param;
         memset(&adv_filt_param, 0, sizeof(btgatt_filt_param_setup_t));
         BTM_BleAdvFilterParamSetup(BTM_BLE_SCAN_COND_DELETE, 0, nullptr,
-                                   base::Bind(&bte_scan_filt_param_cfg_evt, 0));
+                                   base::Bind(&bte_scan_filt_param_cfg_evt,
+                                              btm_status_value(BTM_SUCCESS)));
         invoke_discovery_state_changed_cb(BT_DISCOVERY_STOPPED);
       }
     } break;
@@ -1239,7 +1246,8 @@ static void btif_dm_search_devices_evt(tBTA_DM_SEARCH_EVT event,
 
 /* Returns true if |uuid| should be passed as device property */
 static bool btif_is_interesting_le_service(bluetooth::Uuid uuid) {
-  return uuid.As16Bit() == UUID_SERVCLASS_LE_HID || uuid == UUID_HEARING_AID;
+  return (uuid.As16Bit() == UUID_SERVCLASS_LE_HID || uuid == UUID_HEARING_AID ||
+          uuid == UUID_VC);
 }
 
 /*******************************************************************************
@@ -1776,12 +1784,13 @@ static void bta_energy_info_cb(tBTM_BLE_TX_TIME_MS tx_time,
 
 /* Scan filter param config event */
 static void bte_scan_filt_param_cfg_evt(uint8_t ref_value, uint8_t avbl_space,
-                                        uint8_t action_type, uint8_t status) {
+                                        uint8_t action_type,
+                                        uint8_t btm_status) {
   /* This event occurs on calling BTA_DmBleCfgFilterCondition internally,
   ** and that is why there is no HAL callback
   */
-  if (BTA_SUCCESS != status) {
-    BTIF_TRACE_ERROR("%s, %d", __func__, status);
+  if (btm_status != btm_status_value(BTM_SUCCESS)) {
+    BTIF_TRACE_ERROR("%s, %d", __func__, btm_status);
   } else {
     BTIF_TRACE_DEBUG("%s", __func__);
   }
@@ -1804,8 +1813,9 @@ void btif_dm_start_discovery(void) {
   BTIF_TRACE_EVENT("%s", __func__);
 
   /* Cleanup anything remaining on index 0 */
-  BTM_BleAdvFilterParamSetup(BTM_BLE_SCAN_COND_DELETE, 0, nullptr,
-                             base::Bind(&bte_scan_filt_param_cfg_evt, 0));
+  BTM_BleAdvFilterParamSetup(
+      BTM_BLE_SCAN_COND_DELETE, static_cast<tBTM_BLE_PF_FILT_INDEX>(0), nullptr,
+      base::Bind(&bte_scan_filt_param_cfg_evt, btm_status_value(BTM_SUCCESS)));
 
   auto adv_filt_param = std::make_unique<btgatt_filt_param_setup_t>();
   /* Add an allow-all filter on index 0*/
@@ -1815,9 +1825,10 @@ void btif_dm_start_discovery(void) {
   adv_filt_param->list_logic_type = BTA_DM_BLE_PF_LIST_LOGIC_OR;
   adv_filt_param->rssi_low_thres = LOWEST_RSSI_VALUE;
   adv_filt_param->rssi_high_thres = LOWEST_RSSI_VALUE;
-  BTM_BleAdvFilterParamSetup(BTM_BLE_SCAN_COND_ADD, 0,
-                             std::move(adv_filt_param),
-                             base::Bind(&bte_scan_filt_param_cfg_evt, 0));
+  BTM_BleAdvFilterParamSetup(
+      BTM_BLE_SCAN_COND_ADD, static_cast<tBTM_BLE_PF_FILT_INDEX>(0),
+      std::move(adv_filt_param),
+      base::Bind(&bte_scan_filt_param_cfg_evt, btm_status_value(BTM_SUCCESS)));
 
   /* Will be enabled to true once inquiry busy level has been received */
   btif_dm_inquiry_in_progress = false;
@@ -2252,37 +2263,27 @@ void btif_dm_load_local_oob(void) {
   }
 }
 
-void btif_dm_proc_loc_oob(bool valid, const Octet16& c, const Octet16& r) {
-  FILE* fp;
-  const char* path_a = "/data/misc/bluedroid/LOCAL/a.key";
-  const char* path_b = "/data/misc/bluedroid/LOCAL/b.key";
-  const char* path = NULL;
-  char prop_oob[PROPERTY_VALUE_MAX];
-  BTIF_TRACE_DEBUG("%s: valid=%d", __func__, valid);
-  if (is_empty_128bit(oob_cb.p192_data.c) && valid) {
-    BTIF_TRACE_DEBUG("save local OOB data in memory");
-    memcpy(oob_cb.p192_data.c, c.data(), OCTET16_LEN);
-    memcpy(oob_cb.p192_data.r, r.data(), OCTET16_LEN);
-    osi_property_get("service.brcm.bt.oob", prop_oob, "3");
-    BTIF_TRACE_DEBUG("%s: prop_oob = %s", __func__, prop_oob);
-    if (prop_oob[0] == '1')
-      path = path_a;
-    else if (prop_oob[0] == '2')
-      path = path_b;
-    if (path) {
-      fp = fopen(path, "wb+");
-      if (fp == NULL) {
-        BTIF_TRACE_DEBUG("%s: failed to save local OOB data to %s", __func__,
-                         path);
-      } else {
-        BTIF_TRACE_DEBUG("%s: save local OOB data into file %s", __func__,
-                         path);
-        fwrite(c.data(), 1, OCTET16_LEN, fp);
-        fwrite(r.data(), 1, OCTET16_LEN, fp);
-        fclose(fp);
-      }
-    }
+/*******************************************************************************
+ *
+ * Function         btif_dm_generate_local_oob_data
+ *
+ * Description      Initiate oob data fetch from controller
+ *
+ * Parameters       transport; Classic or LE
+ *
+ ******************************************************************************/
+void btif_dm_generate_local_oob_data(tBT_TRANSPORT transport) {
+  if (transport == BT_TRANSPORT_BR_EDR) {
+    BTM_ReadLocalOobData();
+  } else if (transport == BT_TRANSPORT_LE) {
+    // TODO(184377951): Call LE Implementation (not yet implemented?)
+  } else {
+    BTIF_TRACE_ERROR("Bad transport type! %d", transport);
   }
+}
+
+void btif_dm_proc_loc_oob(bool valid, const Octet16& c, const Octet16& r) {
+  invoke_oob_data_request_cb(BT_TRANSPORT_BR_EDR, valid, c, r);
 }
 
 /*******************************************************************************

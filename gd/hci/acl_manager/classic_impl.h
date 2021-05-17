@@ -166,6 +166,26 @@ struct classic_impl : public security::ISecurityManagerListener {
       this->reject_connection(RejectConnectionRequestBuilder::Create(address, reason));
       return;
     }
+
+    switch (request.GetLinkType()) {
+      case ConnectionRequestLinkType::SCO:
+        client_handler_->CallOn(
+            client_callbacks_, &ConnectionCallbacks::HACK_OnScoConnectRequest, address, request.GetClassOfDevice());
+        return;
+
+      case ConnectionRequestLinkType::ACL:
+        break;
+
+      case ConnectionRequestLinkType::ESCO:
+        client_handler_->CallOn(
+            client_callbacks_, &ConnectionCallbacks::HACK_OnEscoConnectRequest, address, request.GetClassOfDevice());
+        return;
+
+      case ConnectionRequestLinkType::UNKNOWN:
+        LOG_ERROR("Request has unknown ConnectionRequestLinkType.");
+        return;
+    }
+
     incoming_connecting_address_ = address;
     if (is_classic_link_already_connected(address)) {
       auto reason = RejectConnectionReason::UNACCEPTABLE_BD_ADDR;
@@ -224,6 +244,11 @@ struct classic_impl : public security::ISecurityManagerListener {
       outgoing_connecting_address_ = Address::kEmpty;
     } else {
       locally_initiated = false;
+      if (incoming_connecting_address_ != address && status == ErrorCode::UNKNOWN_CONNECTION) {
+        LOG_WARN("No matching connection to %s (%s)", address.ToString().c_str(), ErrorCodeText(status).c_str());
+        LOG_WARN("Firmware error after RemoteNameRequestCancel?");
+        return;
+      }
       ASSERT_LOG(incoming_connecting_address_ == address, "No prior connection request for %s",
                  address.ToString().c_str());
       incoming_connecting_address_ = Address::kEmpty;
@@ -553,7 +578,7 @@ struct classic_impl : public security::ISecurityManagerListener {
       ASSERT(!crash_on_unknown_handle_);
       return;
     }
-    callbacks->OnReadRemoteExtendedFeaturesComplete(0, 1, view.GetLmpFeatures());
+    callbacks->OnReadRemoteSupportedFeaturesComplete(view.GetLmpFeatures());
   }
 
   void on_read_remote_extended_features_complete(EventView packet) {

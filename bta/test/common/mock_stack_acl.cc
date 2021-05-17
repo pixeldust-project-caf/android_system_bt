@@ -281,10 +281,13 @@ void acl_disconnect_after_role_switch(uint16_t conn_handle,
 void acl_disconnect_from_handle(uint16_t handle, tHCI_STATUS reason) {
   mock_function_count_map[__func__]++;
 }
-void acl_link_segments_xmitted(BT_HDR* p_msg) {
+void acl_link_segments_xmitted(BT_HDR_RIGID* p_msg) {
   mock_function_count_map[__func__]++;
 }
 void acl_packets_completed(uint16_t handle, uint16_t credits) {
+  mock_function_count_map[__func__]++;
+}
+void acl_process_supported_features(uint16_t handle, uint64_t features) {
   mock_function_count_map[__func__]++;
 }
 void acl_process_extended_features(uint16_t handle, uint8_t current_page_number,
@@ -294,7 +297,9 @@ void acl_process_extended_features(uint16_t handle, uint8_t current_page_number,
 void acl_process_num_completed_pkts(uint8_t* p, uint8_t evt_len) {
   mock_function_count_map[__func__]++;
 }
-void acl_rcv_acl_data(BT_HDR* p_msg) { mock_function_count_map[__func__]++; }
+void acl_rcv_acl_data(BT_HDR_RIGID* p_msg) {
+  mock_function_count_map[__func__]++;
+}
 void acl_reject_connection_request(const RawAddress& bd_addr, uint8_t reason) {
   mock_function_count_map[__func__]++;
 }
@@ -366,7 +371,7 @@ void btm_establish_continue_from_address(const RawAddress& bda,
   mock_function_count_map[__func__]++;
 }
 void btm_process_remote_ext_features(tACL_CONN* p_acl_cb,
-                                     uint8_t num_read_pages) {
+                                     uint8_t max_page_number) {
   mock_function_count_map[__func__]++;
 }
 void btm_process_remote_version_complete(uint8_t status, uint16_t handle,

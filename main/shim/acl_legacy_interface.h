@@ -21,6 +21,7 @@
 #include "stack/include/hci_error_code.h"
 #include "stack/include/hcidefs.h"
 #include "types/ble_address_with_type.h"
+#include "types/class_of_device.h"
 #include "types/hci_role.h"
 #include "types/raw_address.h"
 
@@ -49,6 +50,10 @@ typedef struct {
 } acl_le_connection_interface_t;
 
 typedef struct {
+  void (*on_esco_connect_request)(const RawAddress&,
+                                  const types::ClassOfDevice&);
+  void (*on_sco_connect_request)(const RawAddress&,
+                                 const types::ClassOfDevice&);
   void (*on_disconnected)(uint16_t handle, tHCI_REASON reason);
 } acl_sco_connection_interface_t;
 
@@ -86,6 +91,8 @@ typedef struct {
   void (*on_read_link_quality_complete)(uint8_t link_quality);
   void (*on_read_link_supervision_timeout_complete)(
       uint16_t link_supervision_timeout);
+  void (*on_read_remote_supported_features_complete)(uint16_t handle,
+                                                     uint64_t features);
   void (*on_read_remote_extended_features_complete)(uint16_t handle,
                                                     uint8_t current_page_number,
                                                     uint8_t max_page_number,
