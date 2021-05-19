@@ -370,8 +370,8 @@ void gatt_profile_db_init(void) {
   tmp.fill(0x81);
 
   /* Create a GATT profile service */
-  gatt_cb.gatt_if =
-      GATT_Register(Uuid::From128BitBE(tmp), &gatt_profile_cback, false);
+  gatt_cb.gatt_if = GATT_Register(Uuid::From128BitBE(tmp), "GattProfileDb",
+                                  &gatt_profile_cback, false);
   GATT_StartIf(gatt_cb.gatt_if);
 
   Uuid service_uuid = Uuid::From16Bit(UUID_SERVCLASS_GATT_SERVER);
@@ -572,7 +572,8 @@ static void gatt_cl_op_cmpl_cback(uint16_t conn_id, tGATTC_OPTYPE op,
                                   tGATT_CL_COMPLETE* p_data) {
   auto iter = OngoingOps.find(conn_id);
 
-  VLOG(1) << __func__ << " opcode: " << loghex(op) << " status: " << status
+  VLOG(1) << __func__ << " opcode: " << loghex(static_cast<uint8_t>(op))
+          << " status: " << status
           << " conn id: " << loghex(static_cast<uint8_t>(conn_id));
 
   if (op != GATTC_OPTYPE_READ) return;
