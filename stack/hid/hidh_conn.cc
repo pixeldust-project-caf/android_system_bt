@@ -45,6 +45,7 @@
 
 namespace {
 constexpr char kBtmLogTag[] = "HIDH";
+constexpr uint8_t kHID_HOST_MAX_DEVICES = HID_HOST_MAX_DEVICES;
 }
 
 static uint8_t find_conn_by_cid(uint16_t cid);
@@ -115,7 +116,7 @@ tHID_STATUS hidh_conn_reg(void) {
     return (HID_ERR_L2CAP_FAILED);
   }
 
-  for (xx = 0; xx < HID_HOST_MAX_DEVICES; xx++) {
+  for (xx = 0; xx < kHID_HOST_MAX_DEVICES; xx++) {
     hh_cb.devices[xx].in_use = false;
     hh_cb.devices[xx].conn.conn_state = HID_CONN_STATE_UNUSED;
   }
@@ -148,7 +149,8 @@ tHID_STATUS hidh_conn_disconnect(uint8_t dhandle) {
     else if (p_hcon->ctrl_cid)
       hidh_l2cif_disconnect(p_hcon->ctrl_cid);
 
-    BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Disconnecting");
+    BTM_LogHistory(kBtmLogTag, hh_cb.devices[dhandle].addr, "Disconnecting",
+                   "local initiated");
   } else {
     p_hcon->conn_state = HID_CONN_STATE_UNUSED;
   }
@@ -169,9 +171,8 @@ tHID_STATUS hidh_conn_disconnect(uint8_t dhandle) {
 static void hidh_l2cif_connect_ind(const RawAddress& bd_addr,
                                    uint16_t l2cap_cid, uint16_t psm,
                                    uint8_t l2cap_id) {
-  tHID_CONN* p_hcon;
   bool bAccept = true;
-  uint8_t i = HID_HOST_MAX_DEVICES;
+  uint8_t i = kHID_HOST_MAX_DEVICES;
 
   HIDH_TRACE_EVENT("HID-Host Rcvd L2CAP conn ind, PSM: 0x%04x  CID 0x%x", psm,
                    l2cap_cid);
@@ -182,7 +183,7 @@ static void hidh_l2cif_connect_ind(const RawAddress& bd_addr,
     return;
   }
 
-  p_hcon = &hh_cb.devices[i].conn;
+  tHID_CONN* p_hcon = &hh_cb.devices[i].conn;
 
   BTM_LogHistory(
       kBtmLogTag, hh_cb.devices[i].addr, "Connect request",
@@ -270,6 +271,12 @@ static void hidh_try_repage(uint8_t dhandle) {
 
 static void hidh_on_l2cap_error(uint16_t l2cap_cid, uint16_t result) {
   auto dhandle = find_conn_by_cid(l2cap_cid);
+  if (dhandle == kHID_HOST_MAX_DEVICES) {
+    LOG_WARN("Received error for unknown device cid:0x%04x reason:%s",
+             l2cap_cid,
+             hci_reason_code_text(to_hci_reason_code(result)).c_str());
+    return;
+  }
 
   hidh_conn_disconnect(dhandle);
 
@@ -312,7 +319,7 @@ static void hidh_l2cif_connect_cfm(uint16_t l2cap_cid, uint16_t result) {
   /* Find CCB based on CID, and verify we are in a state to accept this message
    */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < HID_HOST_MAX_DEVICES) {
+  if (dhandle < kHID_HOST_MAX_DEVICES) {
     p_dev = &hh_cb.devices[dhandle];
     p_hcon = &hh_cb.devices[dhandle].conn;
   }
@@ -369,7 +376,7 @@ static void hidh_l2cif_config_ind(uint16_t l2cap_cid, tL2CAP_CFG_INFO* p_cfg) {
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < HID_HOST_MAX_DEVICES) {
+  if (dhandle < kHID_HOST_MAX_DEVICES) {
     p_hcon = &hh_cb.devices[dhandle].conn;
   }
 
@@ -410,7 +417,7 @@ static void hidh_l2cif_config_cfm(uint16_t l2cap_cid, uint16_t initiator,
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < HID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
+  if (dhandle < kHID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
 
   if (p_hcon == NULL) {
     HIDH_TRACE_WARNING("HID-Host Rcvd L2CAP cfg ind, unknown CID: 0x%x",
@@ -483,7 +490,7 @@ static void hidh_l2cif_disconnect_ind(uint16_t l2cap_cid, bool ack_needed) {
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < HID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
+  if (dhandle < kHID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
 
   if (p_hcon == NULL) {
     HIDH_TRACE_WARNING("HID-Host Rcvd L2CAP disc, unknown CID: 0x%x",
@@ -496,8 +503,9 @@ static void hidh_l2cif_disconnect_ind(uint16_t l2cap_cid, bool ack_needed) {
   p_hcon->conn_state = HID_CONN_STATE_DISCONNECTING;
   BTM_LogHistory(
       kBtmLogTag, hh_cb.devices[dhandle].addr, "Disconnecting",
-      base::StringPrintf(
-          "%s", (l2cap_cid == p_hcon->ctrl_cid) ? "control" : "interrupt"));
+      base::StringPrintf("%s channel", (l2cap_cid == p_hcon->ctrl_cid)
+                                           ? "control"
+                                           : "interrupt"));
 
   if (l2cap_cid == p_hcon->ctrl_cid)
     p_hcon->ctrl_cid = 0;
@@ -552,7 +560,7 @@ static void hidh_l2cif_disconnect(uint16_t l2cap_cid) {
 
   /* Find CCB based on CID */
   const uint8_t dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle == HID_HOST_MAX_DEVICES) {
+  if (dhandle == kHID_HOST_MAX_DEVICES) {
     LOG_WARN("HID-Host Rcvd L2CAP disc cfm, unknown CID: 0x%x", l2cap_cid);
     return;
   }
@@ -593,7 +601,7 @@ static void hidh_l2cif_cong_ind(uint16_t l2cap_cid, bool congested) {
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < HID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
+  if (dhandle < kHID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
 
   if (p_hcon == NULL) {
     HIDH_TRACE_WARNING(
@@ -638,7 +646,7 @@ static void hidh_l2cif_data_ind(uint16_t l2cap_cid, BT_HDR* p_msg) {
 
   /* Find CCB based on CID */
   dhandle = find_conn_by_cid(l2cap_cid);
-  if (dhandle < HID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
+  if (dhandle < kHID_HOST_MAX_DEVICES) p_hcon = &hh_cb.devices[dhandle].conn;
 
   if (p_hcon == NULL) {
     HIDH_TRACE_WARNING("HID-Host Rcvd L2CAP data, unknown CID: 0x%x",
@@ -876,15 +884,16 @@ tHID_STATUS hidh_conn_initiate(uint8_t dhandle) {
  *
  * Function         find_conn_by_cid
  *
- * Description      This function finds a connection control block based on CID
+ * Description      This function finds a connection control block based on CID.
  *
- * Returns          address of control block, or NULL if not found
+ * Returns          index of control block, or kHID_HOST_MAX_DEVICES if not
+ *                  found.
  *
  ******************************************************************************/
 static uint8_t find_conn_by_cid(uint16_t cid) {
   uint8_t xx;
 
-  for (xx = 0; xx < HID_HOST_MAX_DEVICES; xx++) {
+  for (xx = 0; xx < kHID_HOST_MAX_DEVICES; xx++) {
     if ((hh_cb.devices[xx].in_use) &&
         (hh_cb.devices[xx].conn.conn_state != HID_CONN_STATE_UNUSED) &&
         ((hh_cb.devices[xx].conn.ctrl_cid == cid) ||

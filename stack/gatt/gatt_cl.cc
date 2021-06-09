@@ -29,11 +29,11 @@
 #include "bt_common.h"
 #include "bt_target.h"
 #include "bt_utils.h"
-#include "eatt.h"
 #include "gatt_int.h"
 #include "l2c_api.h"
 #include "osi/include/log.h"
 #include "osi/include/osi.h"
+#include "stack/eatt/eatt.h"
 
 #define GATT_WRITE_LONG_HDR_SIZE 5 /* 1 opcode + 2 handle + 2 offset */
 #define GATT_READ_CHAR_VALUE_HDL (GATT_READ_CHAR_VALUE | 0x80)
@@ -626,9 +626,9 @@ void gatt_process_notification(tGATT_TCB& tcb, uint16_t cid, uint8_t op_code,
   tGATT_STATUS encrypt_status;
   uint8_t* p = p_data;
   uint8_t i;
-  uint8_t event = (op_code == GATT_HANDLE_VALUE_IND)
-                      ? GATTC_OPTYPE_INDICATION
-                      : GATTC_OPTYPE_NOTIFICATION;
+  tGATTC_OPTYPE event = (op_code == GATT_HANDLE_VALUE_IND)
+                            ? GATTC_OPTYPE_INDICATION
+                            : GATTC_OPTYPE_NOTIFICATION;
 
   VLOG(1) << __func__;
 

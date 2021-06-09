@@ -278,13 +278,15 @@ struct HciLayer::impl {
   }
 
   void handle_root_inflammation(uint8_t vse_error_reason) {
+    LOG_ERROR("Received a Root Inflammation Event vendor reason 0x%02hhx, scheduling an abort",
+              vse_error_reason);
+    bluetooth::os::LogMetricBluetoothHalCrashReason(Address::kEmpty, 0, vse_error_reason);
     // Add Logging for crash reason
     if (hci_timeout_alarm_ != nullptr) {
       hci_timeout_alarm_->Cancel();
       delete hci_timeout_alarm_;
       hci_timeout_alarm_ = nullptr;
     }
-    LOG_ERROR("Received a Root Inflammation Event, scheduling an abort");
     if (hci_abort_alarm_ == nullptr) {
       hci_abort_alarm_ = new Alarm(module_.GetHandler());
       hci_abort_alarm_->Schedule(BindOnce(&abort_after_root_inflammation, vse_error_reason), kHciTimeoutRestartMs);
@@ -299,11 +301,15 @@ struct HciLayer::impl {
     EventCode event_code = event.GetEventCode();
     // Root Inflamation is a special case, since it aborts here
     if (event_code == EventCode::VENDOR_SPECIFIC) {
-      auto inflammation = BqrRootInflammationEventView::Create(
-          BqrLinkQualityEventView::Create(BqrEventView::Create(VendorSpecificEventView::Create(event))));
-      if (inflammation.IsValid()) {
-        handle_root_inflammation(inflammation.GetVendorSpecificErrorCode());
-        return;
+      auto view = VendorSpecificEventView::Create(event);
+      ASSERT(view.IsValid());
+      if (view.GetSubeventCode() == VseSubeventCode::BQR_EVENT) {
+        auto bqr_quality_view = BqrLinkQualityEventView::Create(BqrEventView::Create(view));
+        auto inflammation = BqrRootInflammationEventView::Create(bqr_quality_view);
+        if (bqr_quality_view.IsValid() && inflammation.IsValid()) {
+          handle_root_inflammation(inflammation.GetVendorSpecificErrorCode());
+          return;
+        }
       }
     }
     if (event_handlers_.find(event_code) == event_handlers_.end()) {

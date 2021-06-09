@@ -307,14 +307,15 @@ static void bta_hh_di_sdp_cback(tSDP_RESULT result) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_start_sdp(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_start_sdp(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   tBTA_HH_STATUS status = BTA_HH_ERR_SDP;
   uint8_t hdl;
 
   p_cb->mode = p_data->api_conn.mode;
   bta_hh_cb.p_cur = p_cb;
 
-  if (bta_hh_is_le_device(p_cb, p_data->api_conn.bd_addr)) {
+  if (BTM_UseLeLink(p_data->api_conn.bd_addr)) {
+    p_cb->is_le_device = true;
     bta_hh_le_open_conn(p_cb, p_data->api_conn.bd_addr);
     return;
   }
@@ -388,7 +389,7 @@ void bta_hh_start_sdp(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_sdp_cmpl(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_sdp_cmpl(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   CHECK(p_data != nullptr);
 
   tBTA_HH_CONN conn_dat;
@@ -471,7 +472,8 @@ void bta_hh_sdp_cmpl(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_api_disc_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+extern void btif_hh_remove_device(RawAddress bd_addr);
+void bta_hh_api_disc_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   CHECK(p_cb != nullptr);
 
   if (p_cb->is_le_device) {
@@ -479,8 +481,6 @@ void bta_hh_api_disc_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
               PRIVATE_ADDRESS(p_cb->addr));
 
     bta_hh_le_api_disc_act(p_cb);
-    BTM_LogHistory(kBtmLogTag, p_cb->addr, "Closed",
-                   base::StringPrintf("le local initiated"));
 
   } else {
     const uint8_t hid_handle =
@@ -500,9 +500,6 @@ void bta_hh_api_disc_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
                        .handle = hid_handle},
     };
     (*bta_hh_cb.p_cback)(BTA_HH_CLOSE_EVT, &bta_hh);
-    BTM_LogHistory(kBtmLogTag, p_cb->addr, "Closed",
-                   base::StringPrintf("classic local reason %s",
-                                      hid_status_text(status).c_str()));
   }
 }
 
@@ -516,7 +513,7 @@ void bta_hh_api_disc_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   tBTA_HH_CONN conn;
   uint8_t dev_handle =
       p_data ? (uint8_t)p_data->hid_cback.hdr.layer_specific : p_cb->hid_handle;
@@ -539,7 +536,7 @@ void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
   BTM_LogHistory(kBtmLogTag, p_cb->addr, "Opened",
                  base::StringPrintf(
                      "%s initiator:%s", (p_cb->is_le_device) ? "le" : "classic",
-                     (p_cb->incoming_conn) ? "local" : "remote"));
+                     (p_cb->incoming_conn) ? "remote" : "local"));
 
   if (!p_cb->is_le_device)
   {
@@ -576,7 +573,7 @@ void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_open_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_open_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   tBTA_HH_API_CONN conn_data;
 
   uint8_t dev_handle =
@@ -614,7 +611,7 @@ void bta_hh_open_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_data_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_data_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   BT_HDR* pdata = p_data->hid_cback.p_data;
   uint8_t* p_rpt = (uint8_t*)(pdata + 1) + pdata->offset;
 
@@ -635,7 +632,7 @@ void bta_hh_data_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_handsk_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_handsk_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   APPL_TRACE_DEBUG("HANDSHAKE received for: event = %s data= %d",
                    bta_hh_get_w4_event(p_cb->w4_evt), p_data->hid_cback.data);
 
@@ -706,7 +703,7 @@ void bta_hh_handsk_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_ctrl_dat_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_ctrl_dat_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   BT_HDR* pdata = p_data->hid_cback.p_data;
   uint8_t* data = (uint8_t*)(pdata + 1) + pdata->offset;
   tBTA_HH_HSDATA hs_data;
@@ -775,7 +772,7 @@ void bta_hh_ctrl_dat_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_open_failure(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_open_failure(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   tBTA_HH_CONN conn_dat;
   uint32_t reason = p_data->hid_cback.data; /* Reason for closing (32-bit) */
 
@@ -814,7 +811,7 @@ void bta_hh_open_failure(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_close_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_close_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   tBTA_HH_CONN conn_dat;
   tBTA_HH_CBDATA disc_dat = {BTA_HH_OK, 0};
 
@@ -906,7 +903,7 @@ void bta_hh_close_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
  *
  ******************************************************************************/
 void bta_hh_get_dscp_act(tBTA_HH_DEV_CB* p_cb,
-                         UNUSED_ATTR tBTA_HH_DATA* p_data) {
+                         UNUSED_ATTR const tBTA_HH_DATA* p_data) {
   if (p_cb->is_le_device) {
     bta_hh_le_get_dscp_act(p_cb);
   } else
@@ -923,8 +920,8 @@ void bta_hh_get_dscp_act(tBTA_HH_DEV_CB* p_cb,
  * Returns          void
  *
  ******************************************************************************/
-void bta_hh_maint_dev_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
-  tBTA_HH_MAINT_DEV* p_dev_info = &p_data->api_maintdev;
+void bta_hh_maint_dev_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
+  const tBTA_HH_MAINT_DEV* p_dev_info = &p_data->api_maintdev;
   tBTA_HH_DEV_INFO dev_info;
   uint8_t dev_handle;
 
@@ -936,7 +933,8 @@ void bta_hh_maint_dev_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
       dev_info.bda = p_dev_info->bda;
       /* initialize callback data */
       if (p_cb->hid_handle == BTA_HH_INVALID_HANDLE) {
-        if (bta_hh_is_le_device(p_cb, p_data->api_conn.bd_addr)) {
+        if (BTM_UseLeLink(p_data->api_conn.bd_addr)) {
+          p_cb->is_le_device = true;
           dev_info.handle = bta_hh_le_add_device(p_cb, p_dev_info);
           if (dev_info.handle != BTA_HH_INVALID_HANDLE)
             dev_info.status = BTA_HH_OK;
@@ -1014,7 +1012,7 @@ static uint8_t convert_api_sndcmd_param(const tBTA_HH_CMD_DATA& api_sndcmd) {
   return api_sndcmd_param;
 }
 
-void bta_hh_write_dev_act(tBTA_HH_DEV_CB* p_cb, tBTA_HH_DATA* p_data) {
+void bta_hh_write_dev_act(tBTA_HH_DEV_CB* p_cb, const tBTA_HH_DATA* p_data) {
   tBTA_HH_CBDATA cbdata = {BTA_HH_OK, 0};
   uint16_t event = (p_data->api_sndcmd.t_type - BTA_HH_FST_BTE_TRANS_EVT) +
                    BTA_HH_FST_TRANS_CB_EVT;

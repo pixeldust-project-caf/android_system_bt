@@ -270,12 +270,13 @@ typedef uint8_t tBTM_EIR_SEARCH_RESULT;
 /* 0x0A */
 #define BTM_EIR_TX_POWER_LEVEL_TYPE HCI_EIR_TX_POWER_LEVEL_TYPE
 
-#define BTM_BLE_SEC_NONE 0
-/* encrypt the link using current key */
-#define BTM_BLE_SEC_ENCRYPT 1
-#define BTM_BLE_SEC_ENCRYPT_NO_MITM 2
-#define BTM_BLE_SEC_ENCRYPT_MITM 3
-typedef uint8_t tBTM_BLE_SEC_ACT;
+typedef enum : uint8_t {
+  BTM_BLE_SEC_NONE = 0,
+  /* encrypt the link using current key */
+  BTM_BLE_SEC_ENCRYPT = 1,
+  BTM_BLE_SEC_ENCRYPT_NO_MITM = 2,
+  BTM_BLE_SEC_ENCRYPT_MITM = 3,
+} tBTM_BLE_SEC_ACT;
 
 /*******************************************************************************
  * BTM Services MACROS handle array of uint32_t bits for more than 32 services
@@ -771,11 +772,9 @@ typedef void(tBTM_BOND_CANCEL_CMPL_CALLBACK)(tBTM_STATUS result);
 #define BTM_LE_SC_OOB_REQ_EVT SMP_SC_OOB_REQ_EVT
 /* SC OOB local data set is created (as result of SMP_CrLocScOobData(...)) */
 #define BTM_LE_SC_LOC_OOB_EVT SMP_SC_LOC_OOB_DATA_UP_EVT
-/* SMP over BR keys request event */
-#define BTM_LE_BR_KEYS_REQ_EVT SMP_BR_KEYS_REQ_EVT
 /* SMP complete event */
 #define BTM_LE_COMPLT_EVT SMP_COMPLT_EVT
-#define BTM_LE_LAST_FROM_SMP BTM_LE_BR_KEYS_REQ_EVT
+#define BTM_LE_LAST_FROM_SMP SMP_BR_KEYS_REQ_EVT
 /* KEY update event */
 #define BTM_LE_KEY_EVT (BTM_LE_LAST_FROM_SMP + 1)
 #define BTM_LE_CONSENT_REQ_EVT SMP_CONSENT_REQ_EVT

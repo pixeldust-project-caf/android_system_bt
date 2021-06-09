@@ -29,7 +29,6 @@
  * interfaces may be made here
  */
 
-#include "gd/shim/only_include_this_file_into_legacy_stack___ever.h"
 #include "osi/include/future.h"
 
 namespace bluetooth {
@@ -52,6 +51,7 @@ class HciLayer;
 class AclManager;
 class LeAdvertisingManager;
 class LeScanningManager;
+class VendorSpecificEventManager;
 }
 
 namespace l2cap {
@@ -71,6 +71,7 @@ class StorageModule;
 }
 
 namespace shim {
+class Dumpsys;
 
 /* This returns a handler that might be used in shim to receive callbacks from
  * within the stack. */
@@ -90,6 +91,7 @@ hci::LeScanningManager* GetScanning();
 bluetooth::security::SecurityModule* GetSecurityModule();
 storage::StorageModule* GetStorage();
 hci::AclManager* GetAclManager();
+hci::VendorSpecificEventManager* GetVendorSpecificEventManager();
 activity_attribution::ActivityAttribution* GetActivityAttribution();
 
 }  // namespace shim

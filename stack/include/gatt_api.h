@@ -207,27 +207,30 @@ typedef enum : uint16_t {
   GATT_CONN_TERMINATE_LOCAL_HOST = HCI_ERR_CONN_CAUSE_LOCAL_HOST,
   /* 0x22 connection fail for LMP response tout */
   GATT_CONN_LMP_TIMEOUT = HCI_ERR_LMP_RESPONSE_TIMEOUT,
+
+  BTA_GATT_CONN_NONE = 0x0101, /* 0x0101 no connection to cancel  */
+
 } tGATT_DISCONN_REASON;
+
+#define CASE_RETURN_TEXT(code) \
+  case code:                   \
+    return #code
 
 inline std::string gatt_disconnection_reason_text(
     const tGATT_DISCONN_REASON& reason) {
   switch (reason) {
-    case GATT_CONN_OK:
-      return std::string("ok/unknown");
-    case GATT_CONN_L2C_FAILURE:
-      return std::string("l2cap_failure");
-    case GATT_CONN_TIMEOUT:
-      return std::string("timeout");
-    case GATT_CONN_TERMINATE_PEER_USER:
-      return std::string("remote_terminated");
-    case GATT_CONN_TERMINATE_LOCAL_HOST:
-      return std::string("local_terminated");
-    case GATT_CONN_LMP_TIMEOUT:
-      return std::string("lmp_response_timeout");
+    CASE_RETURN_TEXT(GATT_CONN_OK);
+    CASE_RETURN_TEXT(GATT_CONN_L2C_FAILURE);
+    CASE_RETURN_TEXT(GATT_CONN_TIMEOUT);
+    CASE_RETURN_TEXT(GATT_CONN_TERMINATE_PEER_USER);
+    CASE_RETURN_TEXT(GATT_CONN_TERMINATE_LOCAL_HOST);
+    CASE_RETURN_TEXT(GATT_CONN_LMP_TIMEOUT);
+    CASE_RETURN_TEXT(BTA_GATT_CONN_NONE);
     default:
-      return base::StringPrintf("UNKNOWN:[0x%04hx]", reason);
+      return std::string("UNKNOWN[%hu]", reason);
   }
 }
+#undef CASE_RETURN_TEXT
 
 /* MAX GATT MTU size
 */
@@ -573,15 +576,16 @@ typedef union {
 
 /* GATT client operation type, used in client callback function
 */
-#define GATTC_OPTYPE_NONE 0
-#define GATTC_OPTYPE_DISCOVERY 1
-#define GATTC_OPTYPE_READ 2
-#define GATTC_OPTYPE_WRITE 3
-#define GATTC_OPTYPE_EXE_WRITE 4
-#define GATTC_OPTYPE_CONFIG 5
-#define GATTC_OPTYPE_NOTIFICATION 6
-#define GATTC_OPTYPE_INDICATION 7
-typedef uint8_t tGATTC_OPTYPE;
+typedef enum : uint8_t {
+  GATTC_OPTYPE_NONE = 0,
+  GATTC_OPTYPE_DISCOVERY = 1,
+  GATTC_OPTYPE_READ = 2,
+  GATTC_OPTYPE_WRITE = 3,
+  GATTC_OPTYPE_EXE_WRITE = 4,
+  GATTC_OPTYPE_CONFIG = 5,
+  GATTC_OPTYPE_NOTIFICATION = 6,
+  GATTC_OPTYPE_INDICATION = 7,
+} tGATTC_OPTYPE;
 
 /* characteristic declaration
 */
@@ -680,15 +684,15 @@ typedef void(tGATT_CONN_UPDATE_CB)(tGATT_IF gatt_if, uint16_t conn_id,
  * MUST be provided.
 */
 typedef struct {
-  tGATT_CONN_CBACK* p_conn_cb;
-  tGATT_CMPL_CBACK* p_cmpl_cb;
-  tGATT_DISC_RES_CB* p_disc_res_cb;
-  tGATT_DISC_CMPL_CB* p_disc_cmpl_cb;
-  tGATT_REQ_CBACK* p_req_cb;
-  tGATT_ENC_CMPL_CB* p_enc_cmpl_cb;
-  tGATT_CONGESTION_CBACK* p_congestion_cb;
-  tGATT_PHY_UPDATE_CB* p_phy_update_cb;
-  tGATT_CONN_UPDATE_CB* p_conn_update_cb;
+  tGATT_CONN_CBACK* p_conn_cb{nullptr};
+  tGATT_CMPL_CBACK* p_cmpl_cb{nullptr};
+  tGATT_DISC_RES_CB* p_disc_res_cb{nullptr};
+  tGATT_DISC_CMPL_CB* p_disc_cmpl_cb{nullptr};
+  tGATT_REQ_CBACK* p_req_cb{nullptr};
+  tGATT_ENC_CMPL_CB* p_enc_cmpl_cb{nullptr};
+  tGATT_CONGESTION_CBACK* p_congestion_cb{nullptr};
+  tGATT_PHY_UPDATE_CB* p_phy_update_cb{nullptr};
+  tGATT_CONN_UPDATE_CB* p_conn_update_cb{nullptr};
 } tGATT_CBACK;
 
 /*****************  Start Handle Management Definitions   *********************/
@@ -1024,7 +1028,8 @@ extern void GATT_SetIdleTimeout(const RawAddress& bd_addr, uint16_t idle_tout,
  *
  ******************************************************************************/
 extern tGATT_IF GATT_Register(const bluetooth::Uuid& p_app_uuid128,
-                              tGATT_CBACK* p_cb_info, bool eatt_support);
+                              const std::string name, tGATT_CBACK* p_cb_info,
+                              bool eatt_support);
 
 /*******************************************************************************
  *

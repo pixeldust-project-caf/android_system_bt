@@ -130,11 +130,14 @@ void Btm::ScanningCallbacks::OnScanResult(
                                advertising_data.size(), &advertising_data[0]);
 }
 
-void Btm::ScanningCallbacks::OnTrackAdvFoundLost(){};
+void Btm::ScanningCallbacks::OnTrackAdvFoundLost(
+    bluetooth::hci::AdvertisingFilterOnFoundOnLostInfo on_found_on_lost_info){};
 void Btm::ScanningCallbacks::OnBatchScanReports(int client_if, int status,
                                                 int report_format,
                                                 int num_records,
                                                 std::vector<uint8_t> data){};
+
+void Btm::ScanningCallbacks::OnBatchScanThresholdCrossed(int client_if){};
 void Btm::ScanningCallbacks::OnTimeout(){};
 void Btm::ScanningCallbacks::OnFilterEnable(bluetooth::hci::Enable enable,
                                             uint8_t status){};
