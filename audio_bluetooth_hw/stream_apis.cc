@@ -341,12 +341,8 @@ static int out_set_parameters(struct audio_stream* stream,
     if (params["A2dpSuspended"] == "true") {
       LOG(INFO) << __func__ << ": state=" << out->bluetooth_output_.GetState()
                 << " stream param stopped";
-      out->frames_rendered_ = 0;
-      if (out->bluetooth_output_.GetState() == BluetoothStreamState::STARTED) {
-        out->bluetooth_output_.Suspend();
-        out->bluetooth_output_.SetState(BluetoothStreamState::DISABLED);
-      } else if (out->bluetooth_output_.GetState() !=
-                 BluetoothStreamState::DISABLED) {
+      if (out->bluetooth_output_.GetState() != BluetoothStreamState::DISABLED) {
+        out->frames_rendered_ = 0;
         out->bluetooth_output_.Stop();
       }
     } else {
@@ -502,10 +498,6 @@ static ssize_t out_write(struct audio_stream_out* stream, const void* buffer,
     if (stream->resume(stream)) {
       LOG(ERROR) << __func__ << ": state=" << out->bluetooth_output_.GetState()
                  << " failed to resume";
-      if (out->bluetooth_output_.GetState() == BluetoothStreamState::DISABLED) {
-        // drop data for cases of A2dpSuspended=true / closing=true
-        totalWritten = bytes;
-      }
       usleep(kBluetoothDefaultOutputBufferMs * 1000);
       return totalWritten;
     }

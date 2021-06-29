@@ -86,10 +86,6 @@ bool BTM_PeerSupportsSecureConnections(const RawAddress& bd_addr) {
   mock_function_count_map[__func__]++;
   return false;
 }
-tBT_DEVICE_TYPE BTM_GetPeerDeviceTypeFromFeatures(const RawAddress& bd_addr) {
-  mock_function_count_map[__func__]++;
-  return BT_DEVICE_TYPE_BREDR;
-}
 bool BTM_SecAddRmtNameNotifyCallback(tBTM_RMT_NAME_CALLBACK* p_callback) {
   mock_function_count_map[__func__]++;
   return false;
@@ -256,8 +252,7 @@ void btm_sec_conn_req(const RawAddress& bda, uint8_t* dc) {
   mock_function_count_map[__func__]++;
 }
 void btm_sec_connected(const RawAddress& bda, uint16_t handle,
-                       tHCI_STATUS status, uint8_t enc_mode,
-                       tHCI_ROLE assigned_role) {
+                       tHCI_STATUS status, uint8_t enc_mode) {
   mock_function_count_map[__func__]++;
 }
 void btm_sec_dev_rec_cback_event(tBTM_SEC_DEV_REC* p_dev_rec,
@@ -291,8 +286,7 @@ void btm_sec_rmt_name_request_complete(const RawAddress* p_bd_addr,
 }
 void btm_sec_set_peer_sec_caps(uint16_t hci_handle, bool ssp_supported,
                                bool sc_supported,
-                               bool hci_role_switch_supported,
-                               bool br_edr_supported, bool le_supported) {
+                               bool hci_role_switch_supported) {
   mock_function_count_map[__func__]++;
 }
 void btm_sec_update_clock_offset(uint16_t handle, uint16_t clock_offset) {

@@ -22,13 +22,11 @@
  *
  ******************************************************************************/
 
-#pragma once
 #include <cstdint>
 #include "stack/btm/security_device_record.h"
 #include "stack/include/btm_api_types.h"
 #include "stack/include/hci_error_code.h"
 #include "stack/include/security_client_callbacks.h"
-#include "types/hci_role.h"
 
 #define BTM_SEC_MAX_COLLISION_DELAY (5000)
 
@@ -626,8 +624,7 @@ void btm_sec_encrypt_change(uint16_t handle, tHCI_STATUS status,
  *
  ******************************************************************************/
 void btm_sec_connected(const RawAddress& bda, uint16_t handle,
-                       tHCI_STATUS status, uint8_t enc_mode,
-                       tHCI_ROLE assigned_role = HCI_ROLE_PERIPHERAL);
+                       tHCI_STATUS status, uint8_t enc_mode);
 
 /*******************************************************************************
  *
@@ -781,8 +778,7 @@ bool btm_sec_is_a_bonded_dev(const RawAddress& bda);
  ******************************************************************************/
 void btm_sec_set_peer_sec_caps(uint16_t hci_handle, bool ssp_supported,
                                bool sc_supported,
-                               bool hci_role_switch_supported,
-                               bool br_edr_supported, bool le_supported);
+                               bool hci_role_switch_supported);
 
 // Return DEV_CLASS (uint8_t[3]) of bda. If record doesn't exist, create one.
 const uint8_t* btm_get_dev_class(const RawAddress& bda);

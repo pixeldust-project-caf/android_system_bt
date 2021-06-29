@@ -27,7 +27,6 @@
 #include "gd/hci/hci_layer.h"
 #include "gd/hci/le_advertising_manager.h"
 #include "gd/hci/le_scanning_manager.h"
-#include "gd/hci/vendor_specific_event_manager.h"
 #include "gd/l2cap/classic/l2cap_classic_module.h"
 #include "gd/l2cap/le/l2cap_le_module.h"
 #include "gd/neighbor/connectability.h"
@@ -99,7 +98,6 @@ void Stack::StartEverything() {
     modules.add<hci::HciLayer>();
     modules.add<storage::StorageModule>();
     modules.add<shim::Dumpsys>();
-    modules.add<hci::VendorSpecificEventManager>();
   }
   if (common::init_flags::gd_controller_is_enabled()) {
     modules.add<hci::Controller>();

@@ -18,7 +18,6 @@
 
 #include "common/bind.h"
 #include "common/init_flags.h"
-#include "common/stop_watch.h"
 #include "hci/hci_metrics_logging.h"
 #include "os/alarm.h"
 #include "os/metrics.h"
@@ -182,7 +181,6 @@ struct HciLayer::impl {
   }
 
   void on_hci_timeout(OpCode op_code) {
-    common::StopWatch::DumpStopWatchLog();
     LOG_ERROR("Timed out waiting for 0x%02hx (%s)", op_code, OpCodeText(op_code).c_str());
     // TODO: LogMetricHciTimeoutEvent(static_cast<uint32_t>(op_code));
 
