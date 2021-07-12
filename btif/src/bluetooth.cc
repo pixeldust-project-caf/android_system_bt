@@ -80,6 +80,7 @@
 #include "osi/include/wakelock.h"
 #include "stack/gatt/connection_manager.h"
 #include "stack/include/avdt_api.h"
+#include "stack/include/btm_api.h"
 #include "stack/include/btu.h"
 #include "stack_manager.h"
 
@@ -739,9 +740,15 @@ void invoke_ssp_request_cb(RawAddress bd_addr, bt_bdname_t bd_name,
 }
 
 void invoke_oob_data_request_cb(tBT_TRANSPORT t, bool valid, Octet16 c,
-                                Octet16 r, RawAddress raw_address) {
+                                Octet16 r, RawAddress raw_address,
+                                uint8_t address_type) {
   LOG_INFO("%s", __func__);
   bt_oob_data_t oob_data = {};
+  char* local_name;
+  BTM_ReadLocalDeviceName(&local_name);
+  for (int i = 0; i < BTM_MAX_LOC_BD_NAME_LEN; i++) {
+    oob_data.device_name[i] = local_name[i];
+  }
 
   // Set the local address
   int j = 5;
@@ -749,8 +756,7 @@ void invoke_oob_data_request_cb(tBT_TRANSPORT t, bool valid, Octet16 c,
     oob_data.address[i] = raw_address.address[j];
     j--;
   }
-  // Set type always public
-  oob_data.address[6] = 0;
+  oob_data.address[6] = address_type;
 
   // Each value (for C and R) is 16 octets in length
   bool c_empty = true;
