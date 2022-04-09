@@ -338,6 +338,16 @@ void bta_av_conn_cback(UNUSED_ATTR uint8_t handle, const RawAddress& bd_addr,
     evt = BTA_AV_SIG_CHG_EVT;
     if (event == AVDT_DISCONNECT_IND_EVT) {
       p_scb = bta_av_addr_to_scb(bd_addr);
+      if (p_scb) {
+        uint16_t handle =
+            BTM_GetHCIConnHandle(p_scb->PeerAddress(), BT_TRANSPORT_BR_EDR);
+        if (bta_av_cb.offload_started_hndl == handle ||
+            bta_av_cb.offload_start_pending_hndl == handle) {
+          LOG_INFO("%s: Cleanup offload related flag", __func__);
+          bta_av_cb.offload_started_hndl = HCI_INVALID_HANDLE;
+          bta_av_cb.offload_start_pending_hndl = HCI_INVALID_HANDLE;
+        }
+      }
     } else if (event == AVDT_CONNECT_IND_EVT) {
       APPL_TRACE_DEBUG("%s: CONN_IND is ACP:%d", __func__,
                        p_data->hdr.err_param);
@@ -1411,8 +1421,7 @@ void bta_debug_av_dump(int fd) {
   dprintf(fd, "  Connected LCBs mask: 0x%x\n", bta_av_cb.conn_lcb);
   dprintf(fd, "  Offload start pending handle: %d\n",
           bta_av_cb.offload_start_pending_hndl);
-  dprintf(fd, "  Offload started handle: %d\n",
-          bta_av_cb.offload_started_hndl);
+  dprintf(fd, "  Offload started handle: %d\n", bta_av_cb.offload_started_hndl);
 
   for (size_t i = 0; i < sizeof(bta_av_cb.lcb) / sizeof(bta_av_cb.lcb[0]);
        i++) {
